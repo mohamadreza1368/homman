@@ -1,0 +1,886 @@
+[
+  {
+    "fmaId": "FMA7165",
+    "snomedBodyStructureId": "15825003",
+    "nameEn": "Aorta",
+    "nameFa": "سرخرگ آئورت",
+    "systemCategory": "Circulatory",
+    "genderModel": "both",
+    "meshNodeName": "Aorta_Mesh",
+    "bbox": [
+      -0.03,
+      1.15,
+      -0.03,
+      0.03,
+      1.42,
+      0.03
+    ]
+  },
+  {
+    "fmaId": "FMA7088",
+    "snomedBodyStructureId": "302551006",
+    "nameEn": "Heart",
+    "nameFa": "قلب",
+    "systemCategory": "Circulatory",
+    "genderModel": "both",
+    "meshNodeName": "Heart_Mesh",
+    "bbox": [
+      -0.06,
+      1.25,
+      -0.05,
+      0.06,
+      1.37,
+      0.05
+    ]
+  },
+  {
+    "fmaId": "FMA7197",
+    "snomedBodyStructureId": "80891009",
+    "nameEn": "Heart muscle structure (Myocardium)",
+    "nameFa": "عضله قلب (میوکارد)",
+    "systemCategory": "Circulatory",
+    "genderModel": "both",
+    "meshNodeName": "Myocardium_Mesh",
+    "bbox": [
+      -0.05,
+      1.26,
+      -0.04,
+      0.05,
+      1.35,
+      0.04
+    ]
+  },
+  {
+    "fmaId": "FMA4722",
+    "snomedBodyStructureId": "64131007",
+    "nameEn": "Inferior vena cava",
+    "nameFa": "بزرگ‌سیاهرگ زیرین (اجوف تحتانی)",
+    "systemCategory": "Circulatory",
+    "genderModel": "both",
+    "meshNodeName": "IVC_Mesh",
+    "bbox": [
+      0.01,
+      1.05,
+      -0.02,
+      0.04,
+      1.28,
+      0.02
+    ]
+  },
+  {
+    "fmaId": "FMA4720",
+    "snomedBodyStructureId": "89837001",
+    "nameEn": "Pulmonary artery",
+    "nameFa": "سرخرگ ریوی (شریان پولمونار)",
+    "systemCategory": "Circulatory",
+    "genderModel": "both",
+    "meshNodeName": "Pulmonary_Artery_Mesh",
+    "bbox": [
+      -0.04,
+      1.32,
+      0.01,
+      0.04,
+      1.38,
+      0.05
+    ]
+  },
+  {
+    "fmaId": "FMA4721",
+    "snomedBodyStructureId": "76752008",
+    "nameEn": "Superior vena cava",
+    "nameFa": "بزرگ‌سیاهرگ زبرین (اجوف فوقانی)",
+    "systemCategory": "Circulatory",
+    "genderModel": "both",
+    "meshNodeName": "SVC_Mesh",
+    "bbox": [
+      0.01,
+      1.34,
+      0.01,
+      0.04,
+      1.44,
+      0.04
+    ]
+  },
+  {
+    "fmaId": "FMA14654",
+    "snomedBodyStructureId": "75772009",
+    "nameEn": "Common hepatic duct",
+    "nameFa": "مجرای کبدی مشترک",
+    "systemCategory": "Digestive",
+    "genderModel": "both",
+    "meshNodeName": "Common_Hepatic_Duct_Mesh",
+    "bbox": [
+      0.03,
+      1.1,
+      0.01,
+      0.05,
+      1.14,
+      0.03
+    ]
+  },
+  {
+    "fmaId": "FMA7202",
+    "snomedBodyStructureId": "28231008",
+    "nameEn": "Gallbladder",
+    "nameFa": "کیسه صفرا",
+    "systemCategory": "Digestive",
+    "genderModel": "both",
+    "meshNodeName": "Gallbladder_Mesh",
+    "bbox": [
+      0.04,
+      1.08,
+      0.03,
+      0.08,
+      1.14,
+      0.06
+    ]
+  },
+  {
+    "fmaId": "FMA7203",
+    "snomedBodyStructureId": "14742008",
+    "nameEn": "Large intestine (Colon)",
+    "nameFa": "روده بزرگ (کولون)",
+    "systemCategory": "Digestive",
+    "genderModel": "both",
+    "meshNodeName": "Colon_Mesh",
+    "bbox": [
+      -0.14,
+      0.88,
+      -0.04,
+      0.14,
+      1.12,
+      0.07
+    ]
+  },
+  {
+    "fmaId": "FMA14653",
+    "snomedBodyStructureId": "28273000",
+    "nameEn": "Left hepatic duct",
+    "nameFa": "مجرای کبدی چپ",
+    "systemCategory": "Digestive",
+    "genderModel": "both",
+    "meshNodeName": "Left_Hepatic_Duct_Mesh",
+    "bbox": [
+      null,
+      null,
+      null,
+      null,
+      null,
+      null
+    ]
+  },
+  {
+    "fmaId": "FMA7199",
+    "snomedBodyStructureId": "181277001",
+    "nameEn": "Liver",
+    "nameFa": "کبد",
+    "systemCategory": "Digestive",
+    "genderModel": "both",
+    "meshNodeName": "Liver_Mesh",
+    "bbox": [
+      0.01,
+      1.05,
+      -0.08,
+      0.15,
+      1.22,
+      0.08
+    ]
+  },
+  {
+    "fmaId": "FMA7198",
+    "snomedBodyStructureId": "15776009",
+    "nameEn": "Pancreas",
+    "nameFa": "لوزالمعده (پانکراس)",
+    "systemCategory": "Digestive",
+    "genderModel": "both",
+    "meshNodeName": "Pancreas_Mesh",
+    "bbox": [
+      -0.08,
+      1.1,
+      -0.03,
+      0.06,
+      1.16,
+      0.02
+    ]
+  },
+  {
+    "fmaId": "FMA14652",
+    "snomedBodyStructureId": "27418002",
+    "nameEn": "Right hepatic duct",
+    "nameFa": "مجرای کبدی راست",
+    "systemCategory": "Digestive",
+    "genderModel": "both",
+    "meshNodeName": "Right_Hepatic_Duct_Mesh",
+    "bbox": [
+      null,
+      null,
+      null,
+      null,
+      null,
+      null
+    ]
+  },
+  {
+    "fmaId": "FMA7200",
+    "snomedBodyStructureId": "113276009",
+    "nameEn": "Small intestine",
+    "nameFa": "روده باریک",
+    "systemCategory": "Digestive",
+    "genderModel": "both",
+    "meshNodeName": "Small_Intestine_Mesh",
+    "bbox": [
+      -0.1,
+      0.9,
+      -0.03,
+      0.1,
+      1.08,
+      0.06
+    ]
+  },
+  {
+    "fmaId": "FMA7148",
+    "snomedBodyStructureId": "69695003",
+    "nameEn": "Stomach",
+    "nameFa": "معده",
+    "systemCategory": "Digestive",
+    "genderModel": "both",
+    "meshNodeName": "Stomach_Mesh",
+    "bbox": [
+      -0.1,
+      1.08,
+      -0.04,
+      0.02,
+      1.22,
+      0.06
+    ]
+  },
+  {
+    "fmaId": "FMA9604",
+    "snomedBodyStructureId": "23451007",
+    "nameEn": "Adrenal gland (Suprarenal)",
+    "nameFa": "غده فوق کلیوی (آدرنال)",
+    "systemCategory": "Endocrine",
+    "genderModel": "both",
+    "meshNodeName": "Adrenal_Gland_Mesh",
+    "bbox": [
+      -0.09,
+      1.16,
+      -0.05,
+      0.09,
+      1.2,
+      -0.02
+    ]
+  },
+  {
+    "fmaId": "FMA13889",
+    "snomedBodyStructureId": "56329008",
+    "nameEn": "Pituitary gland (Hypophysis)",
+    "nameFa": "غده هیپوفیز",
+    "systemCategory": "Endocrine",
+    "genderModel": "both",
+    "meshNodeName": "Pituitary_Mesh",
+    "bbox": [
+      -0.01,
+      1.62,
+      -0.01,
+      0.01,
+      1.64,
+      0.01
+    ]
+  },
+  {
+    "fmaId": "FMA7150",
+    "snomedBodyStructureId": "69748006",
+    "nameEn": "Thyroid gland",
+    "nameFa": "غده تیروئید",
+    "systemCategory": "Endocrine",
+    "genderModel": "both",
+    "meshNodeName": "Thyroid_Mesh",
+    "bbox": [
+      -0.03,
+      1.48,
+      0.02,
+      0.03,
+      1.53,
+      0.05
+    ]
+  },
+  {
+    "fmaId": "FMA7163",
+    "snomedBodyStructureId": "39937001",
+    "nameEn": "Skin of body",
+    "nameFa": "پوست کل بدن",
+    "systemCategory": "Integumentary",
+    "genderModel": "both",
+    "meshNodeName": "Skin_Mesh",
+    "bbox": [
+      -0.25,
+      0.0,
+      -0.15,
+      0.25,
+      1.8,
+      0.15
+    ]
+  },
+  {
+    "fmaId": "FMA7194",
+    "snomedBodyStructureId": "78961009",
+    "nameEn": "Spleen",
+    "nameFa": "طحال",
+    "systemCategory": "Lymphatic",
+    "genderModel": "both",
+    "meshNodeName": "Spleen_Mesh",
+    "bbox": [
+      -0.14,
+      1.12,
+      -0.06,
+      -0.08,
+      1.22,
+      -0.01
+    ]
+  },
+  {
+    "fmaId": "FMA7193",
+    "snomedBodyStructureId": "9875009",
+    "nameEn": "Thymus",
+    "nameFa": "تیموس",
+    "systemCategory": "Lymphatic",
+    "genderModel": "both",
+    "meshNodeName": "Thymus_Mesh",
+    "bbox": [
+      -0.03,
+      1.35,
+      0.04,
+      0.03,
+      1.42,
+      0.07
+    ]
+  },
+  {
+    "fmaId": "FMA7130",
+    "snomedBodyStructureId": "15926001",
+    "nameEn": "Brainstem",
+    "nameFa": "ساقه مغز (بصل‌النخاع، پل مغزی و میان‌مغز)",
+    "systemCategory": "Nervous",
+    "genderModel": "both",
+    "meshNodeName": "Brainstem_Mesh",
+    "bbox": [
+      -0.02,
+      1.54,
+      -0.04,
+      0.02,
+      1.63,
+      0.0
+    ]
+  },
+  {
+    "fmaId": "FMA5080",
+    "snomedBodyStructureId": "113305005",
+    "nameEn": "Cerebellum",
+    "nameFa": "مخچه",
+    "systemCategory": "Nervous",
+    "genderModel": "both",
+    "meshNodeName": "Cerebellum_Mesh",
+    "bbox": [
+      -0.06,
+      1.56,
+      -0.09,
+      0.06,
+      1.64,
+      -0.03
+    ]
+  },
+  {
+    "fmaId": "FMA5018",
+    "snomedBodyStructureId": "113105001",
+    "nameEn": "Cerebrum (Brain)",
+    "nameFa": "نیمکره‌های مخ (مغز)",
+    "systemCategory": "Nervous",
+    "genderModel": "both",
+    "meshNodeName": "Cerebrum_Mesh",
+    "bbox": [
+      -0.08,
+      1.62,
+      -0.09,
+      0.08,
+      1.78,
+      0.09
+    ]
+  },
+  {
+    "fmaId": "FMA7131",
+    "snomedBodyStructureId": "5244000",
+    "nameEn": "Spinal cord",
+    "nameFa": "نخاع شوکی",
+    "systemCategory": "Nervous",
+    "genderModel": "both",
+    "meshNodeName": "Spinal_Cord_Mesh",
+    "bbox": [
+      -0.015,
+      1.05,
+      -0.06,
+      0.015,
+      1.54,
+      -0.03
+    ]
+  },
+  {
+    "fmaId": "FMA55099",
+    "snomedBodyStructureId": "4596009",
+    "nameEn": "Larynx (Voice box)",
+    "nameFa": "حنجره (لارنکس)",
+    "systemCategory": "Respiratory",
+    "genderModel": "both",
+    "meshNodeName": "Larynx_Mesh",
+    "bbox": [
+      -0.03,
+      1.5,
+      0.03,
+      0.03,
+      1.56,
+      0.06
+    ]
+  },
+  {
+    "fmaId": "FMA7196",
+    "snomedBodyStructureId": "181217005",
+    "nameEn": "Left lung",
+    "nameFa": "ریه چپ",
+    "systemCategory": "Respiratory",
+    "genderModel": "both",
+    "meshNodeName": "Left_Lung_Mesh",
+    "bbox": [
+      -0.14,
+      1.2,
+      -0.08,
+      -0.02,
+      1.45,
+      0.08
+    ]
+  },
+  {
+    "fmaId": "FMA7195",
+    "snomedBodyStructureId": "181216001",
+    "nameEn": "Right lung",
+    "nameFa": "ریه راست",
+    "systemCategory": "Respiratory",
+    "genderModel": "both",
+    "meshNodeName": "Right_Lung_Mesh",
+    "bbox": [
+      0.02,
+      1.2,
+      -0.08,
+      0.14,
+      1.45,
+      0.08
+    ]
+  },
+  {
+    "fmaId": "FMA7394",
+    "snomedBodyStructureId": "44567001",
+    "nameEn": "Trachea (Windpipe)",
+    "nameFa": "نای (تراشه)",
+    "systemCategory": "Respiratory",
+    "genderModel": "both",
+    "meshNodeName": "Trachea_Mesh",
+    "bbox": [
+      -0.02,
+      1.38,
+      0.02,
+      0.02,
+      1.52,
+      0.04
+    ]
+  },
+  {
+    "fmaId": "FMA13478",
+    "snomedBodyStructureId": "122494005",
+    "nameEn": "Cervical vertebral column",
+    "nameFa": "ستون مهره‌های گردنی (C1-C7)",
+    "systemCategory": "Skeletal",
+    "genderModel": "both",
+    "meshNodeName": "Spine_Cervical_Mesh",
+    "bbox": [
+      -0.04,
+      1.45,
+      -0.05,
+      0.04,
+      1.55,
+      0.02
+    ]
+  },
+  {
+    "fmaId": "FMA13328",
+    "snomedBodyStructureId": "51299004",
+    "nameEn": "Clavicle (Collarbone)",
+    "nameFa": "استخوان ترقوه (کلاویکل)",
+    "systemCategory": "Skeletal",
+    "genderModel": "both",
+    "meshNodeName": "Clavicle_Mesh",
+    "bbox": [
+      -0.16,
+      1.42,
+      0.03,
+      0.16,
+      1.47,
+      0.08
+    ]
+  },
+  {
+    "fmaId": "FMA16203",
+    "snomedBodyStructureId": "64688005",
+    "nameEn": "Coccyx",
+    "nameFa": "استخوان دنبالچه (کوکسیکس)",
+    "systemCategory": "Skeletal",
+    "genderModel": "both",
+    "meshNodeName": "Coccyx_Mesh",
+    "bbox": [
+      -0.02,
+      0.86,
+      -0.05,
+      0.02,
+      0.9,
+      -0.02
+    ]
+  },
+  {
+    "fmaId": "FMA9915",
+    "snomedBodyStructureId": "71341001",
+    "nameEn": "Femur (Thigh bone)",
+    "nameFa": "استخوان ران (فمور)",
+    "systemCategory": "Skeletal",
+    "genderModel": "both",
+    "meshNodeName": "Femur_Mesh",
+    "bbox": [
+      -0.15,
+      0.45,
+      -0.05,
+      0.15,
+      0.9,
+      0.05
+    ]
+  },
+  {
+    "fmaId": "FMA24477",
+    "snomedBodyStructureId": "87342007",
+    "nameEn": "Fibula (Calf bone)",
+    "nameFa": "استخوان نازک‌نی (فیبولا)",
+    "systemCategory": "Skeletal",
+    "genderModel": "both",
+    "meshNodeName": "Fibula_Mesh",
+    "bbox": [
+      -0.14,
+      0.08,
+      -0.04,
+      0.14,
+      0.43,
+      -0.01
+    ]
+  },
+  {
+    "fmaId": "FMA16585",
+    "snomedBodyStructureId": "23416004",
+    "nameEn": "Humerus (Upper arm)",
+    "nameFa": "استخوان بازو (هومروس)",
+    "systemCategory": "Skeletal",
+    "genderModel": "both",
+    "meshNodeName": "Humerus_Mesh",
+    "bbox": [
+      -0.25,
+      1.1,
+      -0.03,
+      0.25,
+      1.4,
+      0.03
+    ]
+  },
+  {
+    "fmaId": "FMA13480",
+    "snomedBodyStructureId": "122496007",
+    "nameEn": "Lumbar vertebral column",
+    "nameFa": "ستون مهره‌های کمری (L1-L5)",
+    "systemCategory": "Skeletal",
+    "genderModel": "both",
+    "meshNodeName": "Spine_Lumbar_Mesh",
+    "bbox": [
+      -0.05,
+      1.0,
+      -0.06,
+      0.05,
+      1.2,
+      0.01
+    ]
+  },
+  {
+    "fmaId": "FMA52749",
+    "snomedBodyStructureId": "31640002",
+    "nameEn": "Mandible",
+    "nameFa": "استخوان فک تحتانی (مندیبل)",
+    "systemCategory": "Skeletal",
+    "genderModel": "both",
+    "meshNodeName": "Mandible_Mesh",
+    "bbox": [
+      -0.06,
+      1.5,
+      0.02,
+      0.06,
+      1.58,
+      0.1
+    ]
+  },
+  {
+    "fmaId": "FMA24467",
+    "snomedBodyStructureId": "64234005",
+    "nameEn": "Patella (Kneecap)",
+    "nameFa": "استخوان کشکک زانو (پاتلا)",
+    "systemCategory": "Skeletal",
+    "genderModel": "both",
+    "meshNodeName": "Patella_Mesh",
+    "bbox": [
+      -0.13,
+      0.45,
+      0.04,
+      0.13,
+      0.5,
+      0.07
+    ]
+  },
+  {
+    "fmaId": "FMA16586",
+    "snomedBodyStructureId": "113193002",
+    "nameEn": "Pelvis (Pelvic girdle)",
+    "nameFa": "لگن خاصره (کمربند لگنی)",
+    "systemCategory": "Skeletal",
+    "genderModel": "both",
+    "meshNodeName": "Pelvis_Mesh",
+    "bbox": [
+      -0.15,
+      0.85,
+      -0.09,
+      0.15,
+      1.05,
+      0.08
+    ]
+  },
+  {
+    "fmaId": "FMA23466",
+    "snomedBodyStructureId": "62413002",
+    "nameEn": "Radius (Forearm)",
+    "nameFa": "استخوان زند زبرین (رادیوس)",
+    "systemCategory": "Skeletal",
+    "genderModel": "both",
+    "meshNodeName": "Radius_Mesh",
+    "bbox": [
+      -0.28,
+      0.85,
+      -0.02,
+      0.28,
+      1.1,
+      0.02
+    ]
+  },
+  {
+    "fmaId": "FMA7574",
+    "snomedBodyStructureId": "113197003",
+    "nameEn": "Rib cage",
+    "nameFa": "قفسه دنده‌ها (۱۲ جفت دنده)",
+    "systemCategory": "Skeletal",
+    "genderModel": "both",
+    "meshNodeName": "RibCage_Mesh",
+    "bbox": [
+      -0.15,
+      1.15,
+      -0.08,
+      0.15,
+      1.45,
+      0.1
+    ]
+  },
+  {
+    "fmaId": "FMA16202",
+    "snomedBodyStructureId": "54735007",
+    "nameEn": "Sacrum",
+    "nameFa": "استخوان خاجی (ساکروم)",
+    "systemCategory": "Skeletal",
+    "genderModel": "both",
+    "meshNodeName": "Sacrum_Mesh",
+    "bbox": [
+      -0.06,
+      0.9,
+      -0.07,
+      0.06,
+      1.0,
+      -0.01
+    ]
+  },
+  {
+    "fmaId": "FMA13329",
+    "snomedBodyStructureId": "79601000",
+    "nameEn": "Scapula (Shoulder blade)",
+    "nameFa": "استخوان کتف (اسکاپولا)",
+    "systemCategory": "Skeletal",
+    "genderModel": "both",
+    "meshNodeName": "Scapula_Mesh",
+    "bbox": [
+      -0.18,
+      1.3,
+      -0.09,
+      0.18,
+      1.44,
+      -0.04
+    ]
+  },
+  {
+    "fmaId": "FMA5018_SKULL",
+    "snomedBodyStructureId": "89546000",
+    "nameEn": "Skull (Cranium)",
+    "nameFa": "جمجمه (کرانیوم)",
+    "systemCategory": "Skeletal",
+    "genderModel": "both",
+    "meshNodeName": "Skull_Mesh",
+    "bbox": [
+      -0.1,
+      1.55,
+      -0.11,
+      0.1,
+      1.8,
+      0.11
+    ]
+  },
+  {
+    "fmaId": "FMA7485",
+    "snomedBodyStructureId": "56873002",
+    "nameEn": "Sternum",
+    "nameFa": "استخوان جناغ سینه (استرنوم)",
+    "systemCategory": "Skeletal",
+    "genderModel": "both",
+    "meshNodeName": "Sternum_Mesh",
+    "bbox": [
+      -0.03,
+      1.25,
+      0.07,
+      0.03,
+      1.42,
+      0.1
+    ]
+  },
+  {
+    "fmaId": "FMA13479",
+    "snomedBodyStructureId": "122495006",
+    "nameEn": "Thoracic vertebral column",
+    "nameFa": "ستون مهره‌های سینه‌ای (T1-T12)",
+    "systemCategory": "Skeletal",
+    "genderModel": "both",
+    "meshNodeName": "Spine_Thoracic_Mesh",
+    "bbox": [
+      -0.05,
+      1.2,
+      -0.07,
+      0.05,
+      1.45,
+      0.01
+    ]
+  },
+  {
+    "fmaId": "FMA24476",
+    "snomedBodyStructureId": "12611008",
+    "nameEn": "Tibia (Shin bone)",
+    "nameFa": "استخوان درشت‌نی (تیبیا)",
+    "systemCategory": "Skeletal",
+    "genderModel": "both",
+    "meshNodeName": "Tibia_Mesh",
+    "bbox": [
+      -0.12,
+      0.08,
+      -0.03,
+      0.12,
+      0.45,
+      0.03
+    ]
+  },
+  {
+    "fmaId": "FMA23467",
+    "snomedBodyStructureId": "2083001",
+    "nameEn": "Ulna (Forearm)",
+    "nameFa": "استخوان زند زیرین (اولنا)",
+    "systemCategory": "Skeletal",
+    "genderModel": "both",
+    "meshNodeName": "Ulna_Mesh",
+    "bbox": [
+      -0.27,
+      0.85,
+      -0.03,
+      0.27,
+      1.1,
+      0.01
+    ]
+  },
+  {
+    "fmaId": "FMA7201",
+    "snomedBodyStructureId": "64033007",
+    "nameEn": "Kidney",
+    "nameFa": "کلیه",
+    "systemCategory": "Urinary",
+    "genderModel": "both",
+    "meshNodeName": "Kidney_Mesh",
+    "bbox": [
+      -0.12,
+      1.05,
+      -0.06,
+      0.12,
+      1.18,
+      0.06
+    ]
+  },
+  {
+    "fmaId": "FMA7201_L",
+    "snomedBodyStructureId": "18639004",
+    "nameEn": "Left kidney",
+    "nameFa": "کلیه چپ",
+    "systemCategory": "Urinary",
+    "genderModel": "both",
+    "meshNodeName": "Left_Kidney_Mesh",
+    "bbox": [
+      -0.1,
+      1.07,
+      -0.06,
+      -0.04,
+      1.18,
+      -0.01
+    ]
+  },
+  {
+    "fmaId": "FMA7201_R",
+    "snomedBodyStructureId": "59652004",
+    "nameEn": "Right kidney",
+    "nameFa": "کلیه راست",
+    "systemCategory": "Urinary",
+    "genderModel": "both",
+    "meshNodeName": "Right_Kidney_Mesh",
+    "bbox": [
+      0.04,
+      1.05,
+      -0.06,
+      0.1,
+      1.16,
+      -0.01
+    ]
+  },
+  {
+    "fmaId": "FMA7204",
+    "snomedBodyStructureId": "89837001_BLADDER",
+    "nameEn": "Urinary bladder",
+    "nameFa": "مثانه",
+    "systemCategory": "Urinary",
+    "genderModel": "both",
+    "meshNodeName": "Bladder_Mesh",
+    "bbox": [
+      -0.05,
+      0.86,
+      0.02,
+      0.05,
+      0.94,
+      0.07
+    ]
+  }
+]

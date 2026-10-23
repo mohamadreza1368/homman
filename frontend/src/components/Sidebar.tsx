@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Search, Eye, EyeOff, Sliders, Scissors, RotateCcw } from 'lucide-react';
 import { AnatomyViewer } from '../engine/AnatomyViewer';
+import catalogData from '../data/anatomyCatalog.json';
 
 interface SidebarProps {
   viewer: AnatomyViewer | null;
@@ -9,11 +10,14 @@ interface SidebarProps {
 }
 
 const SYSTEMS = [
-  { id: 'Skeletal', nameFa: 'دستگاه اسکلتی (استخوان‌ها)', count: '۲۶۰ قطعه' },
-  { id: 'Circulatory', nameFa: 'دستگاه گردش خون و قلب', count: 'قلب و عروق' },
-  { id: 'Respiratory', nameFa: 'دستگاه تنفس (ریه‌ها)', count: 'مجاری و ریه' },
-  { id: 'Digestive', nameFa: 'دستگاه گوارش (کبد و احشا)', count: 'ارگان‌های شکمی' },
-  { id: 'Nervous', nameFa: 'دستگاه عصبی و مغز', count: 'مخ و نخاع' },
+  { id: 'Skeletal', nameFa: 'دستگاه اسکلتی (استخوان‌ها)', count: '۱۹ قطعه شاخص' },
+  { id: 'Circulatory', nameFa: 'دستگاه گردش خون (قلب و عروق)', count: '۶ ساختار' },
+  { id: 'Respiratory', nameFa: 'دستگاه تنفس (ریه، نای و حنجره)', count: '۴ ساختار' },
+  { id: 'Digestive', nameFa: 'دستگاه گوارش (کبد، معده، روده و صفرا)', count: '۷ ساختار' },
+  { id: 'Nervous', nameFa: 'دستگاه عصبی (مغز، مخچه و نخاع)', count: '۴ ساختار' },
+  { id: 'Urinary', nameFa: 'دستگاه ادراری (کلیه‌ها و مثانه)', count: '۳ ساختار' },
+  { id: 'Endocrine', nameFa: 'دستگاه درون‌ریز (تیروئید، آدرنال، هیپوفیز)', count: '۳ غده' },
+  { id: 'Lymphatic', nameFa: 'دستگاه لنفاوی و ایمنی (طحال و تیموس)', count: '۲ ساختار' },
 ];
 
 export const Sidebar: React.FC<SidebarProps> = ({ viewer, searchQuery, setSearchQuery }) => {
@@ -23,11 +27,14 @@ export const Sidebar: React.FC<SidebarProps> = ({ viewer, searchQuery, setSearch
     Respiratory: true,
     Digestive: true,
     Nervous: true,
+    Urinary: true,
+    Endocrine: true,
+    Lymphatic: true,
   });
 
   const [explodeFactor, setExplodeFactor] = useState(0);
   const [clippingActive, setClippingActive] = useState(false);
-  const [clippingPlaneY, setClippingPlaneY] = useState(1.3);
+  const [clippingPlaneY, setClippingPlaneY] = useState(1.25);
 
   const toggleSystem = (systemId: string) => {
     const nextState = !activeSystems[systemId];
@@ -64,11 +71,25 @@ export const Sidebar: React.FC<SidebarProps> = ({ viewer, searchQuery, setSearch
   const handleResetCamera = () => {
     if (viewer) {
       viewer.controls.reset();
-      viewer.camera.position.set(0, 1.2, 2.5);
-      viewer.controls.target.set(0, 1.1, 0);
+      viewer.camera.position.set(0, 1.25, 2.7);
+      viewer.controls.target.set(0, 1.05, 0);
       viewer.resetSelection();
       setExplodeFactor(0);
       viewer.setExplodeView(0);
+    }
+  };
+
+  const searchResults = searchQuery.trim()
+    ? catalogData.filter((item) =>
+        item.nameFa.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        item.nameEn.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        item.fmaId.toLowerCase().includes(searchQuery.toLowerCase())
+      )
+    : [];
+
+  const handleSelectSearchResult = (fmaId: string) => {
+    if (viewer) {
+      viewer.focusOnStructure(fmaId);
     }
   };
 
@@ -86,6 +107,27 @@ export const Sidebar: React.FC<SidebarProps> = ({ viewer, searchQuery, setSearch
             className="w-full bg-muted/60 border border-border rounded-lg pr-9 pl-3 py-1.5 text-xs text-foreground placeholder:text-muted-foreground/70 focus:outline-none focus:border-primary transition-colors"
           />
         </div>
+
+        {/* Live Search Results Popup */}
+        {searchResults.length > 0 && (
+          <div className="mt-2 max-h-48 overflow-y-auto bg-card border border-border rounded-lg shadow-lg space-y-1 p-1">
+            {searchResults.slice(0, 6).map((item) => (
+              <div
+                key={item.fmaId}
+                onClick={() => handleSelectSearchResult(item.fmaId)}
+                className="p-1.5 hover:bg-muted/80 rounded cursor-pointer transition-colors flex items-center justify-between text-xs"
+              >
+                <div>
+                  <div className="font-semibold text-foreground">{item.nameFa}</div>
+                  <div className="text-[10px] text-muted-foreground">{item.nameEn}</div>
+                </div>
+                <span className="text-[9px] font-mono text-primary bg-primary/10 px-1 py-0.5 rounded">
+                  {item.fmaId}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Anatomy Interaction Controls */}
@@ -138,7 +180,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ viewer, searchQuery, setSearch
               </div>
               <input
                 type="range"
-                min="0.2"
+                min="0.1"
                 max="1.8"
                 step="0.02"
                 value={clippingPlaneY}
@@ -161,7 +203,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ viewer, searchQuery, setSearch
       {/* Systems Layers */}
       <div className="p-3 flex-1">
         <h2 className="text-xs font-semibold text-foreground mb-2 flex items-center justify-between">
-          <span>لایه‌های سیستم‌های بدن (۱۵ سیستم)</span>
+          <span>لایه‌های سیستم‌های بدن (۴۸ قطعه)</span>
           <span className="text-[10px] text-muted-foreground font-mono">FMA Hierarchy</span>
         </h2>
         <div className="space-y-1.5">

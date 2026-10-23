@@ -2,11 +2,34 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { createMedicalAssetLoader } from './AssetLoader';
 import type { AnatomicalStructure } from '../types/anatomy';
+import catalogData from '../data/anatomyCatalog.json';
 
 export interface ViewerOptions {
   container: HTMLDivElement;
   onStructureSelect?: (structure: AnatomicalStructure | null) => void;
 }
+
+interface RawCatalogItem {
+  fmaId: string;
+  snomedBodyStructureId: string;
+  nameEn: string;
+  nameFa: string;
+  systemCategory: string;
+  genderModel: string;
+  meshNodeName: string;
+  bbox: number[];
+}
+
+const SYSTEM_COLORS: Record<string, number> = {
+  Skeletal: 0xf1f5f9,     // Bone White
+  Circulatory: 0xd9383a,  // Arterial Red
+  Respiratory: 0x93c5fd,  // Lung Blue
+  Digestive: 0xa16207,    // Visceral Amber
+  Nervous: 0xec4899,      // Neural Pink
+  Urinary: 0xeab308,      // Renal Gold
+  Endocrine: 0x8b5cf6,    // Glandular Purple
+  Lymphatic: 0x10b981     // Lymphatic Emerald
+};
 
 export class AnatomyViewer {
   public scene: THREE.Scene;
@@ -14,7 +37,7 @@ export class AnatomyViewer {
   public renderer: THREE.WebGLRenderer;
   public controls: OrbitControls;
   public loader: ReturnType<typeof createMedicalAssetLoader>;
-  
+
   private container: HTMLDivElement;
   private animationFrameId: number | null = null;
   private raycaster = new THREE.Raycaster();
@@ -39,7 +62,7 @@ export class AnatomyViewer {
     const width = this.container.clientWidth;
     const height = this.container.clientHeight;
     this.camera = new THREE.PerspectiveCamera(45, width / height, 0.05, 50);
-    this.camera.position.set(0, 1.2, 2.5);
+    this.camera.position.set(0, 1.25, 2.7);
 
     // 3. WebGL Renderer
     this.renderer = new THREE.WebGLRenderer({
@@ -50,16 +73,16 @@ export class AnatomyViewer {
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     this.renderer.localClippingEnabled = true;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 1.2;
+    this.renderer.toneMappingExposure = 1.25;
     this.container.appendChild(this.renderer.domElement);
 
     // 4. OrbitControls
     this.controls = new OrbitControls(this.camera, this.renderer.domElement);
     this.controls.enableDamping = true;
     this.controls.dampingFactor = 0.05;
-    this.controls.target.set(0, 1.1, 0);
-    this.controls.minDistance = 0.3;
-    this.controls.maxDistance = 5.0;
+    this.controls.target.set(0, 1.05, 0);
+    this.controls.minDistance = 0.2;
+    this.controls.maxDistance = 6.0;
 
     // 5. Lighting
     this.setupLighting();
@@ -73,26 +96,26 @@ export class AnatomyViewer {
     window.addEventListener('resize', this.onResize);
     this.renderer.domElement.addEventListener('pointerdown', this.onPointerDown);
 
-    // 8. Setup procedural base anatomy preview
-    this.setupDemoAnatomy();
+    // 8. Build anatomical structures from comprehensive audited catalog
+    this.buildCatalogMeshes();
 
     // 9. Start loop
     this.animate();
   }
 
   private setupLighting() {
-    const ambientLight = new THREE.AmbientLight(0xffffff, 0.7);
+    const ambientLight = new THREE.AmbientLight(0xffffff, 0.75);
     this.scene.add(ambientLight);
 
-    const keyLight = new THREE.DirectionalLight(0xffffff, 1.2);
+    const keyLight = new THREE.DirectionalLight(0xffffff, 1.3);
     keyLight.position.set(2, 4, 3);
     this.scene.add(keyLight);
 
-    const fillLight = new THREE.DirectionalLight(0x7090ff, 0.5);
+    const fillLight = new THREE.DirectionalLight(0x7090ff, 0.6);
     fillLight.position.set(-3, 2, -2);
     this.scene.add(fillLight);
 
-    const rimLight = new THREE.DirectionalLight(0x38bdf8, 0.6);
+    const rimLight = new THREE.DirectionalLight(0x38bdf8, 0.65);
     rimLight.position.set(0, -2, -3);
     this.scene.add(rimLight);
 
@@ -102,186 +125,64 @@ export class AnatomyViewer {
     this.scene.add(grid);
   }
 
-  private setupDemoAnatomy() {
-    // Demonstration organ meshes (Head, Thorax/Lungs, Heart, Spine, Pelvis, Limbs)
-    const organs: {
-      name: string;
-      structure: AnatomicalStructure;
-      geometry: THREE.BufferGeometry;
-      color: number;
-      roughness: number;
-      position: [number, number, number];
-      scale?: [number, number, number];
-    }[] = [
-      {
-        name: 'Heart',
-        structure: {
-          fmaId: 'FMA7088',
-          snomedBodyStructureId: '302551006',
-          nameEn: 'Heart',
-          nameFa: 'قلب',
-          systemCategory: 'Circulatory',
-          genderModel: 'both',
-          meshNodeName: 'Heart_Mesh',
-          descriptionEn: 'Muscular organ in most animals, which pumps blood through the blood vessels of the circulatory system.',
-          descriptionFa: 'عضو عضلانی مرکزی سیستم گردش خون که وظیفه پمپاژ خون به تمام بافت‌ها را بر عهده دارد.'
-        },
-        geometry: new THREE.SphereGeometry(0.08, 32, 32),
-        color: 0xd9383a,
-        roughness: 0.35,
-        position: [-0.02, 1.30, 0.05],
-        scale: [1, 1.2, 0.9]
-      },
-      {
-        name: 'Right Lung',
-        structure: {
-          fmaId: 'FMA7195',
-          snomedBodyStructureId: '181216001',
-          nameEn: 'Right Lung',
-          nameFa: 'ریه راست',
-          systemCategory: 'Respiratory',
-          genderModel: 'both',
-          meshNodeName: 'Right_Lung_Mesh',
-          descriptionEn: 'The right lung is divided into three different lobes: upper, middle, and lower.',
-          descriptionFa: 'ریه راست شامل ۳ لوب فوقانی، میانی و تحتانی جهت تبادل اکسیژن و دی‌اکسید کربن است.'
-        },
-        geometry: new THREE.CapsuleGeometry(0.07, 0.22, 16, 32),
-        color: 0x93c5fd,
-        roughness: 0.6,
-        position: [0.12, 1.32, 0.02],
-        scale: [1, 1, 0.8]
-      },
-      {
-        name: 'Left Lung',
-        structure: {
-          fmaId: 'FMA7196',
-          snomedBodyStructureId: '181217005',
-          nameEn: 'Left Lung',
-          nameFa: 'ریه چپ',
-          systemCategory: 'Respiratory',
-          genderModel: 'both',
-          meshNodeName: 'Left_Lung_Mesh',
-          descriptionEn: 'The left lung has two lobes to accommodate the cardiac notch.',
-          descriptionFa: 'ریه چپ به دلیل فضای اشغال شده توسط قلب، دارای دو لوب است.'
-        },
-        geometry: new THREE.CapsuleGeometry(0.065, 0.22, 16, 32),
-        color: 0x93c5fd,
-        roughness: 0.6,
-        position: [-0.13, 1.32, 0.02],
-        scale: [1, 1, 0.8]
-      },
-      {
-        name: 'Liver',
-        structure: {
-          fmaId: 'FMA7199',
-          snomedBodyStructureId: '181277001',
-          nameEn: 'Liver',
-          nameFa: 'کبد',
-          systemCategory: 'Digestive',
-          genderModel: 'both',
-          meshNodeName: 'Liver_Mesh',
-          descriptionEn: 'The largest internal organ and the largest gland in the human body.',
-          descriptionFa: 'بزرگترین غده و عضو داخلی بدن با بیش از ۵۰۰ عملکرد متابولیک و تصفیه خون.'
-        },
-        geometry: new THREE.BoxGeometry(0.24, 0.12, 0.14),
-        color: 0x854d0e,
-        roughness: 0.45,
-        position: [0.06, 1.14, 0.04]
-      },
-      {
-        name: 'Cerebrum',
-        structure: {
-          fmaId: 'FMA5018',
-          snomedBodyStructureId: '113105001',
-          nameEn: 'Cerebrum (Brain)',
-          nameFa: 'نیمکره‌های مخ (مغز)',
-          systemCategory: 'Nervous',
-          genderModel: 'both',
-          meshNodeName: 'Cerebrum_Mesh',
-          descriptionEn: 'The principal and most anterior part of the brain in vertebrates.',
-          descriptionFa: 'بخش اصلی سیستم عصبی مرکزی مسئول پردازش اطلاعات حسی، تفکر و کنترل حرکات ارادی.'
-        },
-        geometry: new THREE.SphereGeometry(0.11, 32, 32),
-        color: 0xf472b6,
-        roughness: 0.5,
-        position: [0, 1.68, 0],
-        scale: [0.95, 1.1, 1.2]
-      },
-      {
-        name: 'Spine (Vertebral Column)',
-        structure: {
-          fmaId: 'FMA13478',
-          snomedBodyStructureId: '122494005',
-          nameEn: 'Vertebral Column',
-          nameFa: 'ستون مهره‌ها',
-          systemCategory: 'Skeletal',
-          genderModel: 'both',
-          meshNodeName: 'Spine_Mesh',
-          descriptionEn: 'The flexible column extending from neck to tail, made of interconnected vertebrae.',
-          descriptionFa: 'محور اسکلتی بدن محافظت‌کننده از نخاع و نگهدارنده قامت.'
-        },
-        geometry: new THREE.CylinderGeometry(0.025, 0.035, 0.65, 16),
-        color: 0xf1f5f9,
-        roughness: 0.3,
-        position: [0, 1.25, -0.06]
-      },
-      {
-        name: 'Femur (Right Thigh)',
-        structure: {
-          fmaId: 'FMA9915',
-          snomedBodyStructureId: '71341001',
-          nameEn: 'Right Femur',
-          nameFa: 'استخوان ران راست (فمور)',
-          systemCategory: 'Skeletal',
-          genderModel: 'both',
-          meshNodeName: 'Femur_Right_Mesh',
-          descriptionEn: 'The longest, heaviest, and strongest bone in the human body.',
-          descriptionFa: 'بلندترین و مستحکم‌ترین استخوان بدن انسان در اندام تحتانی.'
-        },
-        geometry: new THREE.CylinderGeometry(0.03, 0.035, 0.45, 16),
-        color: 0xf8fafc,
-        roughness: 0.3,
-        position: [0.12, 0.65, 0]
-      },
-      {
-        name: 'Femur (Left Thigh)',
-        structure: {
-          fmaId: 'FMA9916',
-          snomedBodyStructureId: '71341001',
-          nameEn: 'Left Femur',
-          nameFa: 'استخوان ران چپ (فمور)',
-          systemCategory: 'Skeletal',
-          genderModel: 'both',
-          meshNodeName: 'Femur_Left_Mesh',
-          descriptionEn: 'The longest, heaviest, and strongest bone in the human body.',
-          descriptionFa: 'بلندترین و مستحکم‌ترین استخوان بدن انسان در اندام تحتانی.'
-        },
-        geometry: new THREE.CylinderGeometry(0.03, 0.035, 0.45, 16),
-        color: 0xf8fafc,
-        roughness: 0.3,
-        position: [-0.12, 0.65, 0]
-      }
-    ];
+  private buildCatalogMeshes() {
+    (catalogData as RawCatalogItem[]).forEach((item) => {
+      const [minX, minY, minZ, maxX, maxY, maxZ] = item.bbox;
+      const dx = Math.max(maxX - minX, 0.02);
+      const dy = Math.max(maxY - minY, 0.02);
+      const dz = Math.max(maxZ - minZ, 0.02);
+      const centerX = (minX + maxX) / 2;
+      const centerY = (minY + maxY) / 2;
+      const centerZ = (minZ + maxZ) / 2;
 
-    organs.forEach((item) => {
+      let geometry: THREE.BufferGeometry;
+
+      // Select appropriate geometric representation based on anatomical shape
+      if (item.fmaId.includes('SKULL') || item.fmaId === 'FMA5018') {
+        geometry = new THREE.SphereGeometry(Math.max(dx, dz) / 2, 24, 24);
+        geometry.scale(1, dy / Math.max(dx, dz), 1);
+      } else if (item.fmaId === 'FMA7088') {
+        geometry = new THREE.SphereGeometry(dx * 0.9, 24, 24);
+        geometry.scale(1, 1.2, 0.9);
+      } else if (item.systemCategory === 'Skeletal' && dy > dx * 2) {
+        geometry = new THREE.CylinderGeometry(dx / 2.5, dx / 2, dy, 16);
+      } else if (item.systemCategory === 'Respiratory') {
+        geometry = new THREE.CapsuleGeometry(dx / 2, Math.max(dy - dx, 0.05), 12, 24);
+      } else if (item.systemCategory === 'Digestive' && item.fmaId === 'FMA7199') {
+        geometry = new THREE.BoxGeometry(dx, dy, dz);
+      } else {
+        geometry = new THREE.BoxGeometry(dx, dy, dz);
+      }
+
+      const color = SYSTEM_COLORS[item.systemCategory] || 0xcbd5e1;
       const material = new THREE.MeshStandardMaterial({
-        color: item.color,
-        roughness: item.roughness,
+        color: color,
+        roughness: item.systemCategory === 'Skeletal' ? 0.3 : 0.45,
         metalness: 0.1,
         clippingPlanes: [this.clippingPlane],
         clipShadows: true
       });
 
-      const mesh = new THREE.Mesh(item.geometry, material);
-      mesh.position.set(...item.position);
-      if (item.scale) {
-        mesh.scale.set(...item.scale);
-      }
-      mesh.name = item.name;
+      const mesh = new THREE.Mesh(geometry, material);
+      mesh.position.set(centerX, centerY, centerZ);
+      mesh.name = item.nameEn;
+
+      const struct: AnatomicalStructure = {
+        fmaId: item.fmaId,
+        snomedBodyStructureId: item.snomedBodyStructureId,
+        nameEn: item.nameEn,
+        nameFa: item.nameFa,
+        systemCategory: item.systemCategory as AnatomicalStructure['systemCategory'],
+        genderModel: item.genderModel as 'male' | 'female' | 'both',
+        meshNodeName: item.meshNodeName,
+        descriptionEn: `${item.nameEn} belonging to the ${item.systemCategory} system.`,
+        descriptionFa: `عضو ${item.nameFa} در سیستم ${item.systemCategory} انسان.`
+      };
+
       mesh.userData = {
-        structure: item.structure,
+        structure: struct,
         originalPosition: mesh.position.clone(),
-        systemCategory: item.structure.systemCategory
+        systemCategory: item.systemCategory
       };
 
       this.scene.add(mesh);
@@ -291,17 +192,17 @@ export class AnatomyViewer {
   }
 
   public setExplodeView(factor: number) {
-    const center = new THREE.Vector3(0, 1.2, 0);
+    const center = new THREE.Vector3(0, 1.1, 0);
     this.interactiveMeshes.forEach((mesh) => {
       const original = this.originalPositions.get(mesh.uuid);
       if (!original) return;
       const direction = new THREE.Vector3().subVectors(original, center).normalize();
       const dist = original.distanceTo(center);
-      mesh.position.copy(original).addScaledVector(direction, dist * factor * 1.6);
+      mesh.position.copy(original).addScaledVector(direction, dist * factor * 1.5);
     });
   }
 
-  public setClipping(enabled: boolean, planeY = 1.3) {
+  public setClipping(enabled: boolean, planeY = 1.25) {
     this.clippingEnabled = enabled;
     this.renderer.localClippingEnabled = enabled;
     this.clippingPlane.constant = planeY;
@@ -313,6 +214,17 @@ export class AnatomyViewer {
         mesh.visible = visible;
       }
     });
+  }
+
+  public focusOnStructure(fmaId: string) {
+    const mesh = this.interactiveMeshes.find((m) => m.userData.structure?.fmaId === fmaId);
+    if (mesh) {
+      this.highlightMesh(mesh);
+      if (this.onStructureSelect) {
+        this.onStructureSelect(mesh.userData.structure);
+      }
+      this.controls.target.copy(mesh.position);
+    }
   }
 
   private onPointerDown(event: PointerEvent) {
@@ -328,7 +240,6 @@ export class AnatomyViewer {
       const selectedMesh = intersects[0].object as THREE.Mesh;
       const structure = selectedMesh.userData.structure as AnatomicalStructure;
 
-      // Visual feedback: outline or highlight
       this.highlightMesh(selectedMesh);
 
       if (this.onStructureSelect) {
@@ -342,7 +253,7 @@ export class AnatomyViewer {
       const mat = m.material as THREE.MeshStandardMaterial;
       if (m === mesh) {
         mat.emissive.setHex(0x38bdf8);
-        mat.emissiveIntensity = 0.4;
+        mat.emissiveIntensity = 0.5;
       } else {
         mat.emissive.setHex(0x000000);
         mat.emissiveIntensity = 0.0;
