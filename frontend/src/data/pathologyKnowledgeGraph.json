@@ -1,0 +1,736 @@
+{
+  "FMA7163": {
+    "fmaId": "FMA7163",
+    "nameEn": "Skin of body",
+    "nameFa": "پوست کل بدن",
+    "snomedRootId": "39937001",
+    "disorders": [
+      {
+        "snomedDisorderId": "126906006",
+        "icd10Code": "C50.9",
+        "icdoTopographyCode": "C50.9",
+        "orphanCode": null,
+        "fsnEn": "Neoplasm of breast (disorder)",
+        "preferredTermFa": "تومور پستان",
+        "clinicalDepartment": "انکولوژی",
+        "etiologyCategory": "ژنتیکی / محیطی",
+        "associatedMorphologyId": "108369006",
+        "clinicalCourse": "مزمن پیش‌رونده",
+        "visualPresetType": "procedural_mass",
+        "descriptionFa": "تومور پستان (Neoplasm of breast (disorder)) با کد بین‌المللی C50.9 در دپارتمان انکولوژی."
+      }
+    ]
+  },
+  "FMA13478": {
+    "fmaId": "FMA13478",
+    "nameEn": "Cervical vertebral column",
+    "nameFa": "ستون مهره‌های گردنی (C1-C7)",
+    "snomedRootId": "122494005",
+    "disorders": [
+      {
+        "snomedDisorderId": "93870000",
+        "icd10Code": "S32.1",
+        "icdoTopographyCode": null,
+        "orphanCode": null,
+        "fsnEn": "Fracture of sacrum (disorder)",
+        "preferredTermFa": "شکستگی استخوان خاجی (ساکروم)",
+        "clinicalDepartment": "ارتوپدی",
+        "etiologyCategory": "سقوط از بلندی یا تصادفات جاده‌ای لگن",
+        "associatedMorphologyId": "35917007",
+        "clinicalCourse": "حاد دردناک",
+        "visualPresetType": "rig_fracture",
+        "descriptionFa": "شکستگی استخوان خاجی (ساکروم) (Fracture of sacrum (disorder)) با کد بین‌المللی S32.1 در دپارتمان ارتوپدی."
+      },
+      {
+        "snomedDisorderId": "263223001",
+        "icd10Code": "S32.2",
+        "icdoTopographyCode": null,
+        "orphanCode": null,
+        "fsnEn": "Fracture of coccyx (disorder)",
+        "preferredTermFa": "شکستگی دنبالچه (کوکسیکس)",
+        "clinicalDepartment": "ارتوپدی",
+        "etiologyCategory": "ضربه مستقیم به ناحیه نشیمنگاه",
+        "associatedMorphologyId": "35917007",
+        "clinicalCourse": "حاد دنبالچه‌درد (کوکسیدینی)",
+        "visualPresetType": "rig_fracture",
+        "descriptionFa": "شکستگی دنبالچه (کوکسیکس) (Fracture of coccyx (disorder)) با کد بین‌المللی S32.2 در دپارتمان ارتوپدی."
+      },
+      {
+        "snomedDisorderId": "202722002",
+        "icd10Code": "M51.2",
+        "icdoTopographyCode": null,
+        "orphanCode": null,
+        "fsnEn": "Herniation of intervertebral disc (disorder)",
+        "preferredTermFa": "فتق دیسک بین‌مهره‌ای کمری",
+        "clinicalDepartment": "جراحی اعصاب و ارتوپدی",
+        "etiologyCategory": "پارگی آنولوس فیبروزوس ناشی از فشار مکانیکی",
+        "associatedMorphologyId": "44054006",
+        "clinicalCourse": "مزمن عودکننده",
+        "visualPresetType": "morph_atrophy",
+        "descriptionFa": "فتق دیسک بین‌مهره‌ای کمری (Herniation of intervertebral disc (disorder)) با کد بین‌المللی M51.2 در دپارتمان جراحی اعصاب و ارتوپدی."
+      }
+    ]
+  },
+  "FMA13480": {
+    "fmaId": "FMA13480",
+    "nameEn": "Lumbar vertebral column",
+    "nameFa": "ستون مهره‌های کمری (L1-L5)",
+    "snomedRootId": "122496007",
+    "disorders": [
+      {
+        "snomedDisorderId": "202722002",
+        "icd10Code": "M51.2",
+        "icdoTopographyCode": null,
+        "orphanCode": null,
+        "fsnEn": "Herniation of intervertebral disc (disorder)",
+        "preferredTermFa": "فتق دیسک بین‌مهره‌ای کمری",
+        "clinicalDepartment": "جراحی اعصاب و ارتوپدی",
+        "etiologyCategory": "پارگی آنولوس فیبروزوس ناشی از فشار مکانیکی",
+        "associatedMorphologyId": "44054006",
+        "clinicalCourse": "مزمن عودکننده",
+        "visualPresetType": "morph_atrophy",
+        "descriptionFa": "فتق دیسک بین‌مهره‌ای کمری (Herniation of intervertebral disc (disorder)) با کد بین‌المللی M51.2 در دپارتمان جراحی اعصاب و ارتوپدی."
+      }
+    ]
+  },
+  "FMA16202": {
+    "fmaId": "FMA16202",
+    "nameEn": "Sacrum",
+    "nameFa": "استخوان خاجی (ساکروم)",
+    "snomedRootId": "54735007",
+    "disorders": [
+      {
+        "snomedDisorderId": "93870000",
+        "icd10Code": "S32.1",
+        "icdoTopographyCode": null,
+        "orphanCode": null,
+        "fsnEn": "Fracture of sacrum (disorder)",
+        "preferredTermFa": "شکستگی استخوان خاجی (ساکروم)",
+        "clinicalDepartment": "ارتوپدی",
+        "etiologyCategory": "سقوط از بلندی یا تصادفات جاده‌ای لگن",
+        "associatedMorphologyId": "35917007",
+        "clinicalCourse": "حاد دردناک",
+        "visualPresetType": "rig_fracture",
+        "descriptionFa": "شکستگی استخوان خاجی (ساکروم) (Fracture of sacrum (disorder)) با کد بین‌المللی S32.1 در دپارتمان ارتوپدی."
+      },
+      {
+        "snomedDisorderId": "263223001",
+        "icd10Code": "S32.2",
+        "icdoTopographyCode": null,
+        "orphanCode": null,
+        "fsnEn": "Fracture of coccyx (disorder)",
+        "preferredTermFa": "شکستگی دنبالچه (کوکسیکس)",
+        "clinicalDepartment": "ارتوپدی",
+        "etiologyCategory": "ضربه مستقیم به ناحیه نشیمنگاه",
+        "associatedMorphologyId": "35917007",
+        "clinicalCourse": "حاد دنبالچه‌درد (کوکسیدینی)",
+        "visualPresetType": "rig_fracture",
+        "descriptionFa": "شکستگی دنبالچه (کوکسیکس) (Fracture of coccyx (disorder)) با کد بین‌المللی S32.2 در دپارتمان ارتوپدی."
+      }
+    ]
+  },
+  "FMA16203": {
+    "fmaId": "FMA16203",
+    "nameEn": "Coccyx",
+    "nameFa": "استخوان دنبالچه (کوکسیکس)",
+    "snomedRootId": "64688005",
+    "disorders": [
+      {
+        "snomedDisorderId": "263223001",
+        "icd10Code": "S32.2",
+        "icdoTopographyCode": null,
+        "orphanCode": null,
+        "fsnEn": "Fracture of coccyx (disorder)",
+        "preferredTermFa": "شکستگی دنبالچه (کوکسیکس)",
+        "clinicalDepartment": "ارتوپدی",
+        "etiologyCategory": "ضربه مستقیم به ناحیه نشیمنگاه",
+        "associatedMorphologyId": "35917007",
+        "clinicalCourse": "حاد دنبالچه‌درد (کوکسیدینی)",
+        "visualPresetType": "rig_fracture",
+        "descriptionFa": "شکستگی دنبالچه (کوکسیکس) (Fracture of coccyx (disorder)) با کد بین‌المللی S32.2 در دپارتمان ارتوپدی."
+      }
+    ]
+  },
+  "FMA9915": {
+    "fmaId": "FMA9915",
+    "nameEn": "Femur (Thigh bone)",
+    "nameFa": "استخوان ران (فمور)",
+    "snomedRootId": "71341001",
+    "disorders": [
+      {
+        "snomedDisorderId": "31261009",
+        "icd10Code": "S72.9",
+        "icdoTopographyCode": null,
+        "orphanCode": null,
+        "fsnEn": "Fracture of femur (disorder)",
+        "preferredTermFa": "شکستگی استخوان ران (فمور)",
+        "clinicalDepartment": "ارتوپدی و تروما",
+        "etiologyCategory": "ترومای مکانیکی سنگین یا پوکی استخوان",
+        "associatedMorphologyId": "35917007",
+        "clinicalCourse": "حاد با ریسک خونریزی داخلی",
+        "visualPresetType": "rig_fracture",
+        "descriptionFa": "شکستگی استخوان ران (فمور) (Fracture of femur (disorder)) با کد بین‌المللی S72.9 در دپارتمان ارتوپدی و تروما."
+      },
+      {
+        "snomedDisorderId": "399261000",
+        "icd10Code": "M81.9",
+        "icdoTopographyCode": null,
+        "orphanCode": null,
+        "fsnEn": "Osteoporosis (disorder)",
+        "preferredTermFa": "پوکی استخوان (استئوپروز)",
+        "clinicalDepartment": "ارتوپدی و غدد",
+        "etiologyCategory": "کاهش استروژن پس از یائسگی یا افزایش سن",
+        "associatedMorphologyId": "44054006",
+        "clinicalCourse": "مزمن خاموش",
+        "visualPresetType": "morph_atrophy",
+        "descriptionFa": "پوکی استخوان (استئوپروز) (Osteoporosis (disorder)) با کد بین‌المللی M81.9 در دپارتمان ارتوپدی و غدد."
+      }
+    ]
+  },
+  "FMA7088": {
+    "fmaId": "FMA7088",
+    "nameEn": "Heart",
+    "nameFa": "قلب",
+    "snomedRootId": "302551006",
+    "disorders": [
+      {
+        "snomedDisorderId": "301011002",
+        "icd10Code": "I33.0",
+        "icdoTopographyCode": null,
+        "orphanCode": null,
+        "fsnEn": "Acute infective endocarditis (disorder)",
+        "preferredTermFa": "اندوکاردیت عفونی حاد",
+        "clinicalDepartment": "کاردیولوژی",
+        "etiologyCategory": "عفونت باکتریایی (استافیلوکوک/استرپتوکوک)",
+        "associatedMorphologyId": "56246009",
+        "clinicalCourse": "حاد سپتیک",
+        "visualPresetType": "procedural_mass",
+        "descriptionFa": "اندوکاردیت عفونی حاد (Acute infective endocarditis (disorder)) با کد بین‌المللی I33.0 در دپارتمان کاردیولوژی."
+      },
+      {
+        "snomedDisorderId": "22298006",
+        "icd10Code": "I21.9",
+        "icdoTopographyCode": null,
+        "orphanCode": null,
+        "fsnEn": "Myocardial infarction (disorder)",
+        "preferredTermFa": "سکته قلبی (انفارکتوس حاد میوکارد)",
+        "clinicalDepartment": "کاردیولوژی",
+        "etiologyCategory": "عروقی و ایسکمیک",
+        "associatedMorphologyId": "26036001",
+        "clinicalCourse": "حاد شدید",
+        "visualPresetType": "pbr_ischemia",
+        "descriptionFa": "سکته قلبی (انفارکتوس حاد میوکارد) (Myocardial infarction (disorder)) با کد بین‌المللی I21.9 در دپارتمان کاردیولوژی."
+      },
+      {
+        "snomedDisorderId": "427396001",
+        "icd10Code": "I21.1",
+        "icdoTopographyCode": null,
+        "orphanCode": null,
+        "fsnEn": "Acute myocardial infarction of inferior wall (disorder)",
+        "preferredTermFa": "سکته قلبی دیواره تحتانی بطن چپ",
+        "clinicalDepartment": "کاردیولوژی",
+        "etiologyCategory": "عروقی (انسداد شریان کرونری راست)",
+        "associatedMorphologyId": "26036001",
+        "clinicalCourse": "حاد تهدیدکننده حیات",
+        "visualPresetType": "pbr_ischemia",
+        "descriptionFa": "سکته قلبی دیواره تحتانی بطن چپ (Acute myocardial infarction of inferior wall (disorder)) با کد بین‌المللی I21.1 در دپارتمان کاردیولوژی."
+      },
+      {
+        "snomedDisorderId": "371041009",
+        "icd10Code": "I30.9",
+        "icdoTopographyCode": null,
+        "orphanCode": null,
+        "fsnEn": "Acute pericarditis (disorder)",
+        "preferredTermFa": "پریکاردیت حاد (التهاب پیراشامه قلب)",
+        "clinicalDepartment": "کاردیولوژی",
+        "etiologyCategory": "عفونی (ویروسی) یا خودایمنی",
+        "associatedMorphologyId": "56246009",
+        "clinicalCourse": "حاد دردناک",
+        "visualPresetType": "pbr_inflammation",
+        "descriptionFa": "پریکاردیت حاد (التهاب پیراشامه قلب) (Acute pericarditis (disorder)) با کد بین‌المللی I30.9 در دپارتمان کاردیولوژی."
+      },
+      {
+        "snomedDisorderId": "89138009",
+        "icd10Code": "I42.0",
+        "icdoTopographyCode": null,
+        "orphanCode": "ORPHA:217604",
+        "fsnEn": "Dilated cardiomyopathy (disorder)",
+        "preferredTermFa": "کاردیومیوپاتی اتساعی (گشادی حفرات قلب)",
+        "clinicalDepartment": "کاردیولوژی",
+        "etiologyCategory": "ژنتیکی، الکلی یا توکسیک",
+        "associatedMorphologyId": "44054006",
+        "clinicalCourse": "مزمن پیش‌رونده",
+        "visualPresetType": "morph_atrophy",
+        "descriptionFa": "کاردیومیوپاتی اتساعی (گشادی حفرات قلب) (Dilated cardiomyopathy (disorder)) با کد بین‌المللی I42.0 در دپارتمان کاردیولوژی."
+      }
+    ]
+  },
+  "FMA7197": {
+    "fmaId": "FMA7197",
+    "nameEn": "Heart muscle structure (Myocardium)",
+    "nameFa": "عضله قلب (میوکارد)",
+    "snomedRootId": "80891009",
+    "disorders": [
+      {
+        "snomedDisorderId": "22298006",
+        "icd10Code": "I21.9",
+        "icdoTopographyCode": null,
+        "orphanCode": null,
+        "fsnEn": "Myocardial infarction (disorder)",
+        "preferredTermFa": "سکته قلبی (انفارکتوس حاد میوکارد)",
+        "clinicalDepartment": "کاردیولوژی",
+        "etiologyCategory": "عروقی و ایسکمیک",
+        "associatedMorphologyId": "26036001",
+        "clinicalCourse": "حاد شدید",
+        "visualPresetType": "pbr_ischemia",
+        "descriptionFa": "سکته قلبی (انفارکتوس حاد میوکارد) (Myocardial infarction (disorder)) با کد بین‌المللی I21.9 در دپارتمان کاردیولوژی."
+      },
+      {
+        "snomedDisorderId": "427396001",
+        "icd10Code": "I21.1",
+        "icdoTopographyCode": null,
+        "orphanCode": null,
+        "fsnEn": "Acute myocardial infarction of inferior wall (disorder)",
+        "preferredTermFa": "سکته قلبی دیواره تحتانی بطن چپ",
+        "clinicalDepartment": "کاردیولوژی",
+        "etiologyCategory": "عروقی (انسداد شریان کرونری راست)",
+        "associatedMorphologyId": "26036001",
+        "clinicalCourse": "حاد تهدیدکننده حیات",
+        "visualPresetType": "pbr_ischemia",
+        "descriptionFa": "سکته قلبی دیواره تحتانی بطن چپ (Acute myocardial infarction of inferior wall (disorder)) با کد بین‌المللی I21.1 در دپارتمان کاردیولوژی."
+      }
+    ]
+  },
+  "FMA7165": {
+    "fmaId": "FMA7165",
+    "nameEn": "Aorta",
+    "nameFa": "سرخرگ آئورت",
+    "snomedRootId": "15825003",
+    "disorders": [
+      {
+        "snomedDisorderId": "67362008",
+        "icd10Code": "I71.4",
+        "icdoTopographyCode": null,
+        "orphanCode": null,
+        "fsnEn": "Aortic aneurysm (disorder)",
+        "preferredTermFa": "آنوریسم آئورت شکمی و سینه‌ای",
+        "clinicalDepartment": "کاردیولوژی و جراحی عروق",
+        "etiologyCategory": "آترواسکلروز و دژنراسیون بافت الاستیک",
+        "associatedMorphologyId": "44054006",
+        "clinicalCourse": "مزمن با ریسک پارگی حاد",
+        "visualPresetType": "morph_atrophy",
+        "descriptionFa": "آنوریسم آئورت شکمی و سینه‌ای (Aortic aneurysm (disorder)) با کد بین‌المللی I71.4 در دپارتمان کاردیولوژی و جراحی عروق."
+      }
+    ]
+  },
+  "FMA7195": {
+    "fmaId": "FMA7195",
+    "nameEn": "Right lung",
+    "nameFa": "ریه راست",
+    "snomedRootId": "181216001",
+    "disorders": [
+      {
+        "snomedDisorderId": "363358000",
+        "icd10Code": "C34.9",
+        "icdoTopographyCode": "C34.9",
+        "orphanCode": "ORPHA:252199",
+        "fsnEn": "Malignant neoplasm of bronchus and lung",
+        "preferredTermFa": "سرطان بدخیم برونکوس و ریه",
+        "clinicalDepartment": "انکولوژی و ریه",
+        "etiologyCategory": "دخانیات، آزبست و جهش‌های انکوژنی EGFR/KRAS",
+        "associatedMorphologyId": "108369006",
+        "clinicalCourse": "مزمن پیش‌رونده",
+        "visualPresetType": "procedural_mass",
+        "descriptionFa": "سرطان بدخیم برونکوس و ریه (Malignant neoplasm of bronchus and lung) با کد بین‌المللی C34.9 در دپارتمان انکولوژی و ریه."
+      },
+      {
+        "snomedDisorderId": "195967001",
+        "icd10Code": "J44.9",
+        "icdoTopographyCode": null,
+        "orphanCode": null,
+        "fsnEn": "Chronic obstructive pulmonary disease",
+        "preferredTermFa": "بیماری انسدادی مزمن ریه (COPD)",
+        "clinicalDepartment": "ریه",
+        "etiologyCategory": "استنشاق طولانی‌مدت دود سیگار و ذرات آلاینده",
+        "associatedMorphologyId": "44054006",
+        "clinicalCourse": "مزمن غیرقابل بازگشت",
+        "visualPresetType": "morph_atrophy",
+        "descriptionFa": "بیماری انسدادی مزمن ریه (COPD) (Chronic obstructive pulmonary disease) با کد بین‌المللی J44.9 در دپارتمان ریه."
+      },
+      {
+        "snomedDisorderId": "233604007",
+        "icd10Code": "J18.9",
+        "icdoTopographyCode": null,
+        "orphanCode": null,
+        "fsnEn": "Pneumonia (disorder)",
+        "preferredTermFa": "سینه‌پهلو (پنومونی ریه)",
+        "clinicalDepartment": "ریه و عفونی",
+        "etiologyCategory": "عفونت باکتریایی (استرپتوکوک پنومونیه) یا ویروسی",
+        "associatedMorphologyId": "56246009",
+        "clinicalCourse": "حاد تب‌دار",
+        "visualPresetType": "pbr_inflammation",
+        "descriptionFa": "سینه‌پهلو (پنومونی ریه) (Pneumonia (disorder)) با کد بین‌المللی J18.9 در دپارتمان ریه و عفونی."
+      }
+    ]
+  },
+  "FMA7196": {
+    "fmaId": "FMA7196",
+    "nameEn": "Left lung",
+    "nameFa": "ریه چپ",
+    "snomedRootId": "181217005",
+    "disorders": [
+      {
+        "snomedDisorderId": "363358000",
+        "icd10Code": "C34.9",
+        "icdoTopographyCode": "C34.9",
+        "orphanCode": "ORPHA:252199",
+        "fsnEn": "Malignant neoplasm of bronchus and lung",
+        "preferredTermFa": "سرطان بدخیم برونکوس و ریه",
+        "clinicalDepartment": "انکولوژی و ریه",
+        "etiologyCategory": "دخانیات، آزبست و جهش‌های انکوژنی EGFR/KRAS",
+        "associatedMorphologyId": "108369006",
+        "clinicalCourse": "مزمن پیش‌رونده",
+        "visualPresetType": "procedural_mass",
+        "descriptionFa": "سرطان بدخیم برونکوس و ریه (Malignant neoplasm of bronchus and lung) با کد بین‌المللی C34.9 در دپارتمان انکولوژی و ریه."
+      },
+      {
+        "snomedDisorderId": "233604007",
+        "icd10Code": "J18.9",
+        "icdoTopographyCode": null,
+        "orphanCode": null,
+        "fsnEn": "Pneumonia (disorder)",
+        "preferredTermFa": "سینه‌پهلو (پنومونی ریه)",
+        "clinicalDepartment": "ریه و عفونی",
+        "etiologyCategory": "عفونت باکتریایی (استرپتوکوک پنومونیه) یا ویروسی",
+        "associatedMorphologyId": "56246009",
+        "clinicalCourse": "حاد تب‌دار",
+        "visualPresetType": "pbr_inflammation",
+        "descriptionFa": "سینه‌پهلو (پنومونی ریه) (Pneumonia (disorder)) با کد بین‌المللی J18.9 در دپارتمان ریه و عفونی."
+      }
+    ]
+  },
+  "FMA7199": {
+    "fmaId": "FMA7199",
+    "nameEn": "Liver",
+    "nameFa": "کبد",
+    "snomedRootId": "181277001",
+    "disorders": [
+      {
+        "snomedDisorderId": "109841003",
+        "icd10Code": "C22.0",
+        "icdoTopographyCode": "C22.0",
+        "orphanCode": "ORPHA:88673",
+        "fsnEn": "Hepatocellular carcinoma (disorder)",
+        "preferredTermFa": "کارسینوم هپاتوسلولار (سرطان کبد)",
+        "clinicalDepartment": "انکولوژی و گوارش",
+        "etiologyCategory": "سیروز زمینه‌ای و عفونت‌های مزمن ویروسی",
+        "associatedMorphologyId": "108369006",
+        "clinicalCourse": "مزمن تهاجمی",
+        "visualPresetType": "procedural_mass",
+        "descriptionFa": "کارسینوم هپاتوسلولار (سرطان کبد) (Hepatocellular carcinoma (disorder)) با کد بین‌المللی C22.0 در دپارتمان انکولوژی و گوارش."
+      },
+      {
+        "snomedDisorderId": "203358004",
+        "icd10Code": "K83.0",
+        "icdoTopographyCode": null,
+        "orphanCode": null,
+        "fsnEn": "Ascending cholangitis (disorder)",
+        "preferredTermFa": "کلانژیت صعودی حاد مجاری صفراوی",
+        "clinicalDepartment": "گوارش و جراحی",
+        "etiologyCategory": "انسداد مجرا با سنگ صفراوی و تکثیر باکتری‌ها",
+        "associatedMorphologyId": "56246009",
+        "clinicalCourse": "فوق حاد شوک‌زا",
+        "visualPresetType": "pbr_inflammation",
+        "descriptionFa": "کلانژیت صعودی حاد مجاری صفراوی (Ascending cholangitis (disorder)) با کد بین‌المللی K83.0 در دپارتمان گوارش و جراحی."
+      },
+      {
+        "snomedDisorderId": "56246009_LIVER",
+        "icd10Code": "K75.9",
+        "icdoTopographyCode": null,
+        "orphanCode": null,
+        "fsnEn": "Inflammatory liver disease (disorder)",
+        "preferredTermFa": "بیماری التهابی کبد (هپاتیت حاد)",
+        "clinicalDepartment": "گوارش و کبد",
+        "etiologyCategory": "عفونی (ویروس‌های هپاتیت) یا دارویی",
+        "associatedMorphologyId": "56246009",
+        "clinicalCourse": "حاد با ریسک مزمن شدن",
+        "visualPresetType": "pbr_inflammation",
+        "descriptionFa": "بیماری التهابی کبد (هپاتیت حاد) (Inflammatory liver disease (disorder)) با کد بین‌المللی K75.9 در دپارتمان گوارش و کبد."
+      },
+      {
+        "snomedDisorderId": "197365007",
+        "icd10Code": "K74.6",
+        "icdoTopographyCode": null,
+        "orphanCode": null,
+        "fsnEn": "Cirrhosis of liver (disorder)",
+        "preferredTermFa": "سیروز و فیبروز کبدی پیشرفته",
+        "clinicalDepartment": "گوارش و کبد",
+        "etiologyCategory": "الکلی، کبد چرب غیرالکلی (NASH) یا هپاتیت مزمن",
+        "associatedMorphologyId": "44054006",
+        "clinicalCourse": "مزمن مرحله نهایی",
+        "visualPresetType": "morph_atrophy",
+        "descriptionFa": "سیروز و فیبروز کبدی پیشرفته (Cirrhosis of liver (disorder)) با کد بین‌المللی K74.6 در دپارتمان گوارش و کبد."
+      }
+    ]
+  },
+  "FMA7202": {
+    "fmaId": "FMA7202",
+    "nameEn": "Gallbladder",
+    "nameFa": "کیسه صفرا",
+    "snomedRootId": "28231008",
+    "disorders": [
+      {
+        "snomedDisorderId": "235595009",
+        "icd10Code": "K81.0",
+        "icdoTopographyCode": null,
+        "orphanCode": null,
+        "fsnEn": "Acute cholecystitis (disorder)",
+        "preferredTermFa": "کوله سیستیت حاد (التهاب کیسه صفرا)",
+        "clinicalDepartment": "گوارش و جراحی",
+        "etiologyCategory": "انسداد مجرای سیستیک توسط سنگ صفراوی",
+        "associatedMorphologyId": "56246009",
+        "clinicalCourse": "حاد التهابی",
+        "visualPresetType": "pbr_inflammation",
+        "descriptionFa": "کوله سیستیت حاد (التهاب کیسه صفرا) (Acute cholecystitis (disorder)) با کد بین‌المللی K81.0 در دپارتمان گوارش و جراحی."
+      }
+    ]
+  },
+  "FMA14654": {
+    "fmaId": "FMA14654",
+    "nameEn": "Common hepatic duct",
+    "nameFa": "مجرای کبدی مشترک",
+    "snomedRootId": "75772009",
+    "disorders": [
+      {
+        "snomedDisorderId": "203358004",
+        "icd10Code": "K83.0",
+        "icdoTopographyCode": null,
+        "orphanCode": null,
+        "fsnEn": "Ascending cholangitis (disorder)",
+        "preferredTermFa": "کلانژیت صعودی حاد مجاری صفراوی",
+        "clinicalDepartment": "گوارش و جراحی",
+        "etiologyCategory": "انسداد مجرا با سنگ صفراوی و تکثیر باکتری‌ها",
+        "associatedMorphologyId": "56246009",
+        "clinicalCourse": "فوق حاد شوک‌زا",
+        "visualPresetType": "pbr_inflammation",
+        "descriptionFa": "کلانژیت صعودی حاد مجاری صفراوی (Ascending cholangitis (disorder)) با کد بین‌المللی K83.0 در دپارتمان گوارش و جراحی."
+      }
+    ]
+  },
+  "FMA7148": {
+    "fmaId": "FMA7148",
+    "nameEn": "Stomach",
+    "nameFa": "معده",
+    "snomedRootId": "69695003",
+    "disorders": [
+      {
+        "snomedDisorderId": "397825006",
+        "icd10Code": "K25.9",
+        "icdoTopographyCode": null,
+        "orphanCode": null,
+        "fsnEn": "Gastric ulcer (disorder)",
+        "preferredTermFa": "زخم پپتیک معده",
+        "clinicalDepartment": "گوارش",
+        "etiologyCategory": "عفونت هلیکوباکتر پیلوری یا مصرف طولانی NSAID",
+        "associatedMorphologyId": "56246009",
+        "clinicalCourse": "مزمن همراه با خونریزی حاد",
+        "visualPresetType": "pbr_inflammation",
+        "descriptionFa": "زخم پپتیک معده (Gastric ulcer (disorder)) با کد بین‌المللی K25.9 در دپارتمان گوارش."
+      }
+    ]
+  },
+  "FMA7198": {
+    "fmaId": "FMA7198",
+    "nameEn": "Pancreas",
+    "nameFa": "لوزالمعده (پانکراس)",
+    "snomedRootId": "15776009",
+    "disorders": [
+      {
+        "snomedDisorderId": "44054006",
+        "icd10Code": "E11.9",
+        "icdoTopographyCode": null,
+        "orphanCode": null,
+        "fsnEn": "Type 2 diabetes mellitus (disorder)",
+        "preferredTermFa": "دیابت قندی نوع ۲",
+        "clinicalDepartment": "غدد و متابولیسم",
+        "etiologyCategory": "مقاومت به انسولین و نقص ترشحی سلول‌های بتای پانکراس",
+        "associatedMorphologyId": "44054006",
+        "clinicalCourse": "مزمن مادام‌العمر",
+        "visualPresetType": "morph_atrophy",
+        "descriptionFa": "دیابت قندی نوع ۲ (Type 2 diabetes mellitus (disorder)) با کد بین‌المللی E11.9 در دپارتمان غدد و متابولیسم."
+      },
+      {
+        "snomedDisorderId": "75694006",
+        "icd10Code": "K85.9",
+        "icdoTopographyCode": null,
+        "orphanCode": null,
+        "fsnEn": "Acute pancreatitis (disorder)",
+        "preferredTermFa": "پانکراتیت حاد (التهاب لوزالمعده)",
+        "clinicalDepartment": "گوارش و مراقبت‌های ویژه",
+        "etiologyCategory": "سنگ‌های صفراوی، الکل یا هیپرتری‌گلیسریدمی",
+        "associatedMorphologyId": "26036001",
+        "clinicalCourse": "حاد بسیار شدید",
+        "visualPresetType": "pbr_ischemia",
+        "descriptionFa": "پانکراتیت حاد (التهاب لوزالمعده) (Acute pancreatitis (disorder)) با کد بین‌المللی K85.9 در دپارتمان گوارش و مراقبت‌های ویژه."
+      }
+    ]
+  },
+  "FMA5018": {
+    "fmaId": "FMA5018",
+    "nameEn": "Cerebrum (Brain)",
+    "nameFa": "نیمکره‌های مخ (مغز)",
+    "snomedRootId": "113105001",
+    "disorders": [
+      {
+        "snomedDisorderId": "26929004",
+        "icd10Code": "C71.9",
+        "icdoTopographyCode": "C71.9",
+        "orphanCode": "ORPHA:360",
+        "fsnEn": "Glioblastoma multiforme (disorder)",
+        "preferredTermFa": "گلیوبلاستوم مولتی‌فرم (تومور بدخیم مغز)",
+        "clinicalDepartment": "انکولوژی و جراحی اعصاب",
+        "etiologyCategory": "ژنتیکی و موتاسیون انکوژنیک آستروسیت‌ها",
+        "associatedMorphologyId": "108369006",
+        "clinicalCourse": "فوق حاد پیش‌رونده",
+        "visualPresetType": "procedural_mass",
+        "descriptionFa": "گلیوبلاستوم مولتی‌فرم (تومور بدخیم مغز) (Glioblastoma multiforme (disorder)) با کد بین‌المللی C71.9 در دپارتمان انکولوژی و جراحی اعصاب."
+      },
+      {
+        "snomedDisorderId": "24700007",
+        "icd10Code": "G20",
+        "icdoTopographyCode": null,
+        "orphanCode": "ORPHA:2828",
+        "fsnEn": "Parkinson's disease (disorder)",
+        "preferredTermFa": "بیماری پارکینسون",
+        "clinicalDepartment": "نورولوژی",
+        "etiologyCategory": "تخریب دوپامینرژیک عقده‌های قاعده‌ای",
+        "associatedMorphologyId": "44054006",
+        "clinicalCourse": "مزمن پیش‌رونده",
+        "visualPresetType": "morph_atrophy",
+        "descriptionFa": "بیماری پارکینسون (Parkinson's disease (disorder)) با کد بین‌المللی G20 در دپارتمان نورولوژی."
+      },
+      {
+        "snomedDisorderId": "230690007",
+        "icd10Code": "I63.9",
+        "icdoTopographyCode": null,
+        "orphanCode": null,
+        "fsnEn": "Cerebral infarction (disorder)",
+        "preferredTermFa": "سکته مغزی ایسکمیک (انفارکتوس مغز)",
+        "clinicalDepartment": "نورولوژی",
+        "etiologyCategory": "انسداد ترومبوتیک یا امبولیک شریان مغزی",
+        "associatedMorphologyId": "26036001",
+        "clinicalCourse": "حاد ناگهانی",
+        "visualPresetType": "pbr_ischemia",
+        "descriptionFa": "سکته مغزی ایسکمیک (انفارکتوس مغز) (Cerebral infarction (disorder)) با کد بین‌المللی I63.9 در دپارتمان نورولوژی."
+      },
+      {
+        "snomedDisorderId": "19262005",
+        "icd10Code": "G00.9",
+        "icdoTopographyCode": null,
+        "orphanCode": null,
+        "fsnEn": "Bacterial meningitis (disorder)",
+        "preferredTermFa": "مننژیت باکتریایی حاد",
+        "clinicalDepartment": "نورولوژی و عفونی",
+        "etiologyCategory": "عفونت مننگوکوک یا پنوموکوک",
+        "associatedMorphologyId": "56246009",
+        "clinicalCourse": "حاد اورژانسی",
+        "visualPresetType": "pbr_inflammation",
+        "descriptionFa": "مننژیت باکتریایی حاد (Bacterial meningitis (disorder)) با کد بین‌المللی G00.9 در دپارتمان نورولوژی و عفونی."
+      }
+    ]
+  },
+  "FMA7201_R": {
+    "fmaId": "FMA7201_R",
+    "nameEn": "Right kidney",
+    "nameFa": "کلیه راست",
+    "snomedRootId": "59652004",
+    "disorders": [
+      {
+        "snomedDisorderId": "41607009",
+        "icd10Code": "C64",
+        "icdoTopographyCode": "C64.9",
+        "orphanCode": "ORPHA:217071",
+        "fsnEn": "Renal cell carcinoma (disorder)",
+        "preferredTermFa": "سرطان سلول کلیوی (تومور بدخیم کلیه)",
+        "clinicalDepartment": "انکولوژی و ارولوژی",
+        "etiologyCategory": "جهش ژن VHL و استعمال دخانیات",
+        "associatedMorphologyId": "108369006",
+        "clinicalCourse": "مزمن تهاجمی",
+        "visualPresetType": "procedural_mass",
+        "descriptionFa": "سرطان سلول کلیوی (تومور بدخیم کلیه) (Renal cell carcinoma (disorder)) با کد بین‌المللی C64 در دپارتمان انکولوژی و ارولوژی."
+      },
+      {
+        "snomedDisorderId": "36171008",
+        "icd10Code": "N00.9",
+        "icdoTopographyCode": null,
+        "orphanCode": null,
+        "fsnEn": "Acute glomerulonephritis (disorder)",
+        "preferredTermFa": "گلومرولونفریت حاد کلیه",
+        "clinicalDepartment": "نفرولوژی",
+        "etiologyCategory": "واکنش ایمنی پس از عفونت استرپتوکوکی",
+        "associatedMorphologyId": "56246009",
+        "clinicalCourse": "حاد اورمی",
+        "visualPresetType": "pbr_inflammation",
+        "descriptionFa": "گلومرولونفریت حاد کلیه (Acute glomerulonephritis (disorder)) با کد بین‌المللی N00.9 در دپارتمان نفرولوژی."
+      }
+    ]
+  },
+  "FMA7201_L": {
+    "fmaId": "FMA7201_L",
+    "nameEn": "Left kidney",
+    "nameFa": "کلیه چپ",
+    "snomedRootId": "18639004",
+    "disorders": [
+      {
+        "snomedDisorderId": "41607009",
+        "icd10Code": "C64",
+        "icdoTopographyCode": "C64.9",
+        "orphanCode": "ORPHA:217071",
+        "fsnEn": "Renal cell carcinoma (disorder)",
+        "preferredTermFa": "سرطان سلول کلیوی (تومور بدخیم کلیه)",
+        "clinicalDepartment": "انکولوژی و ارولوژی",
+        "etiologyCategory": "جهش ژن VHL و استعمال دخانیات",
+        "associatedMorphologyId": "108369006",
+        "clinicalCourse": "مزمن تهاجمی",
+        "visualPresetType": "procedural_mass",
+        "descriptionFa": "سرطان سلول کلیوی (تومور بدخیم کلیه) (Renal cell carcinoma (disorder)) با کد بین‌المللی C64 در دپارتمان انکولوژی و ارولوژی."
+      },
+      {
+        "snomedDisorderId": "36171008",
+        "icd10Code": "N00.9",
+        "icdoTopographyCode": null,
+        "orphanCode": null,
+        "fsnEn": "Acute glomerulonephritis (disorder)",
+        "preferredTermFa": "گلومرولونفریت حاد کلیه",
+        "clinicalDepartment": "نفرولوژی",
+        "etiologyCategory": "واکنش ایمنی پس از عفونت استرپتوکوکی",
+        "associatedMorphologyId": "56246009",
+        "clinicalCourse": "حاد اورمی",
+        "visualPresetType": "pbr_inflammation",
+        "descriptionFa": "گلومرولونفریت حاد کلیه (Acute glomerulonephritis (disorder)) با کد بین‌المللی N00.9 در دپارتمان نفرولوژی."
+      }
+    ]
+  },
+  "FMA7150": {
+    "fmaId": "FMA7150",
+    "nameEn": "Thyroid gland",
+    "nameFa": "غده تیروئید",
+    "snomedRootId": "69748006",
+    "disorders": [
+      {
+        "snomedDisorderId": "363478007",
+        "icd10Code": "C73",
+        "icdoTopographyCode": "C73.9",
+        "orphanCode": "ORPHA:100085",
+        "fsnEn": "Malignant neoplasm of thyroid gland",
+        "preferredTermFa": "سرطان بدخیم تیروئید (پاپیلاری/فولیکولار)",
+        "clinicalDepartment": "انکولوژی و غدد",
+        "etiologyCategory": "پرتوگیری یونیزان قبلی و موتاسیون ژن BRAF",
+        "associatedMorphologyId": "108369006",
+        "clinicalCourse": "مزمن گرهی",
+        "visualPresetType": "procedural_mass",
+        "descriptionFa": "سرطان بدخیم تیروئید (پاپیلاری/فولیکولار) (Malignant neoplasm of thyroid gland) با کد بین‌المللی C73 در دپارتمان انکولوژی و غدد."
+      }
+    ]
+  }
+}

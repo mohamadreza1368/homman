@@ -14,11 +14,12 @@ export interface PathologyDisorder {
   snomedDisorderId: string;
   icd10Code?: string;
   icdoTopographyCode?: string;
+  orphanCode?: string;
   fsnEn: string;
   preferredTermFa: string;
   clinicalDepartment: string;
   etiologyCategory: string;
-  findingSiteSnomedId: string;
+  findingSiteSnomedId?: string;
   associatedMorphologyId?: string;
   pathologicalProcessId?: string;
   clinicalCourse?: string;

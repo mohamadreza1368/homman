@@ -70,6 +70,15 @@ export function App() {
             <span className="text-primary font-medium">کلیک: انتخاب عضو و آنالیز بالینی</span>
           </div>
 
+          {/* Phase 3 Stage 2 Active Indicator */}
+          {stage === 2 && (
+            <div className="absolute top-4 left-4 bg-rose-950/80 backdrop-blur-md px-3.5 py-1.5 rounded-lg border border-rose-500/50 text-xs text-rose-200 flex items-center gap-2 shadow-lg animate-in fade-in duration-200">
+              <span className="w-2 h-2 rounded-full bg-rose-500 animate-ping inline-block" />
+              <span className="font-semibold">شبیه‌ساز هوشمند بیماری‌ها فعال است:</span>
+              <span className="font-mono text-[11px] text-rose-300">الگوریتم ANAT • SNOMED CT • ICD-10 • ICD-O</span>
+            </div>
+          )}
+
           {/* Phase 2: Cross Section (3-Axis Clipping Planes) Floating Panel */}
           {showCrossSection && (
             <CrossSectionPanel
