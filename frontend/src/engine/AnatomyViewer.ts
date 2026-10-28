@@ -3,6 +3,20 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { createMedicalAssetLoader } from './AssetLoader';
 import type { AnatomicalStructure, ClippingState, HeartAnimationConfig } from '../types/anatomy';
 import catalogData from '../data/anatomyCatalog.json';
+import {
+  createSkullGeometry,
+  createMandibleGeometry,
+  createSpineSegmentGeometry,
+  createRibCageGeometry,
+  createPelvisGeometry,
+  createLongBoneGeometry,
+  createHeartAnatomyGeometry,
+  createLungAnatomyGeometry,
+  createLiverAnatomyGeometry,
+  createStomachAnatomyGeometry,
+  createKidneyAnatomyGeometry,
+  createBrainAnatomyGeometry,
+} from './AnatomicalMeshes';
 
 export interface ViewerOptions {
   container: HTMLDivElement;
@@ -190,6 +204,11 @@ export class AnatomyViewer {
 
   private buildCatalogMeshes() {
     (catalogData as RawCatalogItem[]).forEach((item) => {
+      // 1. Skip outer skin box (FMA7163) so it does not block the internal anatomical structures!
+      if (item.fmaId === 'FMA7163' || item.systemCategory === 'Integumentary') {
+        return;
+      }
+
       const [minX, minY, minZ, maxX, maxY, maxZ] = item.bbox;
       const dx = Math.max(maxX - minX, 0.02);
       const dy = Math.max(maxY - minY, 0.02);
@@ -200,19 +219,57 @@ export class AnatomyViewer {
 
       let geometry: THREE.BufferGeometry;
 
-      if (item.fmaId.includes('SKULL') || item.fmaId === 'FMA5018') {
-        geometry = new THREE.SphereGeometry(Math.max(dx, dz) / 2, 28, 28);
-        geometry.scale(1, dy / Math.max(dx, dz), 1);
-      } else if (item.fmaId === 'FMA7088') {
-        // Heart: Anatomically curved pear shape
-        geometry = new THREE.SphereGeometry(dx * 0.9, 32, 32);
-        geometry.scale(1, 1.25, 0.95);
+      // 2. Select authentic anatomical geometries for every organ and bone
+      if (item.fmaId === 'FMA5018_SKULL') {
+        geometry = createSkullGeometry();
+      } else if (item.fmaId === 'FMA52749') {
+        geometry = createMandibleGeometry();
+      } else if (item.fmaId === 'FMA13478') {
+        geometry = createSpineSegmentGeometry(-0.05, 0.05, 7, 'cervical');
+      } else if (item.fmaId === 'FMA13479') {
+        geometry = createSpineSegmentGeometry(-0.12, 0.12, 12, 'thoracic');
+      } else if (item.fmaId === 'FMA13480') {
+        geometry = createSpineSegmentGeometry(-0.10, 0.10, 5, 'lumbar');
+      } else if (item.fmaId === 'FMA7574') {
+        geometry = createRibCageGeometry();
+      } else if (item.fmaId === 'FMA16586') {
+        geometry = createPelvisGeometry();
+      } else if (item.fmaId.includes('FEMUR') || item.fmaId === 'FMA9915') {
+        geometry = createLongBoneGeometry(0.44, 0.016, 0.025, true);
+      } else if (item.fmaId === 'FMA16585') {
+        geometry = createLongBoneGeometry(0.30, 0.014, 0.022, false);
+      } else if (item.fmaId === 'FMA24476') {
+        geometry = createLongBoneGeometry(0.38, 0.015, 0.024, false);
+      } else if (item.fmaId === 'FMA24477') {
+        geometry = createLongBoneGeometry(0.36, 0.009, 0.013, false);
+      } else if (item.fmaId === 'FMA23466') {
+        geometry = createLongBoneGeometry(0.24, 0.010, 0.015, false);
+      } else if (item.fmaId === 'FMA23467') {
+        geometry = createLongBoneGeometry(0.25, 0.011, 0.016, false);
+      } else if (item.fmaId === 'FMA24467') {
+        geometry = new THREE.SphereGeometry(0.022, 16, 16);
+        geometry.scale(1.1, 1.2, 0.6);
+      } else if (item.fmaId === 'FMA7088' || item.fmaId === 'FMA7197') {
+        geometry = createHeartAnatomyGeometry();
+      } else if (item.fmaId === 'FMA7195') {
+        geometry = createLungAnatomyGeometry(true);
+      } else if (item.fmaId === 'FMA7196') {
+        geometry = createLungAnatomyGeometry(false);
+      } else if (item.fmaId === 'FMA7199') {
+        geometry = createLiverAnatomyGeometry();
+      } else if (item.fmaId === 'FMA7148') {
+        geometry = createStomachAnatomyGeometry();
+      } else if (item.fmaId.includes('7201') || item.fmaId.includes('KIDNEY')) {
+        geometry = createKidneyAnatomyGeometry();
+      } else if (item.fmaId === 'FMA5018') {
+        geometry = createBrainAnatomyGeometry();
       } else if (item.systemCategory === 'Skeletal' && dy > dx * 2) {
-        geometry = new THREE.CylinderGeometry(dx / 2.5, dx / 2, dy, 18);
+        geometry = new THREE.CylinderGeometry(dx / 3, dx / 2.5, dy, 16);
       } else if (item.systemCategory === 'Respiratory') {
-        geometry = new THREE.CapsuleGeometry(dx / 2, Math.max(dy - dx, 0.05), 14, 28);
+        geometry = new THREE.CapsuleGeometry(dx / 2.5, Math.max(dy - dx, 0.05), 14, 24);
       } else {
-        geometry = new THREE.BoxGeometry(dx, dy, dz);
+        geometry = new THREE.SphereGeometry(Math.max(dx, dy, dz) / 2.2, 20, 20);
+        geometry.scale(dx / Math.max(dx, 0.02), dy / Math.max(dy, 0.02), dz / Math.max(dz, 0.02));
       }
 
       const color = SYSTEM_COLORS[item.systemCategory] || 0xcbd5e1;
