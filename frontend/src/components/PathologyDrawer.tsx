@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { X, Activity, FileText, Zap } from 'lucide-react';
+import { X, Activity, FileText, Zap, Eye, RotateCcw } from 'lucide-react';
 import type { AnatomicalStructure, PathologyDisorder } from '../types/anatomy';
 import { MOCK_PATHOLOGY_DISORDERS } from '../data/mockPathology';
 
@@ -7,15 +7,33 @@ interface PathologyDrawerProps {
   structure: AnatomicalStructure | null;
   onClose: () => void;
   stage: 1 | 2;
+  onIsolate?: (fmaId: string) => void;
+  onClearIsolate?: () => void;
 }
 
-export const PathologyDrawer: React.FC<PathologyDrawerProps> = ({ structure, onClose }) => {
+export const PathologyDrawer: React.FC<PathologyDrawerProps> = ({
+  structure,
+  onClose,
+  onIsolate,
+  onClearIsolate,
+}) => {
   const [selectedDisorder, setSelectedDisorder] = useState<PathologyDisorder | null>(null);
   const [severity, setSeverity] = useState(0.8);
+  const [isIsolated, setIsIsolated] = useState(false);
 
   if (!structure) return null;
 
   const disorders = MOCK_PATHOLOGY_DISORDERS[structure.fmaId] || [];
+
+  const handleToggleIsolate = () => {
+    if (isIsolated) {
+      setIsIsolated(false);
+      onClearIsolate?.();
+    } else {
+      setIsIsolated(true);
+      onIsolate?.(structure.fmaId);
+    }
+  };
 
   return (
     <div className="absolute left-4 top-20 bottom-6 w-96 bg-card/95 backdrop-blur-lg border border-border rounded-xl shadow-2xl z-30 flex flex-col overflow-hidden animate-in fade-in slide-in-from-left duration-200">
@@ -43,12 +61,25 @@ export const PathologyDrawer: React.FC<PathologyDrawerProps> = ({ structure, onC
 
       {/* Content Area */}
       <div className="p-4 flex-1 overflow-y-auto space-y-4">
-        {/* Anatomical Overview */}
+        {/* Anatomical Overview & 3D Isolation Action */}
         <div>
-          <h4 className="text-xs font-semibold text-foreground mb-1 flex items-center gap-1.5">
-            <FileText className="w-3.5 h-3.5 text-primary" />
-            مشخصات کالبدی و تشریحی
-          </h4>
+          <div className="flex items-center justify-between mb-1">
+            <h4 className="text-xs font-semibold text-foreground flex items-center gap-1.5">
+              <FileText className="w-3.5 h-3.5 text-primary" />
+              مشخصات کالبدی و تشریحی
+            </h4>
+            <button
+              onClick={handleToggleIsolate}
+              className={`flex items-center gap-1 text-[10px] px-2 py-0.5 rounded border transition-colors ${
+                isIsolated
+                  ? 'bg-primary/20 text-primary border-primary/40 font-bold'
+                  : 'bg-muted text-muted-foreground hover:text-foreground border-border'
+              }`}
+            >
+              {isIsolated ? <RotateCcw className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
+              {isIsolated ? 'خروج از ایزوله' : 'ایزولاسیون و محوسازی سایرین'}
+            </button>
+          </div>
           <p className="text-xs text-muted-foreground leading-relaxed">
             {structure.descriptionFa || 'اطلاعات بافت‌شناسی و موقعیت این ساختار در سیستم کالبدی ثبت شده است.'}
           </p>

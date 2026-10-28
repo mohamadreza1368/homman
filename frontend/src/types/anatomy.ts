@@ -25,3 +25,24 @@ export interface PathologyDisorder {
   visualPresetType: 'pbr_inflammation' | 'pbr_ischemia' | 'morph_atrophy' | 'procedural_mass' | 'rig_fracture';
   descriptionFa?: string;
 }
+
+export type AnatomyViewMode = 'standard' | 'beating_heart' | 'neuroanatomy';
+
+export interface ClippingState {
+  axial: boolean;
+  axialOffset: number;
+  sagittal: boolean;
+  sagittalOffset: number;
+  coronal: boolean;
+  coronalOffset: number;
+}
+
+export interface HeartAnimationConfig {
+  isBeating: boolean;
+  bpm: number;
+}
+
+export interface NeuroConfig {
+  showCorticalLobes: boolean;
+  activeLobe?: 'frontal' | 'parietal' | 'temporal' | 'occipital';
+}

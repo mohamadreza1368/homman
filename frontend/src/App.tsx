@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import { Navbar } from './components/Navbar';
 import { Sidebar } from './components/Sidebar';
 import { PathologyDrawer } from './components/PathologyDrawer';
+import { CrossSectionPanel } from './components/CrossSectionPanel';
+import { PhysiologyPanel } from './components/PhysiologyPanel';
 import { AnatomyViewer } from './engine/AnatomyViewer';
 import type { AnatomicalStructure } from './types/anatomy';
 
@@ -12,6 +14,10 @@ export function App() {
   const [stage, setStage] = useState<1 | 2>(1);
   const [selectedStructure, setSelectedStructure] = useState<AnatomicalStructure | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
+
+  // Phase 2 Interactive Panels
+  const [showCrossSection, setShowCrossSection] = useState(false);
+  const [showPhysiology, setShowPhysiology] = useState(false);
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -32,8 +38,17 @@ export function App() {
 
   return (
     <div className="flex flex-col h-screen w-screen overflow-hidden bg-background select-none font-sans" dir="rtl">
-      {/* Top Navigation */}
-      <Navbar gender={gender} setGender={setGender} stage={stage} setStage={setStage} />
+      {/* Top Navigation Bar with Phase 2 Modules */}
+      <Navbar
+        gender={gender}
+        setGender={setGender}
+        stage={stage}
+        setStage={setStage}
+        showCrossSection={showCrossSection}
+        setShowCrossSection={setShowCrossSection}
+        showPhysiology={showPhysiology}
+        setShowPhysiology={setShowPhysiology}
+      />
 
       {/* Main Workspace */}
       <div className="flex flex-1 relative overflow-hidden">
@@ -45,7 +60,7 @@ export function App() {
           <div ref={containerRef} className="w-full h-full cursor-grab active:cursor-grabbing" />
 
           {/* Quick HUD overlay in viewport */}
-          <div className="absolute top-4 right-4 bg-card/60 backdrop-blur-md px-3 py-1.5 rounded-lg border border-border text-[11px] text-muted-foreground flex items-center gap-3">
+          <div className="absolute top-4 right-4 bg-card/75 backdrop-blur-md px-3 py-1.5 rounded-lg border border-border text-[11px] text-muted-foreground flex items-center gap-3">
             <span>چرخش: درگ چپ</span>
             <span className="w-1 h-1 rounded-full bg-border" />
             <span>حرکت (Pan): درگ راست</span>
@@ -55,7 +70,20 @@ export function App() {
             <span className="text-primary font-medium">کلیک: انتخاب عضو و آنالیز بالینی</span>
           </div>
 
-          {/* Selected Structure Drawer (Stage 1 & 2 Details) */}
+          {/* Phase 2: Cross Section (3-Axis Clipping Planes) Floating Panel */}
+          {showCrossSection && (
+            <CrossSectionPanel
+              viewer={viewer}
+              onClose={() => setShowCrossSection(false)}
+            />
+          )}
+
+          {/* Phase 2: Physiology (Heart Beating & Cortical Lobes) Floating Panel */}
+          {showPhysiology && (
+            <PhysiologyPanel viewer={viewer} />
+          )}
+
+          {/* Selected Structure Drawer (Stage 1 & 2 Details & Isolation) */}
           <PathologyDrawer
             structure={selectedStructure}
             onClose={() => {
@@ -63,6 +91,8 @@ export function App() {
               if (viewer) viewer.resetSelection();
             }}
             stage={stage}
+            onIsolate={(fmaId) => viewer?.isolateStructure(fmaId)}
+            onClearIsolate={() => viewer?.clearIsolation()}
           />
         </main>
       </div>
