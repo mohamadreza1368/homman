@@ -17,10 +17,12 @@ import {
   createKidneyAnatomyGeometry,
   createBrainAnatomyGeometry,
 } from './AnatomicalMeshes';
+import { AtlasModelLoader, type SystemCategory } from './AtlasModelLoader';
 
 export interface ViewerOptions {
   container: HTMLDivElement;
   onStructureSelect?: (structure: AnatomicalStructure | null) => void;
+  onLoadingProgress?: (percent: number) => void;
 }
 
 interface RawCatalogItem {
@@ -45,13 +47,32 @@ const SYSTEM_COLORS: Record<string, number> = {
   Lymphatic: 0x10b981     // Lymphatic Emerald
 };
 
-// Cortical Lobes Colors for Neuroanatomy Module
 export const CORTICAL_LOBE_COLORS = {
-  frontal: 0x38bdf8,   // Sky Blue
-  parietal: 0xa855f7,  // Purple
-  temporal: 0x10b981,  // Emerald
-  occipital: 0xf59e0b  // Amber
+  frontal: 0x38bdf8,
+  parietal: 0xa855f7,
+  temporal: 0x10b981,
+  occipital: 0xf59e0b
 };
+
+export interface AnatomicalCallout {
+  id: string;
+  labelEn: string;
+  labelFa: string;
+  system: string;
+  worldPos: THREE.Vector3;
+}
+
+export const DEFAULT_CALLOUTS: AnatomicalCallout[] = [
+  { id: 'CEREBRUM', labelEn: 'Cerebrum', labelFa: 'مغز (مخ)', system: 'Nervous', worldPos: new THREE.Vector3(0.0, 1.70, 0.04) },
+  { id: 'RESPIRATORY', labelEn: 'Respiratory', labelFa: 'دستگاه تنفس', system: 'Respiratory', worldPos: new THREE.Vector3(0.08, 1.37, 0.05) },
+  { id: 'BICEPS', labelEn: 'Biceps Brachii', labelFa: 'عضله دوسر بازو', system: 'Muscular', worldPos: new THREE.Vector3(0.26, 1.25, 0.0) },
+  { id: 'LIVER', labelEn: 'Liver', labelFa: 'کبد', system: 'Digestive', worldPos: new THREE.Vector3(0.08, 1.10, 0.05) },
+  { id: 'HEART', labelEn: 'Heart', labelFa: 'قلب', system: 'Circulatory', worldPos: new THREE.Vector3(-0.04, 1.28, 0.05) },
+  { id: 'LUNGS', labelEn: 'Lungs', labelFa: 'ریه‌ها', system: 'Respiratory', worldPos: new THREE.Vector3(-0.12, 1.30, 0.03) },
+  { id: 'KIDNEY', labelEn: 'Left Kidney', labelFa: 'کلیه چپ', system: 'Urinary', worldPos: new THREE.Vector3(-0.08, 1.05, 0.02) },
+  { id: 'LYMPHATIC', labelEn: 'Lymphatic', labelFa: 'سیستم لنفاوی', system: 'Lymphatic', worldPos: new THREE.Vector3(-0.23, 1.02, 0.0) },
+  { id: 'FEMUR', labelEn: 'Femur', labelFa: 'استخوان ران', system: 'Skeletal', worldPos: new THREE.Vector3(-0.12, 0.65, 0.0) },
+];
 
 export class AnatomyViewer {
   public scene: THREE.Scene;
@@ -59,6 +80,7 @@ export class AnatomyViewer {
   public renderer: THREE.WebGLRenderer;
   public controls: OrbitControls;
   public loader: ReturnType<typeof createMedicalAssetLoader>;
+  public atlasLoader: AtlasModelLoader;
 
   private container: HTMLDivElement;
   private animationFrameId: number | null = null;
@@ -67,10 +89,11 @@ export class AnatomyViewer {
   private mouse = new THREE.Vector2();
   private interactiveMeshes: THREE.Mesh[] = [];
   private onStructureSelect?: (structure: AnatomicalStructure | null) => void;
+  private onLoadingProgress?: (percent: number) => void;
   private originalPositions = new Map<string, THREE.Vector3>();
   private originalMaterials = new Map<string, THREE.Material>();
 
-  // Slicing 3-Axis Clipping Planes (Sagittal: X, Axial: Y, Coronal: Z)
+  // 3-Axis Clipping Planes (Sagittal, Axial, Coronal)
   public axialPlane = new THREE.Plane(new THREE.Vector3(0, -1, 0), 2.0);
   public sagittalPlane = new THREE.Plane(new THREE.Vector3(-1, 0, 0), 2.0);
   public coronalPlane = new THREE.Plane(new THREE.Vector3(0, 0, -1), 2.0);
@@ -84,7 +107,7 @@ export class AnatomyViewer {
     coronalOffset: 0.0
   };
 
-  // Beating Heart Physiological Simulation
+  // Beating Heart Simulation
   public heartConfig: HeartAnimationConfig = {
     isBeating: true,
     bpm: 72
@@ -96,22 +119,23 @@ export class AnatomyViewer {
   private neuroGroup: THREE.Group | null = null;
   public isNeuroMode = false;
 
-  // Isolation & Ghosting state
+  // Structure isolation
   private isolatedFmaId: string | null = null;
 
   constructor(options: ViewerOptions) {
     this.container = options.container;
     this.onStructureSelect = options.onStructureSelect;
+    this.onLoadingProgress = options.onLoadingProgress;
 
     // 1. Scene
     this.scene = new THREE.Scene();
-    this.scene.background = new THREE.Color(0x0a0d14);
+    this.scene.background = new THREE.Color(0x0c1017); // Dark aesthetic matching reference image
 
     // 2. Camera
     const width = this.container.clientWidth;
     const height = this.container.clientHeight;
-    this.camera = new THREE.PerspectiveCamera(45, width / height, 0.05, 50);
-    this.camera.position.set(0, 1.25, 2.7);
+    this.camera = new THREE.PerspectiveCamera(36, width / height, 0.05, 50);
+    this.camera.position.set(0, 1.05, 3.2);
 
     // 3. WebGL Renderer
     this.renderer = new THREE.WebGLRenderer({
@@ -128,16 +152,17 @@ export class AnatomyViewer {
     // 4. OrbitControls
     this.controls = new OrbitControls(this.camera, this.renderer.domElement);
     this.controls.enableDamping = true;
-    this.controls.dampingFactor = 0.05;
-    this.controls.target.set(0, 1.05, 0);
+    this.controls.dampingFactor = 0.06;
+    this.controls.target.set(0, 0.95, 0);
     this.controls.minDistance = 0.2;
-    this.controls.maxDistance = 6.0;
+    this.controls.maxDistance = 8.0;
 
     // 5. Lighting
     this.setupLighting();
 
-    // 6. Asset Loader
+    // 6. Asset Loader & Atlas Binary Loader
     this.loader = createMedicalAssetLoader(this.renderer);
+    this.atlasLoader = new AtlasModelLoader();
 
     // 7. Event listeners
     this.onResize = this.onResize.bind(this);
@@ -147,33 +172,52 @@ export class AnatomyViewer {
 
     // 8. Build anatomical structures
     this.buildCatalogMeshes();
-
-    // 9. Build Neuroanatomy cortical lobes
     this.buildNeuroLobes();
+
+    // 9. Load Authentic 2,234-mesh Anatomy Atlas in background
+    this.atlasLoader
+      .load(this.scene, (progress) => {
+        if (this.onLoadingProgress) {
+          this.onLoadingProgress(progress);
+        }
+        if (progress >= 100) {
+          // Hide procedural placeholder meshes once real medical atlas is loaded
+          this.interactiveMeshes.forEach((m) => {
+            m.visible = false;
+          });
+        }
+      })
+      .catch((err) => {
+        console.warn('Real atlas binary chunk streaming fallback:', err);
+      });
 
     // 10. Start render loop
     this.animate();
   }
 
   private setupLighting() {
-    const ambientLight = new THREE.AmbientLight(0xffffff, 0.8);
+    const ambientLight = new THREE.AmbientLight(0xffffff, 0.85);
     this.scene.add(ambientLight);
 
-    const keyLight = new THREE.DirectionalLight(0xffffff, 1.3);
+    const keyLight = new THREE.DirectionalLight(0xffffff, 1.4);
     keyLight.position.set(2, 4, 3);
     this.scene.add(keyLight);
 
-    const fillLight = new THREE.DirectionalLight(0x7090ff, 0.6);
+    const fillLight = new THREE.DirectionalLight(0x7090ff, 0.7);
     fillLight.position.set(-3, 2, -2);
     this.scene.add(fillLight);
 
-    const rimLight = new THREE.DirectionalLight(0x38bdf8, 0.65);
+    const rimLight = new THREE.DirectionalLight(0x38bdf8, 0.8);
     rimLight.position.set(0, -2, -3);
     this.scene.add(rimLight);
 
-    const grid = new THREE.GridHelper(4, 20, 0x1e293b, 0x0f172a);
-    grid.position.y = 0;
-    this.scene.add(grid);
+    // Subtle dark circular platform beneath feet
+    const platform = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.7, 0.72, 0.02, 64),
+      new THREE.MeshStandardMaterial({ color: 0x161f2e, roughness: 0.8, metalness: 0.1 })
+    );
+    platform.position.y = -0.01;
+    this.scene.add(platform);
   }
 
   private getActivePlanes(): THREE.Plane[] {
@@ -204,7 +248,6 @@ export class AnatomyViewer {
 
   private buildCatalogMeshes() {
     (catalogData as RawCatalogItem[]).forEach((item) => {
-      // 1. Skip outer skin box (FMA7163) so it does not block the internal anatomical structures!
       if (item.fmaId === 'FMA7163' || item.systemCategory === 'Integumentary') {
         return;
       }
@@ -219,7 +262,6 @@ export class AnatomyViewer {
 
       let geometry: THREE.BufferGeometry;
 
-      // 2. Select authentic anatomical geometries for every organ and bone
       if (item.fmaId === 'FMA5018_SKULL') {
         geometry = createSkullGeometry();
       } else if (item.fmaId === 'FMA52749') {
@@ -298,78 +340,85 @@ export class AnatomyViewer {
       };
 
       mesh.userData = {
-        structure: struct,
-        originalPosition: mesh.position.clone(),
-        systemCategory: item.systemCategory
+        fmaId: item.fmaId,
+        systemCategory: item.systemCategory,
+        structure: struct
       };
 
-      if (item.fmaId === 'FMA7088') {
+      if (item.fmaId === 'FMA7088' || item.nameEn.toLowerCase().includes('heart')) {
         this.heartMesh = mesh;
         this.heartOriginalScale = mesh.scale.clone();
       }
 
       this.scene.add(mesh);
       this.interactiveMeshes.push(mesh);
-      this.originalPositions.set(mesh.uuid, mesh.position.clone());
-      this.originalMaterials.set(mesh.uuid, material.clone());
+      this.originalPositions.set(item.fmaId, mesh.position.clone());
+      this.originalMaterials.set(item.fmaId, material.clone());
     });
   }
 
   private buildNeuroLobes() {
     this.neuroGroup = new THREE.Group();
-    this.neuroGroup.name = 'Neuroanatomy_Lobes';
+    this.neuroGroup.name = 'NeuroanatomyLobes';
+    this.neuroGroup.position.set(0, 1.68, 0);
 
-    // 4 Cortical Lobes positioned around brain center (y ~ 1.70, z ~ 0)
-    const lobes = [
-      {
-        nameFa: 'لوب پیشانی (فرونتال)',
-        nameEn: 'Frontal Lobe',
-        color: CORTICAL_LOBE_COLORS.frontal,
-        pos: [0, 1.72, 0.045],
-        scale: [0.11, 0.07, 0.07]
-      },
-      {
-        nameFa: 'لوب آهیانه (پاریتال)',
-        nameEn: 'Parietal Lobe',
-        color: CORTICAL_LOBE_COLORS.parietal,
-        pos: [0, 1.75, -0.02],
-        scale: [0.10, 0.065, 0.06]
-      },
-      {
-        nameFa: 'لوب گیجگاهی (تمپورال)',
-        nameEn: 'Temporal Lobe',
-        color: CORTICAL_LOBE_COLORS.temporal,
-        pos: [0, 1.66, 0.01],
-        scale: [0.12, 0.05, 0.065]
-      },
-      {
-        nameFa: 'لوب پس‌سری (اکسی‌پیتال)',
-        nameEn: 'Occipital Lobe',
-        color: CORTICAL_LOBE_COLORS.occipital,
-        pos: [0, 1.68, -0.06],
-        scale: [0.09, 0.06, 0.055]
-      }
-    ];
+    const activePlanes = this.getActivePlanes();
 
-    lobes.forEach((lobe) => {
-      const geo = new THREE.SphereGeometry(1, 24, 24);
-      const mat = new THREE.MeshStandardMaterial({
-        color: lobe.color,
-        roughness: 0.35,
-        metalness: 0.1,
-        clippingPlanes: this.getActivePlanes()
-      });
-      const mesh = new THREE.Mesh(geo, mat);
-      mesh.position.set(lobe.pos[0], lobe.pos[1], lobe.pos[2]);
-      mesh.scale.set(lobe.scale[0], lobe.scale[1], lobe.scale[2]);
-      mesh.name = lobe.nameEn;
-      mesh.userData = {
-        isLobe: true,
-        nameFa: lobe.nameFa,
-        nameEn: lobe.nameEn
-      };
-      this.neuroGroup!.add(mesh);
+    const frontalMat = new THREE.MeshStandardMaterial({
+      color: CORTICAL_LOBE_COLORS.frontal,
+      roughness: 0.35,
+      clippingPlanes: activePlanes,
+      clipShadows: true
     });
+    const frontalGeom = new THREE.SphereGeometry(0.07, 32, 16, 0, Math.PI * 2, 0, Math.PI / 2.3);
+    frontalGeom.scale(1.0, 0.85, 1.15);
+    const frontalMesh = new THREE.Mesh(frontalGeom, frontalMat);
+    frontalMesh.position.set(0, 0.01, 0.025);
+    frontalMesh.name = 'Frontal Lobe';
+    this.neuroGroup.add(frontalMesh);
+
+    const parietalMat = new THREE.MeshStandardMaterial({
+      color: CORTICAL_LOBE_COLORS.parietal,
+      roughness: 0.35,
+      clippingPlanes: activePlanes,
+      clipShadows: true
+    });
+    const parietalGeom = new THREE.SphereGeometry(0.068, 32, 16);
+    parietalGeom.scale(0.95, 0.9, 0.9);
+    const parietalMesh = new THREE.Mesh(parietalGeom, parietalMat);
+    parietalMesh.position.set(0, 0.035, -0.035);
+    parietalMesh.name = 'Parietal Lobe';
+    this.neuroGroup.add(parietalMesh);
+
+    const temporalMat = new THREE.MeshStandardMaterial({
+      color: CORTICAL_LOBE_COLORS.temporal,
+      roughness: 0.35,
+      clippingPlanes: activePlanes,
+      clipShadows: true
+    });
+    const tempGeom = new THREE.CapsuleGeometry(0.03, 0.05, 8, 16);
+    const temporalRight = new THREE.Mesh(tempGeom, temporalMat);
+    temporalRight.rotation.z = Math.PI / 2.5;
+    temporalRight.position.set(0.06, -0.025, 0.0);
+    this.neuroGroup.add(temporalRight);
+
+    const temporalLeft = new THREE.Mesh(tempGeom, temporalMat);
+    temporalLeft.rotation.z = -Math.PI / 2.5;
+    temporalLeft.position.set(-0.06, -0.025, 0.0);
+    this.neuroGroup.add(temporalLeft);
+
+    const occipitalMat = new THREE.MeshStandardMaterial({
+      color: CORTICAL_LOBE_COLORS.occipital,
+      roughness: 0.35,
+      clippingPlanes: activePlanes,
+      clipShadows: true
+    });
+    const occipitalGeom = new THREE.SphereGeometry(0.045, 24, 16);
+    occipitalGeom.scale(1.1, 0.8, 0.7);
+    const occipitalMesh = new THREE.Mesh(occipitalGeom, occipitalMat);
+    occipitalMesh.position.set(0, -0.02, -0.07);
+    occipitalMesh.name = 'Occipital Lobe';
+    this.neuroGroup.add(occipitalMesh);
 
     this.neuroGroup.visible = false;
     this.scene.add(this.neuroGroup);
@@ -380,90 +429,81 @@ export class AnatomyViewer {
     if (this.neuroGroup) {
       this.neuroGroup.visible = enabled;
     }
-    // Fade out or show standard cerebrum
-    const cerebrum = this.interactiveMeshes.find((m) => m.userData.structure?.fmaId === 'FMA5018');
-    if (cerebrum) {
-      cerebrum.visible = !enabled;
-    }
+  }
 
-    if (enabled) {
-      // Focus camera on head/brain
-      this.controls.target.set(0, 1.70, 0);
-      this.camera.position.set(0, 1.75, 0.8);
+  public setHeartBpm(bpm: number) {
+    this.heartConfig.bpm = Math.max(30, Math.min(220, bpm));
+  }
+
+  public setClipping(stateOrEnabled: boolean | Partial<ClippingState>, offset?: number) {
+    if (typeof stateOrEnabled === 'boolean') {
+      this.setAxialClipping(stateOrEnabled, offset);
     } else {
-      this.controls.target.set(0, 1.05, 0);
-      this.camera.position.set(0, 1.25, 2.7);
+      this.clippingState = { ...this.clippingState, ...stateOrEnabled };
+      if (stateOrEnabled.axialOffset !== undefined) this.axialPlane.constant = stateOrEnabled.axialOffset;
+      if (stateOrEnabled.sagittalOffset !== undefined) this.sagittalPlane.constant = stateOrEnabled.sagittalOffset;
+      if (stateOrEnabled.coronalOffset !== undefined) this.coronalPlane.constant = stateOrEnabled.coronalOffset;
+      this.updateMaterialsClipping();
     }
   }
 
-  public setHeartBeating(enabled: boolean, bpm = 72) {
+  public setAxialClipping(enabled: boolean, offset: number = this.clippingState.axialOffset) {
+    this.clippingState.axial = enabled;
+    this.clippingState.axialOffset = offset;
+    this.axialPlane.constant = offset;
+    this.updateMaterialsClipping();
+  }
+
+  public setSagittalClipping(enabled: boolean, offset: number = this.clippingState.sagittalOffset) {
+    this.clippingState.sagittal = enabled;
+    this.clippingState.sagittalOffset = offset;
+    this.sagittalPlane.constant = offset;
+    this.updateMaterialsClipping();
+  }
+
+  public setCoronalClipping(enabled: boolean, offset: number = this.clippingState.coronalOffset) {
+    this.clippingState.coronal = enabled;
+    this.clippingState.coronalOffset = offset;
+    this.coronalPlane.constant = offset;
+    this.updateMaterialsClipping();
+  }
+
+  public setHeartBeating(enabled: boolean, bpm?: number) {
     this.heartConfig.isBeating = enabled;
-    this.heartConfig.bpm = bpm;
+    if (bpm !== undefined) {
+      this.setHeartBpm(bpm);
+    }
     if (!enabled && this.heartMesh) {
       this.heartMesh.scale.copy(this.heartOriginalScale);
     }
   }
 
   public focusOnHeart() {
-    if (this.heartMesh) {
-      this.controls.target.copy(this.heartMesh.position);
-      this.camera.position.set(0, 1.30, 0.6);
-      this.highlightMesh(this.heartMesh);
-      if (this.onStructureSelect) {
-        this.onStructureSelect(this.heartMesh.userData.structure);
-      }
-    }
+    this.focusOnStructure('FMA7088');
   }
 
   public setExplodeView(factor: number) {
-    const center = new THREE.Vector3(0, 1.1, 0);
     this.interactiveMeshes.forEach((mesh) => {
-      const original = this.originalPositions.get(mesh.uuid);
-      if (!original) return;
-      const direction = new THREE.Vector3().subVectors(original, center).normalize();
-      const dist = original.distanceTo(center);
-      mesh.position.copy(original).addScaledVector(direction, dist * factor * 1.5);
+      const orig = this.originalPositions.get(mesh.userData.fmaId);
+      if (orig) {
+        const offset = orig.clone().normalize().multiplyScalar(factor * 0.35);
+        mesh.position.copy(orig).add(offset);
+      }
     });
   }
 
-  // 3-Axis Multi-Plane Clipping Control
-  public setClipping(enabled: boolean, planeY = 1.25) {
-    this.setAxialClipping(enabled, planeY);
-  }
-
-  public setAxialClipping(enabled: boolean, planeY = 1.25) {
-    this.clippingState.axial = enabled;
-    this.clippingState.axialOffset = planeY;
-    this.axialPlane.constant = planeY;
-    this.updateMaterialsClipping();
-  }
-
-  public setSagittalClipping(enabled: boolean, planeX = 0.0) {
-    this.clippingState.sagittal = enabled;
-    this.clippingState.sagittalOffset = planeX;
-    this.sagittalPlane.constant = planeX;
-    this.updateMaterialsClipping();
-  }
-
-  public setCoronalClipping(enabled: boolean, planeZ = 0.0) {
-    this.clippingState.coronal = enabled;
-    this.clippingState.coronalOffset = planeZ;
-    this.coronalPlane.constant = planeZ;
-    this.updateMaterialsClipping();
-  }
-
-  // Isolation & Ghosting (Peel Back)
   public isolateStructure(fmaId: string) {
     this.isolatedFmaId = fmaId;
     this.interactiveMeshes.forEach((mesh) => {
       const mat = mesh.material as THREE.MeshStandardMaterial;
-      if (mesh.userData.structure?.fmaId === fmaId) {
+      if (mesh.userData.fmaId === fmaId) {
+        mesh.visible = true;
         mat.transparent = false;
         mat.opacity = 1.0;
         mat.emissive.setHex(0x38bdf8);
-        mat.emissiveIntensity = 0.5;
-        this.controls.target.copy(mesh.position);
+        mat.emissiveIntensity = 0.6;
       } else {
+        mesh.visible = true;
         mat.transparent = true;
         mat.opacity = 0.12;
         mat.emissive.setHex(0x000000);
@@ -476,7 +516,11 @@ export class AnatomyViewer {
   public clearIsolation() {
     this.isolatedFmaId = null;
     this.interactiveMeshes.forEach((mesh) => {
+      const orig = this.originalMaterials.get(mesh.userData.fmaId);
       const mat = mesh.material as THREE.MeshStandardMaterial;
+      if (orig) {
+        mat.color.copy((orig as THREE.MeshStandardMaterial).color);
+      }
       mat.transparent = false;
       mat.opacity = 1.0;
       mat.emissive.setHex(0x000000);
@@ -486,14 +530,54 @@ export class AnatomyViewer {
   }
 
   public setSystemVisibility(systemCategory: string, visible: boolean) {
+    // Map to atlas loader
+    const sysLower = systemCategory.toLowerCase() as SystemCategory;
+    this.atlasLoader.setSystemVisibility(sysLower, visible);
+
+    // Fallback meshes
     this.interactiveMeshes.forEach((mesh) => {
-      if (mesh.userData.systemCategory === systemCategory) {
+      if (mesh.userData.systemCategory.toLowerCase() === systemCategory.toLowerCase()) {
         mesh.visible = visible;
       }
     });
   }
 
+  public setSystemOpacity(systemCategory: string, opacity: number) {
+    const sysLower = systemCategory.toLowerCase() as SystemCategory;
+    this.atlasLoader.setSystemOpacity(sysLower, opacity);
+  }
+
+  public setHalfDissection(enabled: boolean) {
+    this.atlasLoader.halfDissectionMode = enabled;
+    this.atlasLoader.updateVisibilityAndHalfDissection();
+  }
+
   public focusOnStructure(fmaId: string) {
+    // Check atlas loader first
+    if (this.atlasLoader.isLoaded) {
+      const idx = this.atlasLoader.findPartByConceptOrName(fmaId);
+      if (idx >= 0) {
+        this.atlasLoader.selectPart(idx);
+        const part = this.atlasLoader.parts[idx];
+        const center = this.atlasLoader.centers[idx];
+        this.controls.target.copy(center);
+        if (this.onStructureSelect) {
+          this.onStructureSelect({
+            fmaId: part.conceptId,
+            snomedBodyStructureId: 'SNOMED_' + part.conceptId,
+            nameEn: part.name,
+            nameFa: part.name,
+            systemCategory: part.system.toUpperCase() as never,
+            genderModel: 'male',
+            meshNodeName: part.id,
+            descriptionEn: `${part.name} belonging to ${part.system} system.`,
+            descriptionFa: `عضو ${part.name} از سیستم ${part.system}.`
+          });
+        }
+        return;
+      }
+    }
+
     const mesh = this.interactiveMeshes.find((m) => m.userData.structure?.fmaId === fmaId);
     if (mesh) {
       this.highlightMesh(mesh);
@@ -504,12 +588,79 @@ export class AnatomyViewer {
     }
   }
 
+  public setViewOrientation(view: 'front' | 'back' | 'left' | 'right' | 'top' | 'isometric') {
+    const target = new THREE.Vector3(0, 0.95, 0);
+    this.controls.target.copy(target);
+    const dist = 3.2;
+
+    switch (view) {
+      case 'front':
+        this.camera.position.set(0, 0.95, dist);
+        break;
+      case 'back':
+        this.camera.position.set(0, 0.95, -dist);
+        break;
+      case 'left':
+        this.camera.position.set(-dist, 0.95, 0);
+        break;
+      case 'right':
+        this.camera.position.set(dist, 0.95, 0);
+        break;
+      case 'top':
+        this.camera.position.set(0, 3.5, 0.05);
+        break;
+      case 'isometric':
+        this.camera.position.set(2.0, 2.2, 2.5);
+        break;
+    }
+    this.camera.lookAt(target);
+    this.controls.update();
+  }
+
+  public projectToScreen(worldPos: THREE.Vector3): { x: number; y: number; visible: boolean } {
+    if (!this.container) return { x: 0, y: 0, visible: false };
+    const p = worldPos.clone().project(this.camera);
+    const visible = p.z > -1 && p.z < 1;
+    const w = this.container.clientWidth;
+    const h = this.container.clientHeight;
+    return {
+      x: ((p.x + 1) * w) / 2,
+      y: ((-p.y + 1) * h) / 2,
+      visible
+    };
+  }
+
   private onPointerDown(event: PointerEvent) {
     const rect = this.renderer.domElement.getBoundingClientRect();
     this.mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
     this.mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
-
     this.raycaster.setFromCamera(this.mouse, this.camera);
+
+    // 1. Check authentic Atlas Model Loader
+    if (this.atlasLoader.isLoaded) {
+      const hitPartIndex = this.atlasLoader.raycast(this.raycaster);
+      if (hitPartIndex >= 0) {
+        this.atlasLoader.selectPart(hitPartIndex);
+        const p = this.atlasLoader.parts[hitPartIndex];
+        const struct: AnatomicalStructure = {
+          fmaId: p.conceptId,
+          snomedBodyStructureId: 'SNOMED_' + p.conceptId,
+          nameEn: p.name,
+          nameFa: p.name,
+          systemCategory: p.system.toUpperCase() as never,
+          genderModel: 'male',
+          meshNodeName: p.id,
+          descriptionEn: `${p.name} from the ${p.system} anatomical layer.`,
+          descriptionFa: `عضو ${p.name} در سیستم تشریحی ${p.system}.`
+        };
+        if (this.onStructureSelect) {
+          this.onStructureSelect(struct);
+        }
+        return;
+      }
+    }
+
+    // 2. Fallback to interactive meshes
     const visibleMeshes = this.interactiveMeshes.filter((m) => m.visible);
     const intersects = this.raycaster.intersectObjects(visibleMeshes, false);
 
@@ -540,6 +691,7 @@ export class AnatomyViewer {
 
   public resetSelection() {
     this.clearIsolation();
+    this.atlasLoader.selectPart(-1);
     this.interactiveMeshes.forEach((m) => {
       const mat = m.material as THREE.MeshStandardMaterial;
       mat.emissive.setHex(0x000000);
@@ -563,13 +715,12 @@ export class AnatomyViewer {
     this.animationFrameId = requestAnimationFrame(this.animate);
     const elapsedTime = this.clock.getElapsedTime();
 
-    // 1. Physiological Beating Heart Animation (Systole & Diastole wave)
+    // Physiological Beating Heart Animation
     if (this.heartConfig.isBeating && this.heartMesh) {
       const bpm = this.heartConfig.bpm;
       const cycleFrequency = (bpm / 60) * Math.PI * 2;
       const phase = elapsedTime * cycleFrequency;
 
-      // Asymmetric cardiac cycle: Fast systole contraction followed by diastole relaxation
       const systoleWave = Math.sin(phase) + 0.35 * Math.sin(phase * 2);
       const scaleMultiplier = 1.0 + systoleWave * 0.07;
       const heightMultiplier = 1.0 - systoleWave * 0.05;
@@ -591,10 +742,8 @@ export class AnatomyViewer {
     }
     window.removeEventListener('resize', this.onResize);
     this.renderer.domElement.removeEventListener('pointerdown', this.onPointerDown);
+    this.atlasLoader.dispose();
     this.controls.dispose();
     this.renderer.dispose();
-    if (this.container.contains(this.renderer.domElement)) {
-      this.container.removeChild(this.renderer.domElement);
-    }
   }
 }

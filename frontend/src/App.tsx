@@ -1,23 +1,27 @@
 import { useEffect, useRef, useState } from 'react';
-import { Navbar } from './components/Navbar';
-import { Sidebar } from './components/Sidebar';
-import { PathologyDrawer } from './components/PathologyDrawer';
+import { AnatomyHeader } from './components/AnatomyHeader';
+import { AnatomyExplorerPanel } from './components/AnatomyExplorerPanel';
+import { StructureDetailsCard } from './components/StructureDetailsCard';
+import { CalloutLeaderLines } from './components/CalloutLeaderLines';
+import { ViewCubeGizmo } from './components/ViewCubeGizmo';
 import { CrossSectionPanel } from './components/CrossSectionPanel';
 import { PhysiologyPanel } from './components/PhysiologyPanel';
-import { AnatomyViewer } from './engine/AnatomyViewer';
+import { PathologyDrawer } from './components/PathologyDrawer';
+import { AnatomyViewer, type AnatomicalCallout } from './engine/AnatomyViewer';
 import type { AnatomicalStructure } from './types/anatomy';
 
 export function App() {
   const containerRef = useRef<HTMLDivElement>(null);
   const [viewer, setViewer] = useState<AnatomyViewer | null>(null);
-  const [gender, setGender] = useState<'male' | 'female'>('male');
-  const [stage, setStage] = useState<1 | 2>(1);
   const [selectedStructure, setSelectedStructure] = useState<AnatomicalStructure | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const [loadingPercent, setLoadingPercent] = useState<number>(0);
 
-  // Phase 2 Interactive Panels
+  // Floating Panel Visibility States
+  const [showExplorerPanel, setShowExplorerPanel] = useState(true);
   const [showCrossSection, setShowCrossSection] = useState(false);
   const [showPhysiology, setShowPhysiology] = useState(false);
+  const [showPathologyDrawer, setShowPathologyDrawer] = useState(false);
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -27,6 +31,9 @@ export function App() {
       onStructureSelect: (structure) => {
         setSelectedStructure(structure);
       },
+      onLoadingProgress: (percent) => {
+        setLoadingPercent(percent);
+      }
     });
 
     setViewer(newViewer);
@@ -36,75 +43,114 @@ export function App() {
     };
   }, []);
 
+  // Handle clicking callout label lines
+  const handleSelectCallout = (callout: AnatomicalCallout) => {
+    if (!viewer) return;
+
+    viewer.focusOnStructure(callout.id);
+
+    // Map callout to anatomical structure for details card
+    const struct: AnatomicalStructure = {
+      fmaId: callout.id,
+      snomedBodyStructureId: 'SNOMED_' + callout.id,
+      nameEn: callout.labelEn,
+      nameFa: callout.labelFa,
+      systemCategory: callout.system as AnatomicalStructure['systemCategory'],
+      genderModel: 'male',
+      meshNodeName: callout.id,
+      descriptionEn: `${callout.labelEn} is an essential anatomical landmark in the human ${callout.system} system.`,
+      descriptionFa: `عضو تشریحی ${callout.labelFa} متعلق به سیستم ${callout.system} انسان.`
+    };
+
+    setSelectedStructure(struct);
+  };
+
+  // Search filter
+  useEffect(() => {
+    if (!viewer || !searchQuery.trim()) return;
+    viewer.focusOnStructure(searchQuery.trim());
+  }, [searchQuery, viewer]);
+
   return (
-    <div className="flex flex-col h-screen w-screen overflow-hidden bg-background select-none font-sans" dir="rtl">
-      {/* Top Navigation Bar with Phase 2 Modules */}
-      <Navbar
-        gender={gender}
-        setGender={setGender}
-        stage={stage}
-        setStage={setStage}
+    <div className="flex flex-col h-screen w-screen overflow-hidden bg-slate-950 select-none font-sans text-slate-100">
+      {/* 1. Header Bar matching target design */}
+      <AnatomyHeader
+        searchQuery={searchQuery}
+        setSearchQuery={setSearchQuery}
         showCrossSection={showCrossSection}
         setShowCrossSection={setShowCrossSection}
         showPhysiology={showPhysiology}
         setShowPhysiology={setShowPhysiology}
+        onToggleSidebar={() => setShowExplorerPanel(!showExplorerPanel)}
       />
 
-      {/* Main Workspace */}
-      <div className="flex flex-1 relative overflow-hidden">
-        {/* Right Sidebar (in RTL, it docks to the right) */}
-        <Sidebar viewer={viewer} searchQuery={searchQuery} setSearchQuery={setSearchQuery} />
+      {/* 2. Main 3D Interactive Viewport */}
+      <main className="flex-1 relative w-full h-full overflow-hidden">
+        {/* Canvas container */}
+        <div ref={containerRef} className="w-full h-full cursor-grab active:cursor-grabbing" />
 
-        {/* Center 3D Viewport Container */}
-        <main className="flex-1 relative h-full">
-          <div ref={containerRef} className="w-full h-full cursor-grab active:cursor-grabbing" />
-
-          {/* Quick HUD overlay in viewport */}
-          <div className="absolute top-4 right-4 bg-card/75 backdrop-blur-md px-3 py-1.5 rounded-lg border border-border text-[11px] text-muted-foreground flex items-center gap-3">
-            <span>چرخش: درگ چپ</span>
-            <span className="w-1 h-1 rounded-full bg-border" />
-            <span>حرکت (Pan): درگ راست</span>
-            <span className="w-1 h-1 rounded-full bg-border" />
-            <span>بزرگ‌نمایی: اسکرول</span>
-            <span className="w-1 h-1 rounded-full bg-border" />
-            <span className="text-primary font-medium">کلیک: انتخاب عضو و آنالیز بالینی</span>
+        {/* 3. Streaming Progress Indicator */}
+        {loadingPercent > 0 && loadingPercent < 100 && (
+          <div className="absolute top-3 left-1/2 -translate-x-1/2 z-30 bg-slate-900/90 backdrop-blur border border-sky-500/40 px-3.5 py-1.5 rounded-full flex items-center gap-2.5 shadow-xl text-xs text-sky-300">
+            <span className="w-2 h-2 rounded-full bg-sky-400 animate-ping" />
+            <span>بارگذاری اطلس ۲,۲۳۴ قطعه‌ای: {loadingPercent}%</span>
           </div>
+        )}
 
-          {/* Phase 3 Stage 2 Active Indicator */}
-          {stage === 2 && (
-            <div className="absolute top-4 left-4 bg-rose-950/80 backdrop-blur-md px-3.5 py-1.5 rounded-lg border border-rose-500/50 text-xs text-rose-200 flex items-center gap-2 shadow-lg animate-in fade-in duration-200">
-              <span className="w-2 h-2 rounded-full bg-rose-500 animate-ping inline-block" />
-              <span className="font-semibold">شبیه‌ساز هوشمند بیماری‌ها فعال است:</span>
-              <span className="font-mono text-[11px] text-rose-300">الگوریتم ANAT • SNOMED CT • ICD-10 • ICD-O</span>
-            </div>
-          )}
+        {/* 4. 3D Interactive Callout Leader Lines */}
+        <CalloutLeaderLines
+          viewer={viewer}
+          onSelectCallout={handleSelectCallout}
+        />
 
-          {/* Phase 2: Cross Section (3-Axis Clipping Planes) Floating Panel */}
-          {showCrossSection && (
-            <CrossSectionPanel
-              viewer={viewer}
-              onClose={() => setShowCrossSection(false)}
-            />
-          )}
+        {/* 5. Left Floating Anatomy Explorer Panel */}
+        {showExplorerPanel && (
+          <AnatomyExplorerPanel
+            viewer={viewer}
+            onClose={() => setShowExplorerPanel(false)}
+          />
+        )}
 
-          {/* Phase 2: Physiology (Heart Beating & Cortical Lobes) Floating Panel */}
-          {showPhysiology && (
-            <PhysiologyPanel viewer={viewer} />
-          )}
+        {/* 6. Top Right Structure Details Card */}
+        <StructureDetailsCard
+          structure={selectedStructure}
+          onClose={() => {
+            setSelectedStructure(null);
+            viewer?.resetSelection();
+          }}
+          onIsolate={(fmaId) => viewer?.isolateStructure(fmaId)}
+          onOpenPathology={() => setShowPathologyDrawer(true)}
+          onOpenPhysiology={() => setShowPhysiology(true)}
+          onReset={() => viewer?.resetSelection()}
+        />
 
-          {/* Selected Structure Drawer (Stage 1 & 2 Details & Isolation) */}
+        {/* 7. Bottom Right 3D ViewCube Gizmo */}
+        <ViewCubeGizmo viewer={viewer} />
+
+        {/* 8. Cross Section Floating Panel */}
+        {showCrossSection && (
+          <CrossSectionPanel
+            viewer={viewer}
+            onClose={() => setShowCrossSection(false)}
+          />
+        )}
+
+        {/* 9. Physiology Floating Panel */}
+        {showPhysiology && (
+          <PhysiologyPanel viewer={viewer} />
+        )}
+
+        {/* 10. Pathology Knowledge Graph Drawer */}
+        {showPathologyDrawer && (
           <PathologyDrawer
             structure={selectedStructure}
-            onClose={() => {
-              setSelectedStructure(null);
-              if (viewer) viewer.resetSelection();
-            }}
-            stage={stage}
+            onClose={() => setShowPathologyDrawer(false)}
+            stage={2}
             onIsolate={(fmaId) => viewer?.isolateStructure(fmaId)}
             onClearIsolate={() => viewer?.clearIsolation()}
           />
-        </main>
-      </div>
+        )}
+      </main>
     </div>
   );
 }
