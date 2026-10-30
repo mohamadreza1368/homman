@@ -17,7 +17,7 @@ import {
   createKidneyAnatomyGeometry,
   createBrainAnatomyGeometry,
 } from './AnatomicalMeshes';
-import { AtlasModelLoader, type SystemCategory } from './AtlasModelLoader';
+import { ZAnatomyLoader, type ZSystemId } from './ZAnatomyLoader';
 
 export interface ViewerOptions {
   container: HTMLDivElement;
@@ -37,21 +37,21 @@ interface RawCatalogItem {
 }
 
 const SYSTEM_COLORS: Record<string, number> = {
-  Skeletal: 0xf1f5f9,     // Bone White
-  Circulatory: 0xd9383a,  // Arterial Red
-  Respiratory: 0x93c5fd,  // Lung Blue
-  Digestive: 0xa16207,    // Visceral Amber
-  Nervous: 0xec4899,      // Neural Pink
-  Urinary: 0xeab308,      // Renal Gold
-  Endocrine: 0x8b5cf6,    // Glandular Purple
-  Lymphatic: 0x10b981     // Lymphatic Emerald
+  Skeletal: 0xf1f5f9,
+  Circulatory: 0xd9383a,
+  Respiratory: 0x93c5fd,
+  Digestive: 0xa16207,
+  Nervous: 0xec4899,
+  Urinary: 0xeab308,
+  Endocrine: 0x8b5cf6,
+  Lymphatic: 0x10b981,
 };
 
 export const CORTICAL_LOBE_COLORS = {
   frontal: 0x38bdf8,
   parietal: 0xa855f7,
   temporal: 0x10b981,
-  occipital: 0xf59e0b
+  occipital: 0xf59e0b,
 };
 
 export interface AnatomicalCallout {
@@ -63,15 +63,15 @@ export interface AnatomicalCallout {
 }
 
 export const DEFAULT_CALLOUTS: AnatomicalCallout[] = [
-  { id: 'CEREBRUM', labelEn: 'Cerebrum', labelFa: 'مغز (مخ)', system: 'Nervous', worldPos: new THREE.Vector3(0.0, 1.70, 0.04) },
-  { id: 'RESPIRATORY', labelEn: 'Respiratory', labelFa: 'دستگاه تنفس', system: 'Respiratory', worldPos: new THREE.Vector3(0.08, 1.37, 0.05) },
-  { id: 'BICEPS', labelEn: 'Biceps Brachii', labelFa: 'عضله دوسر بازو', system: 'Muscular', worldPos: new THREE.Vector3(0.26, 1.25, 0.0) },
+  { id: 'CEREBRUM', labelEn: 'Cerebrum', labelFa: 'مغز (مخ)', system: 'Nervous', worldPos: new THREE.Vector3(0.0, 1.66, 0.04) },
+  { id: 'RESPIRATORY', labelEn: 'Respiratory', labelFa: 'دستگاه تنفس', system: 'Respiratory', worldPos: new THREE.Vector3(0.08, 1.34, 0.05) },
+  { id: 'BICEPS', labelEn: 'Biceps Brachii', labelFa: 'عضله دوسر بازو', system: 'Muscular', worldPos: new THREE.Vector3(0.24, 1.25, 0.0) },
   { id: 'LIVER', labelEn: 'Liver', labelFa: 'کبد', system: 'Digestive', worldPos: new THREE.Vector3(0.08, 1.10, 0.05) },
-  { id: 'HEART', labelEn: 'Heart', labelFa: 'قلب', system: 'Circulatory', worldPos: new THREE.Vector3(-0.04, 1.28, 0.05) },
-  { id: 'LUNGS', labelEn: 'Lungs', labelFa: 'ریه‌ها', system: 'Respiratory', worldPos: new THREE.Vector3(-0.12, 1.30, 0.03) },
-  { id: 'KIDNEY', labelEn: 'Left Kidney', labelFa: 'کلیه چپ', system: 'Urinary', worldPos: new THREE.Vector3(-0.08, 1.05, 0.02) },
-  { id: 'LYMPHATIC', labelEn: 'Lymphatic', labelFa: 'سیستم لنفاوی', system: 'Lymphatic', worldPos: new THREE.Vector3(-0.23, 1.02, 0.0) },
-  { id: 'FEMUR', labelEn: 'Femur', labelFa: 'استخوان ران', system: 'Skeletal', worldPos: new THREE.Vector3(-0.12, 0.65, 0.0) },
+  { id: 'HEART', labelEn: 'Heart', labelFa: 'قلب', system: 'Circulatory', worldPos: new THREE.Vector3(-0.03, 1.28, 0.05) },
+  { id: 'LUNGS', labelEn: 'Lungs', labelFa: 'ریه‌ها', system: 'Respiratory', worldPos: new THREE.Vector3(-0.11, 1.30, 0.03) },
+  { id: 'KIDNEY', labelEn: 'Left Kidney', labelFa: 'کلیه چپ', system: 'Urinary', worldPos: new THREE.Vector3(-0.07, 1.05, 0.02) },
+  { id: 'LYMPHATIC', labelEn: 'Lymphatic', labelFa: 'سیستم لنفاوی', system: 'Lymphatic', worldPos: new THREE.Vector3(-0.20, 1.02, 0.0) },
+  { id: 'FEMUR', labelEn: 'Femur', labelFa: 'استخوان ران', system: 'Skeletal', worldPos: new THREE.Vector3(-0.11, 0.65, 0.0) },
 ];
 
 export class AnatomyViewer {
@@ -80,7 +80,7 @@ export class AnatomyViewer {
   public renderer: THREE.WebGLRenderer;
   public controls: OrbitControls;
   public loader: ReturnType<typeof createMedicalAssetLoader>;
-  public atlasLoader: AtlasModelLoader;
+  public zAnatomyLoader: ZAnatomyLoader;
 
   private container: HTMLDivElement;
   private animationFrameId: number | null = null;
@@ -93,7 +93,7 @@ export class AnatomyViewer {
   private originalPositions = new Map<string, THREE.Vector3>();
   private originalMaterials = new Map<string, THREE.Material>();
 
-  // 3-Axis Clipping Planes (Sagittal, Axial, Coronal)
+  // 3-Axis Clipping Planes
   public axialPlane = new THREE.Plane(new THREE.Vector3(0, -1, 0), 2.0);
   public sagittalPlane = new THREE.Plane(new THREE.Vector3(-1, 0, 0), 2.0);
   public coronalPlane = new THREE.Plane(new THREE.Vector3(0, 0, -1), 2.0);
@@ -104,13 +104,13 @@ export class AnatomyViewer {
     sagittal: false,
     sagittalOffset: 0.0,
     coronal: false,
-    coronalOffset: 0.0
+    coronalOffset: 0.0,
   };
 
   // Beating Heart Simulation
   public heartConfig: HeartAnimationConfig = {
     isBeating: true,
-    bpm: 72
+    bpm: 72,
   };
   private heartMesh: THREE.Mesh | null = null;
   private heartOriginalScale = new THREE.Vector3(1, 1, 1);
@@ -119,7 +119,6 @@ export class AnatomyViewer {
   private neuroGroup: THREE.Group | null = null;
   public isNeuroMode = false;
 
-  // Structure isolation
   private isolatedFmaId: string | null = null;
 
   constructor(options: ViewerOptions) {
@@ -135,12 +134,12 @@ export class AnatomyViewer {
     const width = this.container.clientWidth;
     const height = this.container.clientHeight;
     this.camera = new THREE.PerspectiveCamera(36, width / height, 0.05, 50);
-    this.camera.position.set(0, 1.05, 3.2);
+    this.camera.position.set(0, 0.95, 3.2);
 
     // 3. WebGL Renderer
     this.renderer = new THREE.WebGLRenderer({
       antialias: true,
-      powerPreference: 'high-performance'
+      powerPreference: 'high-performance',
     });
     this.renderer.setSize(width, height);
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -160,9 +159,9 @@ export class AnatomyViewer {
     // 5. Lighting
     this.setupLighting();
 
-    // 6. Asset Loader & Atlas Binary Loader
+    // 6. Asset Loader & Z-Anatomy Loader
     this.loader = createMedicalAssetLoader(this.renderer);
-    this.atlasLoader = new AtlasModelLoader();
+    this.zAnatomyLoader = new ZAnatomyLoader();
 
     // 7. Event listeners
     this.onResize = this.onResize.bind(this);
@@ -170,25 +169,25 @@ export class AnatomyViewer {
     window.addEventListener('resize', this.onResize);
     this.renderer.domElement.addEventListener('pointerdown', this.onPointerDown);
 
-    // 8. Build anatomical structures
+    // 8. Build procedural placeholders for instant initial render
     this.buildCatalogMeshes();
     this.buildNeuroLobes();
 
-    // 9. Load Authentic 2,234-mesh Anatomy Atlas in background
-    this.atlasLoader
-      .load(this.scene, (progress) => {
+    // 9. Load Authentic Z-Anatomy PBR 3D Models in background
+    this.zAnatomyLoader
+      .loadAll(this.scene, (progress) => {
         if (this.onLoadingProgress) {
           this.onLoadingProgress(progress);
         }
         if (progress >= 100) {
-          // Hide procedural placeholder meshes once real medical atlas is loaded
+          // Hide procedural placeholder meshes once real Z-Anatomy models are active
           this.interactiveMeshes.forEach((m) => {
             m.visible = false;
           });
         }
       })
       .catch((err) => {
-        console.warn('Real atlas binary chunk streaming fallback:', err);
+        console.warn('Z-Anatomy models load fallback:', err);
       });
 
     // 10. Start render loop
@@ -320,7 +319,7 @@ export class AnatomyViewer {
         roughness: item.systemCategory === 'Skeletal' ? 0.3 : 0.45,
         metalness: 0.1,
         clippingPlanes: this.getActivePlanes(),
-        clipShadows: true
+        clipShadows: true,
       });
 
       const mesh = new THREE.Mesh(geometry, material);
@@ -336,13 +335,13 @@ export class AnatomyViewer {
         genderModel: item.genderModel as 'male' | 'female' | 'both',
         meshNodeName: item.meshNodeName,
         descriptionEn: `${item.nameEn} belonging to the ${item.systemCategory} system.`,
-        descriptionFa: `عضو ${item.nameFa} در سیستم ${item.systemCategory} انسان.`
+        descriptionFa: `عضو ${item.nameFa} در سیستم ${item.systemCategory} انسان.`,
       };
 
       mesh.userData = {
         fmaId: item.fmaId,
         systemCategory: item.systemCategory,
-        structure: struct
+        structure: struct,
       };
 
       if (item.fmaId === 'FMA7088' || item.nameEn.toLowerCase().includes('heart')) {
@@ -368,7 +367,7 @@ export class AnatomyViewer {
       color: CORTICAL_LOBE_COLORS.frontal,
       roughness: 0.35,
       clippingPlanes: activePlanes,
-      clipShadows: true
+      clipShadows: true,
     });
     const frontalGeom = new THREE.SphereGeometry(0.07, 32, 16, 0, Math.PI * 2, 0, Math.PI / 2.3);
     frontalGeom.scale(1.0, 0.85, 1.15);
@@ -381,7 +380,7 @@ export class AnatomyViewer {
       color: CORTICAL_LOBE_COLORS.parietal,
       roughness: 0.35,
       clippingPlanes: activePlanes,
-      clipShadows: true
+      clipShadows: true,
     });
     const parietalGeom = new THREE.SphereGeometry(0.068, 32, 16);
     parietalGeom.scale(0.95, 0.9, 0.9);
@@ -394,7 +393,7 @@ export class AnatomyViewer {
       color: CORTICAL_LOBE_COLORS.temporal,
       roughness: 0.35,
       clippingPlanes: activePlanes,
-      clipShadows: true
+      clipShadows: true,
     });
     const tempGeom = new THREE.CapsuleGeometry(0.03, 0.05, 8, 16);
     const temporalRight = new THREE.Mesh(tempGeom, temporalMat);
@@ -411,7 +410,7 @@ export class AnatomyViewer {
       color: CORTICAL_LOBE_COLORS.occipital,
       roughness: 0.35,
       clippingPlanes: activePlanes,
-      clipShadows: true
+      clipShadows: true,
     });
     const occipitalGeom = new THREE.SphereGeometry(0.045, 24, 16);
     occipitalGeom.scale(1.1, 0.8, 0.7);
@@ -479,7 +478,7 @@ export class AnatomyViewer {
   }
 
   public focusOnHeart() {
-    this.focusOnStructure('FMA7088');
+    this.focusOnStructure('Heart');
   }
 
   public setExplodeView(factor: number) {
@@ -530,55 +529,53 @@ export class AnatomyViewer {
   }
 
   public setSystemVisibility(systemCategory: string, visible: boolean) {
-    // Map to atlas loader
-    const sysLower = systemCategory.toLowerCase() as SystemCategory;
-    this.atlasLoader.setSystemVisibility(sysLower, visible);
+    const sysLower = systemCategory.toLowerCase() as ZSystemId;
+    this.zAnatomyLoader.setSystemVisibility(sysLower, visible);
 
-    // Fallback meshes
     this.interactiveMeshes.forEach((mesh) => {
-      if (mesh.userData.systemCategory.toLowerCase() === systemCategory.toLowerCase()) {
+      if (mesh.userData.systemCategory?.toLowerCase() === systemCategory.toLowerCase()) {
         mesh.visible = visible;
       }
     });
   }
 
   public setSystemOpacity(systemCategory: string, opacity: number) {
-    const sysLower = systemCategory.toLowerCase() as SystemCategory;
-    this.atlasLoader.setSystemOpacity(sysLower, opacity);
+    const sysLower = systemCategory.toLowerCase() as ZSystemId;
+    this.zAnatomyLoader.setSystemOpacity(sysLower, opacity);
   }
 
   public setHalfDissection(enabled: boolean) {
-    this.atlasLoader.halfDissectionMode = enabled;
-    this.atlasLoader.updateVisibilityAndHalfDissection();
+    this.zAnatomyLoader.setHalfDissection(enabled);
   }
 
-  public focusOnStructure(fmaId: string) {
-    // Check atlas loader first
-    if (this.atlasLoader.isLoaded) {
-      const idx = this.atlasLoader.findPartByConceptOrName(fmaId);
-      if (idx >= 0) {
-        this.atlasLoader.selectPart(idx);
-        const part = this.atlasLoader.parts[idx];
-        const center = this.atlasLoader.centers[idx];
-        this.controls.target.copy(center);
+  public focusOnStructure(query: string) {
+    if (this.zAnatomyLoader.isLoaded) {
+      const info = this.zAnatomyLoader.findStructureByName(query);
+      if (info) {
+        this.zAnatomyLoader.highlightStructure(info);
+        this.controls.target.copy(info.center);
         if (this.onStructureSelect) {
           this.onStructureSelect({
-            fmaId: part.conceptId,
-            snomedBodyStructureId: 'SNOMED_' + part.conceptId,
-            nameEn: part.name,
-            nameFa: part.name,
-            systemCategory: part.system.toUpperCase() as never,
+            fmaId: info.name,
+            snomedBodyStructureId: 'Z_' + info.cleanName,
+            nameEn: info.cleanName,
+            nameFa: info.cleanName,
+            systemCategory: info.system.toUpperCase() as never,
             genderModel: 'male',
-            meshNodeName: part.id,
-            descriptionEn: `${part.name} belonging to ${part.system} system.`,
-            descriptionFa: `عضو ${part.name} از سیستم ${part.system}.`
+            meshNodeName: info.name,
+            descriptionEn: `${info.cleanName} belonging to ${info.system} system.`,
+            descriptionFa: `عضو ${info.cleanName} از سیستم ${info.system}.`,
           });
         }
         return;
       }
     }
 
-    const mesh = this.interactiveMeshes.find((m) => m.userData.structure?.fmaId === fmaId);
+    const mesh = this.interactiveMeshes.find(
+      (m) =>
+        m.userData.structure?.fmaId === query ||
+        m.userData.structure?.nameEn?.toLowerCase()?.includes(query.toLowerCase())
+    );
     if (mesh) {
       this.highlightMesh(mesh);
       if (this.onStructureSelect) {
@@ -626,7 +623,7 @@ export class AnatomyViewer {
     return {
       x: ((p.x + 1) * w) / 2,
       y: ((-p.y + 1) * h) / 2,
-      visible
+      visible,
     };
   }
 
@@ -636,22 +633,21 @@ export class AnatomyViewer {
     this.mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
     this.raycaster.setFromCamera(this.mouse, this.camera);
 
-    // 1. Check authentic Atlas Model Loader
-    if (this.atlasLoader.isLoaded) {
-      const hitPartIndex = this.atlasLoader.raycast(this.raycaster);
-      if (hitPartIndex >= 0) {
-        this.atlasLoader.selectPart(hitPartIndex);
-        const p = this.atlasLoader.parts[hitPartIndex];
+    // 1. Check authentic Z-Anatomy Loader
+    if (this.zAnatomyLoader.isLoaded) {
+      const hitInfo = this.zAnatomyLoader.raycast(this.raycaster);
+      if (hitInfo) {
+        this.zAnatomyLoader.highlightStructure(hitInfo);
         const struct: AnatomicalStructure = {
-          fmaId: p.conceptId,
-          snomedBodyStructureId: 'SNOMED_' + p.conceptId,
-          nameEn: p.name,
-          nameFa: p.name,
-          systemCategory: p.system.toUpperCase() as never,
+          fmaId: hitInfo.name,
+          snomedBodyStructureId: 'Z_' + hitInfo.cleanName,
+          nameEn: hitInfo.cleanName,
+          nameFa: hitInfo.cleanName,
+          systemCategory: hitInfo.system.toUpperCase() as never,
           genderModel: 'male',
-          meshNodeName: p.id,
-          descriptionEn: `${p.name} from the ${p.system} anatomical layer.`,
-          descriptionFa: `عضو ${p.name} در سیستم تشریحی ${p.system}.`
+          meshNodeName: hitInfo.name,
+          descriptionEn: `${hitInfo.cleanName} is an anatomical component of the human ${hitInfo.system} system.`,
+          descriptionFa: `عضو تشریحی ${hitInfo.cleanName} متعلق به سیستم ${hitInfo.system} انسان.`,
         };
         if (this.onStructureSelect) {
           this.onStructureSelect(struct);
@@ -691,7 +687,7 @@ export class AnatomyViewer {
 
   public resetSelection() {
     this.clearIsolation();
-    this.atlasLoader.selectPart(-1);
+    this.zAnatomyLoader.highlightStructure(null);
     this.interactiveMeshes.forEach((m) => {
       const mat = m.material as THREE.MeshStandardMaterial;
       mat.emissive.setHex(0x000000);
@@ -742,7 +738,7 @@ export class AnatomyViewer {
     }
     window.removeEventListener('resize', this.onResize);
     this.renderer.domElement.removeEventListener('pointerdown', this.onPointerDown);
-    this.atlasLoader.dispose();
+    this.zAnatomyLoader.dispose();
     this.controls.dispose();
     this.renderer.dispose();
   }
