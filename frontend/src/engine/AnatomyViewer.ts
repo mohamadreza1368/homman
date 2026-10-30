@@ -26,15 +26,15 @@ export const CORTICAL_LOBE_COLORS = {
 
 // Exact 3D anatomical landmarks on the Z-Anatomy body
 export const DEFAULT_CALLOUTS: AnatomicalCallout[] = [
-  { id: 'CEREBRUM', labelEn: 'Cerebrum', labelFa: 'مغز (مخ)', system: 'Nervous', worldPos: new THREE.Vector3(0.0, 1.62, 0.02) },
-  { id: 'RESPIRATORY', labelEn: 'Respiratory', labelFa: 'دستگاه تنفس', system: 'Respiratory', worldPos: new THREE.Vector3(-0.08, 1.32, 0.02) },
-  { id: 'BICEPS', labelEn: 'Biceps Brachii', labelFa: 'عضله دوسر بازو', system: 'Muscular', worldPos: new THREE.Vector3(-0.22, 1.25, 0.0) },
-  { id: 'LIVER', labelEn: 'Liver', labelFa: 'کبد', system: 'Digestive', worldPos: new THREE.Vector3(-0.06, 1.10, 0.04) },
-  { id: 'HEART', labelEn: 'Heart', labelFa: 'قلب', system: 'Circulatory', worldPos: new THREE.Vector3(0.02, 1.28, 0.04) },
-  { id: 'LUNGS', labelEn: 'Lungs', labelFa: 'ریه‌ها', system: 'Respiratory', worldPos: new THREE.Vector3(0.08, 1.30, 0.03) },
-  { id: 'KIDNEY', labelEn: 'Left Kidney', labelFa: 'کلیه چپ', system: 'Urinary', worldPos: new THREE.Vector3(0.07, 1.05, 0.02) },
+  { id: 'CEREBRUM', labelEn: 'Cerebrum', labelFa: 'مغز (مخ)', system: 'Nervous', worldPos: new THREE.Vector3(-0.02, 1.62, 0.05) },
+  { id: 'RESPIRATORY', labelEn: 'Respiratory', labelFa: 'دستگاه تنفس', system: 'Respiratory', worldPos: new THREE.Vector3(-0.08, 1.35, 0.04) },
+  { id: 'BICEPS', labelEn: 'Biceps Brachii', labelFa: 'عضله دوسر بازو', system: 'Muscular', worldPos: new THREE.Vector3(-0.24, 1.25, 0.02) },
+  { id: 'LIVER', labelEn: 'Liver', labelFa: 'کبد', system: 'Digestive', worldPos: new THREE.Vector3(-0.06, 1.10, 0.05) },
+  { id: 'HEART', labelEn: 'Heart', labelFa: 'قلب', system: 'Circulatory', worldPos: new THREE.Vector3(0.018, 1.25, 0.05) },
+  { id: 'LUNGS', labelEn: 'Lungs', labelFa: 'ریه‌ها', system: 'Respiratory', worldPos: new THREE.Vector3(0.09, 1.34, 0.04) },
+  { id: 'KIDNEY', labelEn: 'Left Kidney', labelFa: 'کلیه چپ', system: 'Urinary', worldPos: new THREE.Vector3(0.065, 1.05, 0.02) },
   { id: 'LYMPHATIC', labelEn: 'Lymphatic', labelFa: 'سیستم لنفاوی', system: 'Lymphatic', worldPos: new THREE.Vector3(0.20, 1.02, 0.0) },
-  { id: 'FEMUR', labelEn: 'Femur', labelFa: 'استخوان ران', system: 'Skeletal', worldPos: new THREE.Vector3(0.11, 0.65, 0.0) },
+  { id: 'FEMUR', labelEn: 'Femur', labelFa: 'استخوان ران', system: 'Skeletal', worldPos: new THREE.Vector3(0.10, 0.65, 0.0) },
 ];
 
 export class AnatomyViewer {
@@ -80,6 +80,7 @@ export class AnatomyViewer {
     this.onLoadingProgress = options.onLoadingProgress;
 
     // 1. Scene
+    (window as unknown as { THREE: unknown }).THREE = THREE;
     this.scene = new THREE.Scene();
     this.scene.background = new THREE.Color(0x0c1017); // Dark medical studio background
 
@@ -98,7 +99,7 @@ export class AnatomyViewer {
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     this.renderer.localClippingEnabled = true;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 1.25;
+    this.renderer.toneMappingExposure = 1.35;
     this.container.appendChild(this.renderer.domElement);
 
     // 4. OrbitControls
@@ -147,19 +148,24 @@ export class AnatomyViewer {
   }
 
   private setupLighting() {
-    const ambientLight = new THREE.AmbientLight(0xffffff, 0.9);
+    const ambientLight = new THREE.AmbientLight(0xffffff, 1.25);
     this.scene.add(ambientLight);
 
-    const keyLight = new THREE.DirectionalLight(0xffffff, 1.4);
-    keyLight.position.set(2, 4, 3);
+    // Front direct medical examination light
+    const frontLight = new THREE.DirectionalLight(0xffffff, 1.35);
+    frontLight.position.set(0, 1.5, 3.5);
+    this.scene.add(frontLight);
+
+    const keyLight = new THREE.DirectionalLight(0xffffff, 1.5);
+    keyLight.position.set(2.5, 3.5, 2.5);
     this.scene.add(keyLight);
 
-    const fillLight = new THREE.DirectionalLight(0x7090ff, 0.75);
-    fillLight.position.set(-3, 2, -2);
+    const fillLight = new THREE.DirectionalLight(0xa5c4f7, 0.7);
+    fillLight.position.set(-2.5, 2, 2);
     this.scene.add(fillLight);
 
-    const rimLight = new THREE.DirectionalLight(0x38bdf8, 0.85);
-    rimLight.position.set(0, -2, -3);
+    const rimLight = new THREE.DirectionalLight(0x38bdf8, 0.75);
+    rimLight.position.set(0, 1, -3);
     this.scene.add(rimLight);
 
     // Subtle dark circular platform beneath feet
@@ -437,6 +443,9 @@ export class AnatomyViewer {
     }
     window.removeEventListener('resize', this.onResize);
     this.renderer.domElement.removeEventListener('pointerdown', this.onPointerDown);
+    if (this.renderer.domElement.parentNode) {
+      this.renderer.domElement.parentNode.removeChild(this.renderer.domElement);
+    }
     this.zAnatomyLoader.dispose();
     this.controls.dispose();
     this.renderer.dispose();

@@ -26,6 +26,9 @@ export function App() {
   useEffect(() => {
     if (!containerRef.current) return;
 
+    // Clean up any stale canvas from prior mounts or StrictMode
+    containerRef.current.innerHTML = '';
+
     const newViewer = new AnatomyViewer({
       container: containerRef.current,
       onStructureSelect: (structure) => {
@@ -35,6 +38,8 @@ export function App() {
         setLoadingPercent(percent);
       }
     });
+
+    (window as unknown as { __viewer: AnatomyViewer }).__viewer = newViewer;
 
     setViewer(newViewer);
 

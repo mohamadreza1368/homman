@@ -341,6 +341,16 @@ export class ZAnatomyLoader {
           if (st.center.x > 0.015) {
             visible = false;
           }
+          // To reveal internal viscera (lungs, heart, liver, stomach, intestines) in chest & abdomen:
+          // Dissect superficial abdominal sheets & intercostals
+          const lowerName = st.name.toLowerCase();
+          if (
+            lowerName.includes('oblique') ||
+            lowerName.includes('transversus_abdominis') ||
+            lowerName.includes('intercostal')
+          ) {
+            visible = false;
+          }
         } else if (st.system === 'skeletal') {
           // Hide bones on anatomical right (x < -0.015)
           if (st.center.x < -0.015) {

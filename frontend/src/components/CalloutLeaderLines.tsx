@@ -51,8 +51,15 @@ export function CalloutLeaderLines({ viewer, onSelectCallout }: Props) {
         {points.map(({ callout, x, y, visible, isRightSide }) => {
           if (!visible) return null;
 
-          // Line offset towards label
-          const lineLength = 55;
+          // Staggered line length to prevent label collisions
+          let lineLength = 65;
+          if (callout.id === 'LUNGS') lineLength = 120;
+          if (callout.id === 'HEART') lineLength = 65;
+          if (callout.id === 'RESPIRATORY') lineLength = 105;
+          if (callout.id === 'BICEPS') lineLength = 70;
+          if (callout.id === 'LIVER') lineLength = 95;
+          if (callout.id === 'LYMPHATIC') lineLength = 85;
+
           const targetX = isRightSide ? x + lineLength : x - lineLength;
 
           return (
@@ -82,7 +89,15 @@ export function CalloutLeaderLines({ viewer, onSelectCallout }: Props) {
       {points.map(({ callout, x, y, visible, isRightSide }) => {
         if (!visible) return null;
 
-        const lineLength = 60;
+        // Staggered line length to match SVG
+        let lineLength = 65;
+        if (callout.id === 'LUNGS') lineLength = 120;
+        if (callout.id === 'HEART') lineLength = 65;
+        if (callout.id === 'RESPIRATORY') lineLength = 105;
+        if (callout.id === 'BICEPS') lineLength = 70;
+        if (callout.id === 'LIVER') lineLength = 95;
+        if (callout.id === 'LYMPHATIC') lineLength = 85;
+
         const labelX = isRightSide ? x + lineLength + 6 : x - lineLength - 6;
 
         return (
