@@ -22,15 +22,14 @@ export interface ZStructureInfo {
   side: 'l' | 'r' | 'center';
 }
 
-// Medical PBR Material Palette
 export const Z_SYSTEM_PALETTE = {
   skeletal: {
-    color: '#eae3d2',        // Realistic ivory bone
-    roughness: 0.45,
+    color: '#eae3d2',        // Realistic warm ivory bone
+    roughness: 0.40,
     metalness: 0.05,
   },
   muscular: {
-    color: '#b8483f',        // Striated red muscle
+    color: '#b8483f',        // Striated deep red muscle
     roughness: 0.52,
     metalness: 0.02,
   },
@@ -78,10 +77,10 @@ export class ZAnatomyLoader {
   public systemGroups = new Map<ZSystemId, THREE.Group>();
   public allMeshes: THREE.Mesh[] = [];
 
-  public halfDissectionMode = true; // Right side muscles, Left side skeleton, Center organs
+  public halfDissectionMode = true; // Left on screen (Patient Right) = Muscles; Right on screen (Patient Left) = Skeleton
   public isLoaded = false;
-  public selectedMesh: THREE.Mesh | null = null;
   public highlightedMesh: THREE.Mesh | null = null;
+  public originalHighlightMat: THREE.Material | null = null;
 
   public visibility: Record<ZSystemId, boolean> = {
     skeletal: true,
@@ -111,7 +110,6 @@ export class ZAnatomyLoader {
     parentScene: THREE.Scene,
     onProgress?: (percent: number) => void
   ): Promise<void> {
-    // 1. Create root groups for systems
     const systemIds: ZSystemId[] = [
       'skeletal',
       'muscular',
@@ -156,9 +154,6 @@ export class ZAnatomyLoader {
       }
     }
 
-    // 2. Build subtle translucent skin silhouette
-    this.buildTranslucentSkinSilhouette();
-
     this.isLoaded = true;
     this.updateVisibilityAndHalfDissection();
   }
@@ -168,10 +163,13 @@ export class ZAnatomyLoader {
     const gltf = await this.loader.loadAsync(url);
     const scene = gltf.scene;
 
-    // Traverse all meshes and assign materials & classification
+    // IMPORTANT: Keep gltf.scene intact so all parent node transformations (rotations, scales, offsets) are preserved!
     scene.updateMatrixWorld(true);
 
-    const meshesToAdd: { mesh: THREE.Mesh; sys: ZSystemId }[] = [];
+    const group = this.systemGroups.get(defaultSys);
+    if (group) {
+      group.add(scene);
+    }
 
     scene.traverse((child) => {
       if (!(child instanceof THREE.Mesh)) return;
@@ -180,27 +178,21 @@ export class ZAnatomyLoader {
       const cleanName = this.formatAnatomyName(rawName);
       const system = this.classifySystem(cleanName, defaultSys);
 
-      // Determine side (.r = right, .l = left)
+      // Compute world coordinates
+      const box = new THREE.Box3().setFromObject(child);
+      const center = box.getCenter(new THREE.Vector3());
+
+      // In this coordinate system:
+      // x < -0.01 is Anatomical Right (screen Left)
+      // x > 0.01 is Anatomical Left (screen Right)
       let side: 'l' | 'r' | 'center' = 'center';
-      if (rawName.endsWith('.r') || cleanName.toLowerCase().includes('right')) {
-        side = 'r';
-      } else if (rawName.endsWith('.l') || cleanName.toLowerCase().includes('left')) {
-        side = 'l';
+      if (center.x < -0.015) {
+        side = 'r'; // Anatomical Right
+      } else if (center.x > 0.015) {
+        side = 'l'; // Anatomical Left
       }
 
-      // Compute world bounds
-      child.geometry.computeBoundingBox();
-      const bounds = child.geometry.boundingBox?.clone() || new THREE.Box3();
-      bounds.applyMatrix4(child.matrixWorld);
-      const center = bounds.getCenter(new THREE.Vector3());
-
-      // If side is still center, check x coordinate
-      if (side === 'center') {
-        if (center.x > 0.015) side = 'r';
-        else if (center.x < -0.015) side = 'l';
-      }
-
-      // Assign authentic PBR material
+      // Assign authentic medical PBR material
       const mat = this.createMaterialForStructure(cleanName, system);
       child.material = mat;
       child.castShadow = true;
@@ -221,28 +213,18 @@ export class ZAnatomyLoader {
         system,
         mesh: child,
         center,
-        bounds,
+        bounds: box,
         side,
       };
 
       this.structures.push(info);
       this.allMeshes.push(child);
-      meshesToAdd.push({ mesh: child, sys: system });
-    });
-
-    // Add meshes to their respective system groups in the scene
-    meshesToAdd.forEach(({ mesh, sys }) => {
-      const g = this.systemGroups.get(sys);
-      if (g) {
-        g.add(mesh);
-      }
     });
   }
 
   private classifySystem(cleanName: string, defaultSys: ZSystemId): ZSystemId {
     const lower = cleanName.toLowerCase();
 
-    // Specific organ classifications in ic-organlar.glb
     if (lower.includes('lung') || lower.includes('bronch') || lower.includes('trachea')) {
       return 'respiratory';
     }
@@ -271,24 +253,23 @@ export class ZAnatomyLoader {
   private createMaterialForStructure(name: string, system: ZSystemId): THREE.MeshStandardMaterial {
     const lower = name.toLowerCase();
 
-    // Organ-specific custom colors
     if (lower.includes('liver')) {
       return new THREE.MeshStandardMaterial({
-        color: new THREE.Color('#7f3b32'), // Deep hepatic brown-red
+        color: new THREE.Color('#7f3b32'), // Hepatic rich reddish brown
         roughness: 0.35,
         metalness: 0.05,
         side: THREE.DoubleSide,
       });
     }
-    if (lower.includes('lung')) {
+    if (lower.includes('lung') || lower.includes('bronch')) {
       return new THREE.MeshStandardMaterial({
-        color: new THREE.Color('#f28482'), // Soft pink lungs
+        color: new THREE.Color('#f28482'), // Pulmonary soft pink
         roughness: 0.45,
         metalness: 0.02,
         side: THREE.DoubleSide,
       });
     }
-    if (lower.includes('heart')) {
+    if (lower.includes('heart') || lower.includes('myocardi')) {
       return new THREE.MeshStandardMaterial({
         color: new THREE.Color('#9e2a2b'), // Cardiac crimson
         roughness: 0.35,
@@ -298,7 +279,7 @@ export class ZAnatomyLoader {
     }
     if (lower.includes('kidney')) {
       return new THREE.MeshStandardMaterial({
-        color: new THREE.Color('#7c2d12'), // Renal red
+        color: new THREE.Color('#7c2d12'), // Renal red bean
         roughness: 0.36,
         metalness: 0.05,
         side: THREE.DoubleSide,
@@ -306,7 +287,7 @@ export class ZAnatomyLoader {
     }
     if (lower.includes('stomach') || lower.includes('jejunum') || lower.includes('colon') || lower.includes('intestine')) {
       return new THREE.MeshStandardMaterial({
-        color: new THREE.Color('#d4a373'), // Gastrointestinal warm amber
+        color: new THREE.Color('#d4a373'), // Visceral peach-amber
         roughness: 0.38,
         metalness: 0.04,
         side: THREE.DoubleSide,
@@ -322,7 +303,7 @@ export class ZAnatomyLoader {
     }
     if (lower.includes('artery') || lower.includes('aorta')) {
       return new THREE.MeshStandardMaterial({
-        color: new THREE.Color('#dc2626'), // Arterial red
+        color: new THREE.Color('#dc2626'), // Arterial bright red
         roughness: 0.32,
         metalness: 0.1,
         side: THREE.DoubleSide,
@@ -330,7 +311,7 @@ export class ZAnatomyLoader {
     }
     if (lower.includes('vein') || lower.includes('vena')) {
       return new THREE.MeshStandardMaterial({
-        color: new THREE.Color('#2563eb'), // Venous blue
+        color: new THREE.Color('#2563eb'), // Venous royal blue
         roughness: 0.32,
         metalness: 0.1,
         side: THREE.DoubleSide,
@@ -346,65 +327,23 @@ export class ZAnatomyLoader {
     });
   }
 
-  private buildTranslucentSkinSilhouette(): void {
-    const skinGroup = this.systemGroups.get('integumentary');
-    if (!skinGroup) return;
-
-    // Build anatomical translucent skin silhouette around the body
-    // Using subtle capsules/spheres matching body contour
-    const skinMat = new THREE.MeshStandardMaterial({
-      color: new THREE.Color('#fcd5ce'),
-      transparent: true,
-      opacity: this.opacity.integumentary,
-      roughness: 0.3,
-      metalness: 0.02,
-      side: THREE.DoubleSide,
-      depthWrite: false,
-    });
-
-    // Torso silhouette
-    const torso = new THREE.Mesh(new THREE.CapsuleGeometry(0.18, 0.45, 16, 32), skinMat.clone());
-    torso.position.set(0, 1.20, 0.01);
-    torso.name = 'Skin of Torso';
-    skinGroup.add(torso);
-
-    // Head silhouette
-    const head = new THREE.Mesh(new THREE.SphereGeometry(0.11, 24, 24), skinMat.clone());
-    head.scale.set(0.9, 1.15, 1.05);
-    head.position.set(0, 1.68, 0.02);
-    head.name = 'Skin of Head';
-    skinGroup.add(head);
-
-    // Left leg silhouette (on the skeletal side)
-    const legLeft = new THREE.Mesh(new THREE.CapsuleGeometry(0.08, 0.72, 12, 24), skinMat.clone());
-    legLeft.position.set(-0.11, 0.50, 0.0);
-    legLeft.name = 'Skin of Left Leg';
-    skinGroup.add(legLeft);
-
-    // Left arm silhouette (on the skeletal side)
-    const armLeft = new THREE.Mesh(new THREE.CapsuleGeometry(0.05, 0.52, 12, 24), skinMat.clone());
-    armLeft.position.set(-0.25, 1.12, 0.0);
-    armLeft.name = 'Skin of Left Arm';
-    skinGroup.add(armLeft);
-  }
-
   public updateVisibilityAndHalfDissection(): void {
     this.structures.forEach((st) => {
       const isSysVis = this.visibility[st.system];
       let visible = isSysVis;
 
       if (this.halfDissectionMode && visible) {
-        // Anatomical Right (x > 0.005) -> Muscular System
-        // Anatomical Left (x < -0.005) -> Skeletal System
-        // Midline & Visceral Organs (Digestive, Respiratory, Urinary, Heart, Brain) -> Visible on both sides
+        // Anatomical Right (x < 0.015, left side of screen) -> Muscular System
+        // Anatomical Left (x > -0.015, right side of screen) -> Skeletal System
+        // Midline & Visceral Organs (Digestive, Respiratory, Urinary, Heart, Brain) -> Always visible
         if (st.system === 'muscular') {
-          // Hide muscles on anatomical left side
-          if (st.center.x < -0.01) {
+          // Hide muscles on anatomical left (x > 0.015)
+          if (st.center.x > 0.015) {
             visible = false;
           }
         } else if (st.system === 'skeletal') {
-          // Hide bones on anatomical right side (where muscles are displayed)
-          if (st.center.x > 0.01) {
+          // Hide bones on anatomical right (x < -0.015)
+          if (st.center.x < -0.015) {
             visible = false;
           }
         }
@@ -412,12 +351,6 @@ export class ZAnatomyLoader {
 
       st.mesh.visible = visible;
     });
-
-    // Update skin group visibility
-    const skinGroup = this.systemGroups.get('integumentary');
-    if (skinGroup) {
-      skinGroup.visible = this.visibility.integumentary;
-    }
   }
 
   public setSystemVisibility(system: ZSystemId, visible: boolean): void {
@@ -431,7 +364,6 @@ export class ZAnatomyLoader {
     if (system in this.opacity) {
       this.opacity[system] = opacity;
 
-      // Update materials of this system
       const g = this.systemGroups.get(system);
       if (g) {
         g.traverse((child) => {
@@ -475,11 +407,11 @@ export class ZAnatomyLoader {
     if (!info) return;
 
     this.highlightedMesh = info.mesh;
-    // Electric blue neon glow (as seen on the left kidney in user image)
+    // Electric blue neon glow (identical to left kidney in user image)
     const highlightMat = new THREE.MeshStandardMaterial({
       color: new THREE.Color(0x38bdf8),
       emissive: new THREE.Color(0x0284c7),
-      emissiveIntensity: 0.8,
+      emissiveIntensity: 0.85,
       roughness: 0.25,
       metalness: 0.1,
       transparent: true,
@@ -505,7 +437,6 @@ export class ZAnatomyLoader {
   }
 
   private formatAnatomyName(rawName: string): string {
-    // Remove .l or .r suffix and format
     let clean = rawName
       .replace(/\.l$/i, ' (Left)')
       .replace(/\.r$/i, ' (Right)')
