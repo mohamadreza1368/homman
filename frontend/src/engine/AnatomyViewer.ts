@@ -29,7 +29,7 @@ export const CORTICAL_LOBE_COLORS = {
 export const DEFAULT_CALLOUTS: AnatomicalCallout[] = [
   { id: 'FMA5018', query: 'brain', labelEn: 'Cerebrum', labelFa: 'مغز (مخ)', system: 'Nervous', worldPos: new THREE.Vector3(-0.02, 1.62, 0.05) },
   { id: 'FMA7195', query: 'lung', labelEn: 'Lungs', labelFa: 'ریه‌ها', system: 'Respiratory', worldPos: new THREE.Vector3(0.09, 1.34, 0.04) },
-  { id: 'FMA7088', query: 'heart', labelEn: 'Heart', labelFa: 'قلب', system: 'Circulatory', worldPos: new THREE.Vector3(0.018, 1.25, 0.05) },
+  { id: 'FMA7088', query: 'heart', labelEn: 'Heart', labelFa: 'قلب', system: 'Circulatory', worldPos: new THREE.Vector3(0.025, 1.28, 0.04) },
   { id: 'FMA7199', query: 'liver', labelEn: 'Liver', labelFa: 'کبد', system: 'Digestive', worldPos: new THREE.Vector3(-0.06, 1.10, 0.05) },
   { id: 'FMA7148', query: 'stomach', labelEn: 'Stomach', labelFa: 'معده', system: 'Digestive', worldPos: new THREE.Vector3(0.04, 1.15, 0.04) },
   { id: 'FMA7201_L', query: 'kidney.l', labelEn: 'Left Kidney', labelFa: 'کلیه چپ', system: 'Urinary', worldPos: new THREE.Vector3(0.065, 1.05, 0.02) },
@@ -270,8 +270,9 @@ export class AnatomyViewer {
 
   public focusOnHeart() {
     this.selectAndFocusStructure('FMA7088');
-    this.camera.position.set(0.018, 1.25, 0.72);
-    this.controls.target.copy(this.zAnatomyLoader.cardiacCenter);
+    const C = this.zAnatomyLoader.cardiacCenter;
+    this.camera.position.set(C.x, C.y, C.z + 0.60);
+    this.controls.target.copy(C);
     this.controls.update();
   }
 
@@ -375,7 +376,17 @@ export class AnatomyViewer {
     let nameFa = primary.cleanName;
     let system = primary.system.toUpperCase() as AnatomicalStructure['systemCategory'];
 
-    if (qLower.includes('heart') || qLower.includes('fma7088') || cleanLower.includes('ventricle') || cleanLower.includes('atrium')) {
+    const isBrainVentricle = cleanLower.includes('lateral ventricle') || cleanLower.includes('third ventricle') || cleanLower.includes('fourth ventricle');
+
+    if (isBrainVentricle) {
+      fmaId = 'FMA242784';
+      nameEn = primary.cleanName;
+      nameFa = 'بطن جانبی مغز (حفرات مایع مغزی-نخاعی)';
+      system = 'NERVOUS' as never;
+    } else if (
+      (qLower.includes('heart') || qLower.includes('fma7088') || cleanLower.includes('left ventricle') || cleanLower.includes('right ventricle') || cleanLower.includes('atrium')) &&
+      !isBrainVentricle
+    ) {
       fmaId = 'FMA7088';
       nameEn = 'Heart (Myocardium & Chambers)';
       nameFa = 'قلب (حفرات بطن و دهلیز)';
@@ -545,28 +556,28 @@ export class AnatomyViewer {
       let atriumScale = 1.0;
       let vesselScale = 1.0;
 
-      if (t < 0.28) {
-        // Systole: Rapid ventricular contraction
-        const s = Math.sin((t / 0.28) * Math.PI);
-        ventricleScale = 1.0 - s * 0.055;
-        vesselScale = 1.0 + s * 0.025;
-        atriumScale = 1.0 + s * 0.02;
-      } else if (t < 0.42) {
-        // Isovolumetric relaxation
-        const s = Math.cos(((t - 0.28) / 0.14) * (Math.PI / 2));
-        ventricleScale = 0.945 + (1 - s) * 0.035;
-        vesselScale = 1.025 - (1 - s) * 0.025;
-      } else if (t < 0.82) {
-        // Diastole: Ventricular refilling
-        const d = Math.sin(((t - 0.42) / 0.40) * Math.PI);
-        ventricleScale = 0.98 + d * 0.035; // Expands naturally to 1.015
+      if (t < 0.26) {
+        // Systole: Rapid ventricular contraction (LUB)
+        const s = Math.sin((t / 0.26) * Math.PI);
+        ventricleScale = 1.0 - s * 0.075;
+        vesselScale = 1.0 + s * 0.035;
+        atriumScale = 1.0 + s * 0.03;
+      } else if (t < 0.40) {
+        // Isovolumetric relaxation (DUB)
+        const s = Math.cos(((t - 0.26) / 0.14) * (Math.PI / 2));
+        ventricleScale = 0.925 + (1 - s) * 0.055;
+        vesselScale = 1.035 - (1 - s) * 0.035;
+      } else if (t < 0.80) {
+        // Diastole: Ventricular filling
+        const d = Math.sin(((t - 0.40) / 0.40) * Math.PI);
+        ventricleScale = 0.98 + d * 0.04;
         vesselScale = 1.0;
         atriumScale = 1.0;
       } else {
-        // Atrial kick
-        const a = Math.sin(((t - 0.82) / 0.18) * Math.PI);
-        atriumScale = 1.0 - a * 0.04;
-        ventricleScale = 1.015 + a * 0.01;
+        // Atrial kick (Atrial Systole)
+        const a = Math.sin(((t - 0.80) / 0.20) * Math.PI);
+        atriumScale = 1.0 - a * 0.05;
+        ventricleScale = 1.02 + a * 0.015;
       }
 
       const C = this.zAnatomyLoader.cardiacCenter;

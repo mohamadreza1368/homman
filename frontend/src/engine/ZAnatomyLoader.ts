@@ -236,13 +236,16 @@ export class ZAnatomyLoader {
       this.structures.push(info);
       this.allMeshes.push(child);
 
-      // Track cardiac meshes in dolasim.glb
+      // Track cardiac meshes ONLY in dolasim.glb (strictly in the chest, never brain)
       if (filename === 'dolasim.glb') {
         const lower = rawName.toLowerCase();
         let chamberType: 'ventricle' | 'atrium' | 'vessel' | null = null;
-        if (lower.includes('ventricle') || lower.includes('papillary')) {
+        if (
+          (lower.includes('left ventricle') || lower.includes('right ventricle') || lower.includes('papillary muscle')) &&
+          !lower.includes('lateral') && !lower.includes('third') && !lower.includes('fourth')
+        ) {
           chamberType = 'ventricle';
-        } else if (lower.includes('atrium')) {
+        } else if (lower.includes('atrium') && (lower.includes('left atrium') || lower.includes('right atrium'))) {
           chamberType = 'atrium';
         } else if (
           lower.includes('coronary') ||
@@ -269,6 +272,15 @@ export class ZAnatomyLoader {
   private classifySystem(cleanName: string, defaultSys: ZSystemId): ZSystemId {
     const lower = cleanName.toLowerCase();
 
+    // 1. Brain ventricles MUST be nervous system, NEVER cardiovascular!
+    if (
+      lower.includes('lateral ventricle') ||
+      lower.includes('third ventricle') ||
+      lower.includes('fourth ventricle')
+    ) {
+      return 'nervous';
+    }
+
     if (lower.includes('kidney') || lower.includes('renal') || lower.includes('ureter') || lower.includes('urinary bladder')) {
       return 'urinary';
     }
@@ -277,8 +289,11 @@ export class ZAnatomyLoader {
     }
     if (
       lower.includes('heart') ||
-      lower.includes('ventricle') ||
-      lower.includes('atrium') ||
+      lower.includes('left ventricle') ||
+      lower.includes('right ventricle') ||
+      lower.includes('papillary muscle') ||
+      lower.includes('left atrium') ||
+      lower.includes('right atrium') ||
       lower.includes('myocardi') ||
       lower.includes('cardiac') ||
       lower.includes('coronary') ||
@@ -565,10 +580,24 @@ export class ZAnatomyLoader {
     const q = query.toLowerCase().trim();
     if (!q) return [];
 
-    // Cardiac (Heart)
+    // Cardiac (Heart) - Strictly in Thorax (center.y < 1.45), NEVER Brain Ventricles!
     if (q === 'fma7088' || q === 'fma7197' || q === 'heart' || q === 'cardiac' || q === 'قلب') {
+      return this.structures.filter((s) => {
+        const name = s.name.toLowerCase();
+        if (name.includes('lateral ventricle') || name.includes('third ventricle') || name.includes('fourth ventricle')) {
+          return false;
+        }
+        return (
+          /left ventricle|right ventricle|left atrium|right atrium|ascending aorta|pulmonary trunk|coronary|cardiac|papillary muscle|leaflet/i.test(s.name) &&
+          s.center.y < 1.45
+        );
+      });
+    }
+
+    // Brain Ventricles (Nervous system / CSF cavities in head)
+    if (q.includes('lateral ventricle') || q.includes('brain ventricle') || q === 'fma242784' || q === 'بطن مغز') {
       return this.structures.filter((s) =>
-        /ventricle|atrium|cardiac|coronary|ascending aorta|pulmonary trunk|papillary muscle|leaflet/i.test(s.name)
+        /lateral ventricle|third ventricle|fourth ventricle/i.test(s.name)
       );
     }
 
