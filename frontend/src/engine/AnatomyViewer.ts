@@ -11,6 +11,7 @@ export interface ViewerOptions {
 
 export interface AnatomicalCallout {
   id: string;
+  query: string;
   labelEn: string;
   labelFa: string;
   system: string;
@@ -24,17 +25,17 @@ export const CORTICAL_LOBE_COLORS = {
   occipital: 0xf59e0b,
 };
 
-// Exact 3D anatomical landmarks on the Z-Anatomy body
+// Verified 3D anatomical landmarks mapped to authentic FMA IDs
 export const DEFAULT_CALLOUTS: AnatomicalCallout[] = [
-  { id: 'CEREBRUM', labelEn: 'Cerebrum', labelFa: 'مغز (مخ)', system: 'Nervous', worldPos: new THREE.Vector3(-0.02, 1.62, 0.05) },
-  { id: 'RESPIRATORY', labelEn: 'Respiratory', labelFa: 'دستگاه تنفس', system: 'Respiratory', worldPos: new THREE.Vector3(-0.08, 1.35, 0.04) },
-  { id: 'BICEPS', labelEn: 'Biceps Brachii', labelFa: 'عضله دوسر بازو', system: 'Muscular', worldPos: new THREE.Vector3(-0.24, 1.25, 0.02) },
-  { id: 'LIVER', labelEn: 'Liver', labelFa: 'کبد', system: 'Digestive', worldPos: new THREE.Vector3(-0.06, 1.10, 0.05) },
-  { id: 'HEART', labelEn: 'Heart', labelFa: 'قلب', system: 'Circulatory', worldPos: new THREE.Vector3(0.018, 1.25, 0.05) },
-  { id: 'LUNGS', labelEn: 'Lungs', labelFa: 'ریه‌ها', system: 'Respiratory', worldPos: new THREE.Vector3(0.09, 1.34, 0.04) },
-  { id: 'KIDNEY', labelEn: 'Left Kidney', labelFa: 'کلیه چپ', system: 'Urinary', worldPos: new THREE.Vector3(0.065, 1.05, 0.02) },
-  { id: 'LYMPHATIC', labelEn: 'Lymphatic', labelFa: 'سیستم لنفاوی', system: 'Lymphatic', worldPos: new THREE.Vector3(0.20, 1.02, 0.0) },
-  { id: 'FEMUR', labelEn: 'Femur', labelFa: 'استخوان ران', system: 'Skeletal', worldPos: new THREE.Vector3(0.10, 0.65, 0.0) },
+  { id: 'FMA5018', query: 'brain', labelEn: 'Cerebrum', labelFa: 'مغز (مخ)', system: 'Nervous', worldPos: new THREE.Vector3(-0.02, 1.62, 0.05) },
+  { id: 'FMA7195', query: 'lung', labelEn: 'Lungs', labelFa: 'ریه‌ها', system: 'Respiratory', worldPos: new THREE.Vector3(0.09, 1.34, 0.04) },
+  { id: 'FMA7088', query: 'heart', labelEn: 'Heart', labelFa: 'قلب', system: 'Circulatory', worldPos: new THREE.Vector3(0.018, 1.25, 0.05) },
+  { id: 'FMA7199', query: 'liver', labelEn: 'Liver', labelFa: 'کبد', system: 'Digestive', worldPos: new THREE.Vector3(-0.06, 1.10, 0.05) },
+  { id: 'FMA7148', query: 'stomach', labelEn: 'Stomach', labelFa: 'معده', system: 'Digestive', worldPos: new THREE.Vector3(0.04, 1.15, 0.04) },
+  { id: 'FMA7201_L', query: 'kidney.l', labelEn: 'Left Kidney', labelFa: 'کلیه چپ', system: 'Urinary', worldPos: new THREE.Vector3(0.065, 1.05, 0.02) },
+  { id: 'FMA9915', query: 'femur', labelEn: 'Femur', labelFa: 'استخوان ران', system: 'Skeletal', worldPos: new THREE.Vector3(0.10, 0.65, 0.0) },
+  { id: 'BICEPS', query: 'biceps', labelEn: 'Biceps Brachii', labelFa: 'عضله دوسر بازو', system: 'Muscular', worldPos: new THREE.Vector3(-0.24, 1.25, 0.02) },
+  { id: 'LYMPHATIC', query: 'lymph', labelEn: 'Lymphatic', labelFa: 'سیستم لنفاوی', system: 'Lymphatic', worldPos: new THREE.Vector3(0.20, 1.02, 0.0) },
 ];
 
 export class AnatomyViewer {
@@ -51,6 +52,10 @@ export class AnatomyViewer {
   private mouse = new THREE.Vector2();
   private onStructureSelect?: (structure: AnatomicalStructure | null) => void;
   private onLoadingProgress?: (percent: number) => void;
+
+  // Track pointer for distinguishing clicks from camera rotation
+  private pointerDownPos = { x: 0, y: 0 };
+  private onContextMenu: (e: MouseEvent) => void;
 
   // 3-Axis Clipping Planes
   public axialPlane = new THREE.Plane(new THREE.Vector3(0, -1, 0), 2.0);
@@ -71,8 +76,6 @@ export class AnatomyViewer {
     isBeating: true,
     bpm: 72,
   };
-  private heartMesh: THREE.Mesh | null = null;
-  private heartOriginalScale = new THREE.Vector3(1, 1, 1);
 
   constructor(options: ViewerOptions) {
     this.container = options.container;
@@ -82,7 +85,7 @@ export class AnatomyViewer {
     // 1. Scene
     (window as unknown as { THREE: unknown }).THREE = THREE;
     this.scene = new THREE.Scene();
-    this.scene.background = new THREE.Color(0x0c1017); // Dark medical studio background
+    this.scene.background = new THREE.Color(0x0a0e17); // Deep medical charcoal slate
 
     // 2. Camera: Focused on human body height (1.70m, center at Y = 0.85m)
     const width = this.container.clientWidth;
@@ -99,18 +102,36 @@ export class AnatomyViewer {
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     this.renderer.localClippingEnabled = true;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 1.35;
+    this.renderer.toneMappingExposure = 1.20;
     this.container.appendChild(this.renderer.domElement);
 
-    // 4. OrbitControls
+    // 4. OrbitControls: Full Pan, Zoom, and Rotation
     this.controls = new OrbitControls(this.camera, this.renderer.domElement);
     this.controls.enableDamping = true;
     this.controls.dampingFactor = 0.06;
     this.controls.target.set(0, 0.85, 0);
     this.controls.minDistance = 0.15;
     this.controls.maxDistance = 6.0;
+    
+    // Enable Screen-Space Panning (Up/Down, Left/Right)
+    this.controls.enablePan = true;
+    this.controls.screenSpacePanning = true;
+    this.controls.panSpeed = 1.0;
+    this.controls.mouseButtons = {
+      LEFT: THREE.MOUSE.ROTATE,
+      MIDDLE: THREE.MOUSE.DOLLY,
+      RIGHT: THREE.MOUSE.PAN,
+    };
+    this.controls.touches = {
+      ONE: THREE.TOUCH.ROTATE,
+      TWO: THREE.TOUCH.DOLLY_PAN,
+    };
 
-    // 5. Lighting: High-contrast 3-point medical studio illumination
+    // Prevent context menu on right click so right-drag pan works seamlessly
+    this.onContextMenu = (e: MouseEvent) => e.preventDefault();
+    this.renderer.domElement.addEventListener('contextmenu', this.onContextMenu);
+
+    // 5. Lighting: Soft medical studio illumination with ambient occlusion
     this.setupLighting();
 
     // 6. Z-Anatomy 3D Loader
@@ -119,24 +140,17 @@ export class AnatomyViewer {
     // 7. Event listeners
     this.onResize = this.onResize.bind(this);
     this.onPointerDown = this.onPointerDown.bind(this);
+    this.onPointerUp = this.onPointerUp.bind(this);
+
     window.addEventListener('resize', this.onResize);
     this.renderer.domElement.addEventListener('pointerdown', this.onPointerDown);
+    this.renderer.domElement.addEventListener('pointerup', this.onPointerUp);
 
-    // 8. Load the authentic 2,914 Z-Anatomy structures
+    // 8. Load the authentic Z-Anatomy structures
     this.zAnatomyLoader
       .loadAll(this.scene, (progress) => {
         if (this.onLoadingProgress) {
           this.onLoadingProgress(progress);
-        }
-        if (progress >= 100) {
-          // Identify heart for beating animation
-          const heartInfo = this.zAnatomyLoader.structures.find((s) =>
-            s.name.toLowerCase().includes('heart')
-          );
-          if (heartInfo) {
-            this.heartMesh = heartInfo.mesh;
-            this.heartOriginalScale.copy(heartInfo.mesh.scale);
-          }
         }
       })
       .catch((err) => {
@@ -148,30 +162,34 @@ export class AnatomyViewer {
   }
 
   private setupLighting() {
-    const ambientLight = new THREE.AmbientLight(0xffffff, 1.25);
-    this.scene.add(ambientLight);
+    // Hemispherical skylight gives biological soft ambient gradients
+    const hemiLight = new THREE.HemisphereLight(0xe2e8f0, 0x1e293b, 1.15);
+    this.scene.add(hemiLight);
 
-    // Front direct medical examination light
-    const frontLight = new THREE.DirectionalLight(0xffffff, 1.35);
-    frontLight.position.set(0, 1.5, 3.5);
+    // Soft frontal clinical light
+    const frontLight = new THREE.DirectionalLight(0xffffff, 1.1);
+    frontLight.position.set(0, 1.6, 3.2);
     this.scene.add(frontLight);
 
-    const keyLight = new THREE.DirectionalLight(0xffffff, 1.5);
-    keyLight.position.set(2.5, 3.5, 2.5);
+    // Key light
+    const keyLight = new THREE.DirectionalLight(0xffffff, 1.2);
+    keyLight.position.set(2.2, 3.0, 2.2);
     this.scene.add(keyLight);
 
-    const fillLight = new THREE.DirectionalLight(0xa5c4f7, 0.7);
-    fillLight.position.set(-2.5, 2, 2);
+    // Fill light with subtle cool undertone
+    const fillLight = new THREE.DirectionalLight(0x93c5fd, 0.65);
+    fillLight.position.set(-2.2, 1.8, 1.8);
     this.scene.add(fillLight);
 
-    const rimLight = new THREE.DirectionalLight(0x38bdf8, 0.75);
-    rimLight.position.set(0, 1, -3);
+    // Rim light to outline silhouette
+    const rimLight = new THREE.DirectionalLight(0x38bdf8, 0.7);
+    rimLight.position.set(0, 1.2, -2.8);
     this.scene.add(rimLight);
 
-    // Subtle dark circular platform beneath feet
+    // Subtle dark circular examination platform beneath feet
     const platform = new THREE.Mesh(
       new THREE.CylinderGeometry(0.55, 0.58, 0.02, 64),
-      new THREE.MeshStandardMaterial({ color: 0x161f2e, roughness: 0.8, metalness: 0.1 })
+      new THREE.MeshStandardMaterial({ color: 0x111827, roughness: 0.85, metalness: 0.05 })
     );
     platform.position.y = -0.01;
     this.scene.add(platform);
@@ -196,7 +214,6 @@ export class AnatomyViewer {
   }
 
   public setNeuroMode(enabled: boolean) {
-    // Show/focus on cerebrum and nervous system
     this.setSystemVisibility('nervous', enabled);
   }
 
@@ -242,17 +259,55 @@ export class AnatomyViewer {
     if (bpm !== undefined) {
       this.setHeartBpm(bpm);
     }
-    if (!enabled && this.heartMesh) {
-      this.heartMesh.scale.copy(this.heartOriginalScale);
+    if (!enabled) {
+      // Reset all cardiac mesh scales and positions precisely to original
+      this.zAnatomyLoader.cardiacMeshes.forEach((item) => {
+        item.mesh.position.copy(item.originalPosition);
+        item.mesh.scale.copy(item.originalScale);
+      });
     }
   }
 
   public focusOnHeart() {
-    this.focusOnStructure('Heart');
+    this.selectAndFocusStructure('FMA7088');
+    this.camera.position.set(0.018, 1.25, 0.72);
+    this.controls.target.copy(this.zAnatomyLoader.cardiacCenter);
+    this.controls.update();
+  }
+
+  public panCamera(deltaX: number, deltaY: number) {
+    const factor = 0.05 * Math.max(0.4, this.camera.position.distanceTo(this.controls.target));
+    const right = new THREE.Vector3(1, 0, 0).applyQuaternion(this.camera.quaternion);
+    const up = new THREE.Vector3(0, 1, 0).applyQuaternion(this.camera.quaternion);
+
+    const offset = right.multiplyScalar(deltaX * factor).add(up.multiplyScalar(deltaY * factor));
+    this.camera.position.add(offset);
+    this.controls.target.add(offset);
+    this.controls.update();
+  }
+
+  public zoomCamera(factor: number) {
+    const dir = this.controls.target.clone().sub(this.camera.position);
+    const dist = dir.length();
+    if (dist < 0.25 && factor > 0) return;
+    if (dist > 5.5 && factor < 0) return;
+
+    const moveStep = dir.normalize().multiplyScalar(factor * 0.25);
+    this.camera.position.add(moveStep);
+    this.controls.update();
+  }
+
+  public resetView() {
+    this.camera.position.set(0, 0.88, 2.45);
+    this.controls.target.set(0, 0.85, 0);
+    this.controls.update();
+  }
+
+  public setPanMode(enabled: boolean) {
+    this.controls.mouseButtons.LEFT = enabled ? THREE.MOUSE.PAN : THREE.MOUSE.ROTATE;
   }
 
   public setExplodeView(factor: number) {
-    // Explode meshes radially outward from anatomical center
     const center = new THREE.Vector3(0, 0.85, 0);
     this.zAnatomyLoader.structures.forEach((st) => {
       const dir = st.center.clone().sub(center).normalize();
@@ -261,31 +316,20 @@ export class AnatomyViewer {
   }
 
   public isolateStructure(name: string) {
-    const target = this.zAnatomyLoader.findStructureByName(name);
-    if (!target) return;
+    const matches = this.zAnatomyLoader.findStructures(name);
+    if (matches.length === 0) return;
 
-    this.zAnatomyLoader.structures.forEach((st) => {
-      const mat = st.mesh.material as THREE.MeshStandardMaterial;
-      if (st === target) {
-        st.mesh.visible = true;
-        mat.opacity = 1.0;
-        mat.transparent = false;
-      } else {
-        mat.opacity = 0.08;
-        mat.transparent = true;
-      }
-      mat.needsUpdate = true;
-    });
+    this.zAnatomyLoader.isolateStructures(matches);
+
+    // Center camera on isolated structure
+    const box = new THREE.Box3();
+    matches.forEach((m) => box.expandByObject(m.mesh));
+    const center = box.getCenter(new THREE.Vector3());
+    this.controls.target.copy(center);
   }
 
   public clearIsolation() {
-    this.zAnatomyLoader.structures.forEach((st) => {
-      const mat = st.mesh.material as THREE.MeshStandardMaterial;
-      mat.opacity = 1.0;
-      mat.transparent = false;
-      mat.needsUpdate = true;
-    });
-    this.zAnatomyLoader.updateVisibilityAndHalfDissection();
+    this.zAnatomyLoader.clearIsolation();
   }
 
   public setSystemVisibility(systemCategory: string, visible: boolean) {
@@ -302,27 +346,99 @@ export class AnatomyViewer {
     this.zAnatomyLoader.setHalfDissection(enabled);
   }
 
-  public focusOnStructure(query: string) {
-    if (this.zAnatomyLoader.isLoaded) {
-      const info = this.zAnatomyLoader.findStructureByName(query);
-      if (info) {
-        this.zAnatomyLoader.highlightStructure(info);
-        this.controls.target.copy(info.center);
-        if (this.onStructureSelect) {
-          this.onStructureSelect({
-            fmaId: info.name,
-            snomedBodyStructureId: 'Z_' + info.cleanName,
-            nameEn: info.cleanName,
-            nameFa: info.cleanName,
-            systemCategory: info.system.toUpperCase() as never,
-            genderModel: 'male',
-            meshNodeName: info.name,
-            descriptionEn: `${info.cleanName} is a verified anatomical structure from the ${info.system} system.`,
-            descriptionFa: `عضو تشریحی ${info.cleanName} در سیستم ${info.system} بدن انسان.`,
-          });
-        }
-      }
+  /**
+   * Universal selection and focus logic:
+   * Handles multi-mesh organs (e.g. Heart ventricles + atria, Lung lobes, Kidneys, Brain gyri)
+   */
+  public selectAndFocusStructure(query: string) {
+    if (!this.zAnatomyLoader.isLoaded) return;
+
+    const matches = this.zAnatomyLoader.findStructures(query);
+    if (matches.length === 0) return;
+
+    // Highlight all matching meshes
+    this.zAnatomyLoader.highlightStructures(matches);
+
+    // Calculate center
+    const box = new THREE.Box3();
+    matches.forEach((m) => box.expandByObject(m.mesh));
+    const center = box.getCenter(new THREE.Vector3());
+    this.controls.target.copy(center);
+
+    // Resolve FMA ID and bilingual info
+    const primary = matches[0];
+    const qLower = query.toLowerCase();
+    const cleanLower = primary.cleanName.toLowerCase();
+
+    let fmaId = primary.name;
+    let nameEn = primary.cleanName;
+    let nameFa = primary.cleanName;
+    let system = primary.system.toUpperCase() as AnatomicalStructure['systemCategory'];
+
+    if (qLower.includes('heart') || qLower.includes('fma7088') || cleanLower.includes('ventricle') || cleanLower.includes('atrium')) {
+      fmaId = 'FMA7088';
+      nameEn = 'Heart (Myocardium & Chambers)';
+      nameFa = 'قلب (حفرات بطن و دهلیز)';
+      system = 'CIRCULATORY' as never;
+    } else if (qLower.includes('kidney.l') || qLower.includes('fma7201_l') || (cleanLower.includes('kidney') && primary.side === 'l')) {
+      fmaId = 'FMA7201_L';
+      nameEn = 'Left Kidney';
+      nameFa = 'کلیه چپ';
+      system = 'URINARY' as never;
+    } else if (qLower.includes('kidney.r') || qLower.includes('fma7201_r') || (cleanLower.includes('kidney') && primary.side === 'r')) {
+      fmaId = 'FMA7201_R';
+      nameEn = 'Right Kidney';
+      nameFa = 'کلیه راست';
+      system = 'URINARY' as never;
+    } else if (qLower.includes('kidney') || cleanLower.includes('kidney')) {
+      fmaId = 'FMA7201_L';
+      nameEn = 'Kidney';
+      nameFa = 'کلیه';
+      system = 'URINARY' as never;
+    } else if (qLower.includes('lung') || qLower.includes('fma7195') || cleanLower.includes('lung')) {
+      fmaId = 'FMA7195';
+      nameEn = 'Lungs (Pulmonary Lobes)';
+      nameFa = 'ریه‌ها (دستگاه تنفس)';
+      system = 'RESPIRATORY' as never;
+    } else if (qLower.includes('brain') || qLower.includes('cerebr') || qLower.includes('fma5018') || cleanLower.includes('gyrus')) {
+      fmaId = 'FMA5018';
+      nameEn = 'Cerebrum (Brain)';
+      nameFa = 'مغز (نیمکره‌های مخ)';
+      system = 'NERVOUS' as never;
+    } else if (qLower.includes('liver') || qLower.includes('fma7199') || cleanLower.includes('liver')) {
+      fmaId = 'FMA7199';
+      nameEn = 'Liver';
+      nameFa = 'کبد';
+      system = 'DIGESTIVE' as never;
+    } else if (qLower.includes('stomach') || qLower.includes('fma7148') || cleanLower.includes('stomach')) {
+      fmaId = 'FMA7148';
+      nameEn = 'Stomach';
+      nameFa = 'معده';
+      system = 'DIGESTIVE' as never;
+    } else if (qLower.includes('femur') || qLower.includes('fma9915') || cleanLower.includes('femur')) {
+      fmaId = 'FMA9915';
+      nameEn = 'Femur';
+      nameFa = 'استخوان ران';
+      system = 'SKELETAL' as never;
     }
+
+    if (this.onStructureSelect) {
+      this.onStructureSelect({
+        fmaId,
+        snomedBodyStructureId: 'Z_' + nameEn.replace(/\s+/g, '_'),
+        nameEn,
+        nameFa,
+        systemCategory: system,
+        genderModel: 'male',
+        meshNodeName: primary.name,
+        descriptionEn: `${nameEn} is an essential anatomical landmark in the human ${primary.system} system.`,
+        descriptionFa: `عضو تشریحی ${nameFa} متعلق به سیستم ${primary.system} بدن انسان.`,
+      });
+    }
+  }
+
+  public focusOnStructure(query: string) {
+    this.selectAndFocusStructure(query);
   }
 
   public setViewOrientation(view: 'front' | 'back' | 'left' | 'right' | 'top' | 'isometric') {
@@ -368,6 +484,17 @@ export class AnatomyViewer {
   }
 
   private onPointerDown(event: PointerEvent) {
+    this.pointerDownPos = { x: event.clientX, y: event.clientY };
+  }
+
+  private onPointerUp(event: PointerEvent) {
+    // If pointer was dragged more than 5px, user was rotating/panning the camera!
+    const dist = Math.hypot(
+      event.clientX - this.pointerDownPos.x,
+      event.clientY - this.pointerDownPos.y
+    );
+    if (dist > 5) return;
+
     const rect = this.renderer.domElement.getBoundingClientRect();
     this.mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
     this.mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
@@ -376,28 +503,17 @@ export class AnatomyViewer {
     if (this.zAnatomyLoader.isLoaded) {
       const hitInfo = this.zAnatomyLoader.raycast(this.raycaster);
       if (hitInfo) {
-        this.zAnatomyLoader.highlightStructure(hitInfo);
-        const struct: AnatomicalStructure = {
-          fmaId: hitInfo.name,
-          snomedBodyStructureId: 'Z_' + hitInfo.cleanName,
-          nameEn: hitInfo.cleanName,
-          nameFa: hitInfo.cleanName,
-          systemCategory: hitInfo.system.toUpperCase() as never,
-          genderModel: 'male',
-          meshNodeName: hitInfo.name,
-          descriptionEn: `${hitInfo.cleanName} is an anatomical component of the human ${hitInfo.system} system.`,
-          descriptionFa: `عضو تشریحی ${hitInfo.cleanName} متعلق به سیستم ${hitInfo.system} انسان.`,
-        };
-        if (this.onStructureSelect) {
-          this.onStructureSelect(struct);
-        }
+        this.selectAndFocusStructure(hitInfo.name);
+      } else {
+        // User clicked on empty background -> Deselect!
+        this.resetSelection();
       }
     }
   }
 
   public resetSelection() {
     this.clearIsolation();
-    this.zAnatomyLoader.highlightStructure(null);
+    this.zAnatomyLoader.clearHighlight();
     if (this.onStructureSelect) {
       this.onStructureSelect(null);
     }
@@ -416,21 +532,64 @@ export class AnatomyViewer {
     this.animationFrameId = requestAnimationFrame(this.animate);
     const elapsedTime = this.clock.getElapsedTime();
 
-    // Physiological Beating Heart Animation
-    if (this.heartConfig.isBeating && this.heartMesh) {
+    // Physiological Wiggers Beating Heart Simulation
+    // Scaled radially around the exact anatomical heart center (C)
+    if (this.heartConfig.isBeating && this.zAnatomyLoader.cardiacMeshes.length > 0) {
       const bpm = this.heartConfig.bpm;
-      const cycleFrequency = (bpm / 60) * Math.PI * 2;
-      const phase = elapsedTime * cycleFrequency;
+      const cycleSeconds = 60 / bpm;
+      const t = (elapsedTime % cycleSeconds) / cycleSeconds; // 0.0 to 1.0
 
-      const systoleWave = Math.sin(phase) + 0.35 * Math.sin(phase * 2);
-      const scaleMultiplier = 1.0 + systoleWave * 0.07;
-      const heightMultiplier = 1.0 - systoleWave * 0.05;
+      // Natural physiological cardiac wave:
+      // Ventricles contract ~5% in systole, atria expand slightly, then relax in diastole
+      let ventricleScale = 1.0;
+      let atriumScale = 1.0;
+      let vesselScale = 1.0;
 
-      this.heartMesh.scale.set(
-        this.heartOriginalScale.x * scaleMultiplier,
-        this.heartOriginalScale.y * heightMultiplier,
-        this.heartOriginalScale.z * scaleMultiplier
-      );
+      if (t < 0.28) {
+        // Systole: Rapid ventricular contraction
+        const s = Math.sin((t / 0.28) * Math.PI);
+        ventricleScale = 1.0 - s * 0.055;
+        vesselScale = 1.0 + s * 0.025;
+        atriumScale = 1.0 + s * 0.02;
+      } else if (t < 0.42) {
+        // Isovolumetric relaxation
+        const s = Math.cos(((t - 0.28) / 0.14) * (Math.PI / 2));
+        ventricleScale = 0.945 + (1 - s) * 0.035;
+        vesselScale = 1.025 - (1 - s) * 0.025;
+      } else if (t < 0.82) {
+        // Diastole: Ventricular refilling
+        const d = Math.sin(((t - 0.42) / 0.40) * Math.PI);
+        ventricleScale = 0.98 + d * 0.035; // Expands naturally to 1.015
+        vesselScale = 1.0;
+        atriumScale = 1.0;
+      } else {
+        // Atrial kick
+        const a = Math.sin(((t - 0.82) / 0.18) * Math.PI);
+        atriumScale = 1.0 - a * 0.04;
+        ventricleScale = 1.015 + a * 0.01;
+      }
+
+      const C = this.zAnatomyLoader.cardiacCenter;
+
+      for (const item of this.zAnatomyLoader.cardiacMeshes) {
+        let scale = 1.0;
+        if (item.chamberType === 'ventricle') scale = ventricleScale;
+        else if (item.chamberType === 'atrium') scale = atriumScale;
+        else scale = vesselScale;
+
+        // Radial pivot scaling around the exact heart center C:
+        // Position offset: C * (1 - scale) + originalPosition * scale
+        item.mesh.position.set(
+          C.x * (1 - scale) + item.originalPosition.x * scale,
+          C.y * (1 - scale) + item.originalPosition.y * scale,
+          C.z * (1 - scale) + item.originalPosition.z * scale
+        );
+        item.mesh.scale.set(
+          item.originalScale.x * scale,
+          item.originalScale.y * scale,
+          item.originalScale.z * scale
+        );
+      }
     }
 
     this.controls.update();
@@ -442,7 +601,9 @@ export class AnatomyViewer {
       cancelAnimationFrame(this.animationFrameId);
     }
     window.removeEventListener('resize', this.onResize);
+    this.renderer.domElement.removeEventListener('contextmenu', this.onContextMenu);
     this.renderer.domElement.removeEventListener('pointerdown', this.onPointerDown);
+    this.renderer.domElement.removeEventListener('pointerup', this.onPointerUp);
     if (this.renderer.domElement.parentNode) {
       this.renderer.domElement.parentNode.removeChild(this.renderer.domElement);
     }

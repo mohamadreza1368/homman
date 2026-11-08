@@ -22,50 +22,57 @@ export interface ZStructureInfo {
   side: 'l' | 'r' | 'center';
 }
 
-export const Z_SYSTEM_PALETTE = {
+export interface CardiacMeshInfo {
+  mesh: THREE.Mesh;
+  originalScale: THREE.Vector3;
+  originalPosition: THREE.Vector3;
+  chamberType: 'ventricle' | 'atrium' | 'vessel';
+}
+
+export const Z_SYSTEM_PALETTE: Record<ZSystemId, { color: string; roughness: number; metalness: number; opacity?: number }> = {
   skeletal: {
-    color: '#eae3d2',        // Realistic warm ivory bone
-    roughness: 0.40,
-    metalness: 0.05,
+    color: '#e8e2d4',        // Warm organic bone ivory
+    roughness: 0.58,
+    metalness: 0.03,
   },
   muscular: {
-    color: '#b8483f',        // Striated deep red muscle
-    roughness: 0.52,
+    color: '#93352b',        // Natural deep muscle tissue
+    roughness: 0.55,
     metalness: 0.02,
   },
   nervous: {
-    color: '#eab308',        // Neural golden amber
-    roughness: 0.40,
-    metalness: 0.05,
+    color: '#d49b28',        // Amber nervous tissue
+    roughness: 0.45,
+    metalness: 0.04,
   },
   cardiovascular: {
-    color: '#dc2626',        // Arterial blood red
-    roughness: 0.35,
-    metalness: 0.08,
+    color: '#991b1b',        // Deep biological arterial red
+    roughness: 0.46,
+    metalness: 0.04,
   },
   respiratory: {
-    color: '#f28482',        // Pulmonary lung pink
-    roughness: 0.42,
+    color: '#df7977',        // Natural pulmonary lung tone
+    roughness: 0.50,
     metalness: 0.02,
   },
   digestive: {
-    color: '#d4a373',        // Visceral intestinal tone
-    roughness: 0.38,
-    metalness: 0.04,
+    color: '#bc8a5f',        // Visceral intestinal tone
+    roughness: 0.46,
+    metalness: 0.03,
   },
   urinary: {
-    color: '#8b3a3a',        // Renal cortex deep red
-    roughness: 0.35,
-    metalness: 0.05,
+    color: '#70231d',        // Deep renal cortex bean
+    roughness: 0.45,
+    metalness: 0.04,
   },
   lymphatic: {
-    color: '#10b981',        // Lymphatic node emerald
-    roughness: 0.40,
-    metalness: 0.05,
+    color: '#15803d',        // Natural lymphatic node
+    roughness: 0.48,
+    metalness: 0.03,
   },
   integumentary: {
     color: '#f8d7c4',        // Translucent dermal tone
-    roughness: 0.30,
+    roughness: 0.35,
     metalness: 0.02,
     opacity: 0.16,
   }
@@ -77,10 +84,16 @@ export class ZAnatomyLoader {
   public systemGroups = new Map<ZSystemId, THREE.Group>();
   public allMeshes: THREE.Mesh[] = [];
 
-  public halfDissectionMode = true; // Left on screen (Patient Right) = Muscles; Right on screen (Patient Left) = Skeleton
+  // Cardiac meshes grouped for physiological beating simulation
+  public cardiacMeshes: CardiacMeshInfo[] = [];
+  public cardiacCenter = new THREE.Vector3(0.018, 1.25, 0.045);
+
+  public halfDissectionMode = true; // Left on screen = Muscles; Right on screen = Skeleton
   public isLoaded = false;
-  public highlightedMesh: THREE.Mesh | null = null;
-  public originalHighlightMat: THREE.Material | null = null;
+  public isIsolated = false;
+
+  // Active highlights
+  public highlightedMeshes: { mesh: THREE.Mesh; origMat: THREE.Material | THREE.Material[] }[] = [];
 
   public visibility: Record<ZSystemId, boolean> = {
     skeletal: true,
@@ -154,6 +167,13 @@ export class ZAnatomyLoader {
       }
     }
 
+    // Compute collective cardiac center for beating animation
+    if (this.cardiacMeshes.length > 0) {
+      const cardiacBox = new THREE.Box3();
+      this.cardiacMeshes.forEach((item) => cardiacBox.expandByObject(item.mesh));
+      cardiacBox.getCenter(this.cardiacCenter);
+    }
+
     this.isLoaded = true;
     this.updateVisibilityAndHalfDissection();
   }
@@ -163,7 +183,6 @@ export class ZAnatomyLoader {
     const gltf = await this.loader.loadAsync(url);
     const scene = gltf.scene;
 
-    // IMPORTANT: Keep gltf.scene intact so all parent node transformations (rotations, scales, offsets) are preserved!
     scene.updateMatrixWorld(true);
 
     const group = this.systemGroups.get(defaultSys);
@@ -182,14 +201,11 @@ export class ZAnatomyLoader {
       const box = new THREE.Box3().setFromObject(child);
       const center = box.getCenter(new THREE.Vector3());
 
-      // In this coordinate system:
-      // x < -0.01 is Anatomical Right (screen Left)
-      // x > 0.01 is Anatomical Left (screen Right)
       let side: 'l' | 'r' | 'center' = 'center';
       if (center.x < -0.015) {
-        side = 'r'; // Anatomical Right
+        side = 'r'; // Anatomical Right (screen Left)
       } else if (center.x > 0.015) {
-        side = 'l'; // Anatomical Left
+        side = 'l'; // Anatomical Left (screen Right)
       }
 
       // Assign authentic medical PBR material
@@ -219,31 +235,92 @@ export class ZAnatomyLoader {
 
       this.structures.push(info);
       this.allMeshes.push(child);
+
+      // Track cardiac meshes in dolasim.glb
+      if (filename === 'dolasim.glb') {
+        const lower = rawName.toLowerCase();
+        let chamberType: 'ventricle' | 'atrium' | 'vessel' | null = null;
+        if (lower.includes('ventricle') || lower.includes('papillary')) {
+          chamberType = 'ventricle';
+        } else if (lower.includes('atrium')) {
+          chamberType = 'atrium';
+        } else if (
+          lower.includes('coronary') ||
+          lower.includes('cardiac') ||
+          lower.includes('ascending aorta') ||
+          lower.includes('pulmonary trunk') ||
+          lower.includes('leaflet')
+        ) {
+          chamberType = 'vessel';
+        }
+
+        if (chamberType) {
+          this.cardiacMeshes.push({
+            mesh: child,
+            originalScale: child.scale.clone(),
+            originalPosition: child.position.clone(),
+            chamberType,
+          });
+        }
+      }
     });
   }
 
   private classifySystem(cleanName: string, defaultSys: ZSystemId): ZSystemId {
     const lower = cleanName.toLowerCase();
 
-    if (lower.includes('lung') || lower.includes('bronch') || lower.includes('trachea')) {
-      return 'respiratory';
-    }
-    if (lower.includes('kidney') || lower.includes('ureter') || lower.includes('urinary bladder')) {
+    if (lower.includes('kidney') || lower.includes('renal') || lower.includes('ureter') || lower.includes('urinary bladder')) {
       return 'urinary';
     }
-    if (lower.includes('heart') || lower.includes('aorta') || lower.includes('artery') || lower.includes('vein')) {
+    if (lower.includes('lung') || lower.includes('bronch') || lower.includes('trachea') || lower.includes('larynx')) {
+      return 'respiratory';
+    }
+    if (
+      lower.includes('heart') ||
+      lower.includes('ventricle') ||
+      lower.includes('atrium') ||
+      lower.includes('myocardi') ||
+      lower.includes('cardiac') ||
+      lower.includes('coronary') ||
+      lower.includes('aorta') ||
+      lower.includes('artery') ||
+      lower.includes('vein')
+    ) {
       return 'cardiovascular';
     }
-    if (lower.includes('brain') || lower.includes('cerebr') || lower.includes('nerve')) {
+    if (
+      lower.includes('brain') ||
+      lower.includes('cerebr') ||
+      lower.includes('cerebel') ||
+      lower.includes('gyrus') ||
+      lower.includes('sulcus') ||
+      lower.includes('pons') ||
+      lower.includes('medulla') ||
+      lower.includes('thalamus') ||
+      lower.includes('nerve')
+    ) {
       return 'nervous';
     }
     if (lower.includes('lymph') || lower.includes('spleen') || lower.includes('thymus')) {
       return 'lymphatic';
     }
-    if (lower.includes('bone') || lower.includes('vertebra') || lower.includes('rib') || lower.includes('skull')) {
+    if (
+      lower.includes('liver') ||
+      lower.includes('stomach') ||
+      lower.includes('jejunum') ||
+      lower.includes('ileum') ||
+      lower.includes('colon') ||
+      lower.includes('pancreas') ||
+      lower.includes('gallbladder') ||
+      lower.includes('esophagus') ||
+      lower.includes('oesophagus')
+    ) {
+      return 'digestive';
+    }
+    if (lower.includes('bone') || lower.includes('vertebra') || lower.includes('rib') || lower.includes('skull') || lower.includes('femur')) {
       return 'skeletal';
     }
-    if (lower.includes('muscle')) {
+    if (lower.includes('muscle') || lower.includes('biceps')) {
       return 'muscular';
     }
 
@@ -255,70 +332,75 @@ export class ZAnatomyLoader {
 
     if (lower.includes('liver')) {
       return new THREE.MeshStandardMaterial({
-        color: new THREE.Color('#7f3b32'), // Hepatic rich reddish brown
-        roughness: 0.35,
-        metalness: 0.05,
+        color: new THREE.Color('#692a22'), // Natural hepatic reddish brown
+        roughness: 0.42,
+        metalness: 0.03,
         side: THREE.DoubleSide,
       });
     }
     if (lower.includes('lung') || lower.includes('bronch')) {
       return new THREE.MeshStandardMaterial({
-        color: new THREE.Color('#f28482'), // Pulmonary soft pink
-        roughness: 0.45,
+        color: new THREE.Color('#de7b79'), // Natural soft pulmonary tone
+        roughness: 0.52,
         metalness: 0.02,
         side: THREE.DoubleSide,
       });
     }
-    if (lower.includes('heart') || lower.includes('myocardi')) {
+    if (
+      lower.includes('heart') ||
+      lower.includes('ventricle') ||
+      lower.includes('atrium') ||
+      lower.includes('myocardi')
+    ) {
       return new THREE.MeshStandardMaterial({
-        color: new THREE.Color('#9e2a2b'), // Cardiac crimson
-        roughness: 0.35,
-        metalness: 0.08,
+        color: new THREE.Color('#842020'), // Deep living myocardial crimson
+        roughness: 0.48,
+        metalness: 0.04,
         side: THREE.DoubleSide,
       });
     }
-    if (lower.includes('kidney')) {
+    if (lower.includes('kidney') || lower.includes('renal')) {
       return new THREE.MeshStandardMaterial({
-        color: new THREE.Color('#7c2d12'), // Renal red bean
-        roughness: 0.36,
-        metalness: 0.05,
+        color: new THREE.Color('#6b2118'), // Deep kidney bean tone
+        roughness: 0.45,
+        metalness: 0.03,
         side: THREE.DoubleSide,
       });
     }
     if (lower.includes('stomach') || lower.includes('jejunum') || lower.includes('colon') || lower.includes('intestine')) {
       return new THREE.MeshStandardMaterial({
-        color: new THREE.Color('#d4a373'), // Visceral peach-amber
-        roughness: 0.38,
-        metalness: 0.04,
+        color: new THREE.Color('#bc8a5f'), // Natural visceral mucosal tone
+        roughness: 0.46,
+        metalness: 0.03,
         side: THREE.DoubleSide,
       });
     }
-    if (lower.includes('brain') || lower.includes('cerebrum')) {
+    if (lower.includes('brain') || lower.includes('cerebrum') || lower.includes('gyrus')) {
       return new THREE.MeshStandardMaterial({
-        color: new THREE.Color('#d8b4e2'), // Cerebral lavender
-        roughness: 0.45,
+        color: new THREE.Color('#cfb3d4'), // Natural cerebral cortical lavender-gray
+        roughness: 0.50,
         metalness: 0.02,
         side: THREE.DoubleSide,
       });
     }
     if (lower.includes('artery') || lower.includes('aorta')) {
       return new THREE.MeshStandardMaterial({
-        color: new THREE.Color('#dc2626'), // Arterial bright red
-        roughness: 0.32,
-        metalness: 0.1,
+        color: new THREE.Color('#991b1b'), // Organic arterial crimson
+        roughness: 0.46,
+        metalness: 0.04,
         side: THREE.DoubleSide,
       });
     }
     if (lower.includes('vein') || lower.includes('vena')) {
       return new THREE.MeshStandardMaterial({
-        color: new THREE.Color('#2563eb'), // Venous royal blue
-        roughness: 0.32,
-        metalness: 0.1,
+        color: new THREE.Color('#1e3a8a'), // Deoxygenated deep venous navy
+        roughness: 0.46,
+        metalness: 0.04,
         side: THREE.DoubleSide,
       });
     }
 
-    const cfg = Z_SYSTEM_PALETTE[system];
+    const cfg = Z_SYSTEM_PALETTE[system] || Z_SYSTEM_PALETTE.skeletal;
     return new THREE.MeshStandardMaterial({
       color: new THREE.Color(cfg.color),
       roughness: cfg.roughness,
@@ -330,19 +412,24 @@ export class ZAnatomyLoader {
   public updateVisibilityAndHalfDissection(): void {
     this.structures.forEach((st) => {
       const isSysVis = this.visibility[st.system];
-      let visible = isSysVis;
+      
+      // If the entire system is turned off (e.g. urinary / kidneys), hide it immediately!
+      if (!isSysVis) {
+        st.mesh.visible = false;
+        return;
+      }
 
-      if (this.halfDissectionMode && visible) {
+      let visible = true;
+
+      if (this.halfDissectionMode) {
         // Anatomical Right (x < 0.015, left side of screen) -> Muscular System
         // Anatomical Left (x > -0.015, right side of screen) -> Skeletal System
-        // Midline & Visceral Organs (Digestive, Respiratory, Urinary, Heart, Brain) -> Always visible
         if (st.system === 'muscular') {
           // Hide muscles on anatomical left (x > 0.015)
           if (st.center.x > 0.015) {
             visible = false;
           }
-          // To reveal internal viscera (lungs, heart, liver, stomach, intestines) in chest & abdomen:
-          // Dissect superficial abdominal sheets & intercostals
+          // Dissect superficial abdominal sheets & intercostals to reveal internal viscera
           const lowerName = st.name.toLowerCase();
           if (
             lowerName.includes('oblique') ||
@@ -404,65 +491,166 @@ export class ZAnatomyLoader {
     return null;
   }
 
-  public highlightStructure(info: ZStructureInfo | null): void {
-    // Reset previous highlight
-    if (this.highlightedMesh) {
-      const orig = this.highlightedMesh.userData.originalMaterial as THREE.MeshStandardMaterial;
-      if (orig) {
-        this.highlightedMesh.material = orig;
+  public clearHighlight(): void {
+    for (const item of this.highlightedMeshes) {
+      if (item.mesh && item.origMat) {
+        item.mesh.material = item.origMat as THREE.Material;
       }
-      this.highlightedMesh = null;
     }
+    this.highlightedMeshes = [];
+  }
 
-    if (!info) return;
+  public highlightStructures(structures: ZStructureInfo[]): void {
+    // 1. Reset all previous highlights first
+    this.clearHighlight();
 
-    this.highlightedMesh = info.mesh;
-    // Electric blue neon glow (identical to left kidney in user image)
+    if (!structures || structures.length === 0) return;
+
+    // Electric cyan neon highlight material
     const highlightMat = new THREE.MeshStandardMaterial({
       color: new THREE.Color(0x38bdf8),
       emissive: new THREE.Color(0x0284c7),
-      emissiveIntensity: 0.85,
+      emissiveIntensity: 0.95,
       roughness: 0.25,
       metalness: 0.1,
       transparent: true,
-      opacity: 0.88,
+      opacity: 0.92,
       side: THREE.DoubleSide,
     });
 
-    info.mesh.material = highlightMat;
+    structures.forEach((info) => {
+      const orig = (info.mesh.userData.originalMaterial as THREE.Material | THREE.Material[]) || info.mesh.material;
+      this.highlightedMeshes.push({ mesh: info.mesh, origMat: orig });
+      info.mesh.material = highlightMat;
+    });
   }
 
-  public findStructureByName(query: string): ZStructureInfo | null {
-    const q = query.toLowerCase().trim();
-    if (!q) return null;
+  public isolateStructures(targets: ZStructureInfo[]): void {
+    if (!targets || targets.length === 0) return;
+    this.isIsolated = true;
 
-    return (
-      this.structures.find(
-        (s) =>
-          s.cleanName.toLowerCase() === q ||
-          s.cleanName.toLowerCase().includes(q) ||
-          s.name.toLowerCase().includes(q)
-      ) || null
+    const targetMeshes = new Set(targets.map((t) => t.mesh));
+
+    this.structures.forEach((st) => {
+      const mat = st.mesh.material as THREE.MeshStandardMaterial;
+      if (targetMeshes.has(st.mesh)) {
+        st.mesh.visible = true;
+        mat.opacity = 1.0;
+        mat.transparent = false;
+      } else {
+        mat.opacity = 0.05;
+        mat.transparent = true;
+      }
+      mat.needsUpdate = true;
+    });
+  }
+
+  public clearIsolation(): void {
+    this.isIsolated = false;
+    this.structures.forEach((st) => {
+      const mat = st.mesh.material as THREE.MeshStandardMaterial;
+      const sysOpacity = this.opacity[st.system] ?? 1.0;
+      mat.opacity = sysOpacity;
+      mat.transparent = sysOpacity < 0.99;
+      mat.needsUpdate = true;
+    });
+    this.updateVisibilityAndHalfDissection();
+  }
+
+  /**
+   * Smart organ & component resolver:
+   * Maps FMA IDs, colloquial names, Persian names, and multi-mesh organs (heart, lungs, brain, kidneys, etc.)
+   */
+  public findStructures(query: string): ZStructureInfo[] {
+    const q = query.toLowerCase().trim();
+    if (!q) return [];
+
+    // Cardiac (Heart)
+    if (q === 'fma7088' || q === 'fma7197' || q === 'heart' || q === 'cardiac' || q === 'قلب') {
+      return this.structures.filter((s) =>
+        /ventricle|atrium|cardiac|coronary|ascending aorta|pulmonary trunk|papillary muscle|leaflet/i.test(s.name)
+      );
+    }
+
+    // Kidneys
+    if (q === 'fma7201_l' || q === 'kidney.l' || q === 'left kidney' || q === 'کلیه چپ') {
+      return this.structures.filter((s) => /kidney\.l|renal.*\.l/i.test(s.name));
+    }
+    if (q === 'fma7201_r' || q === 'kidney.r' || q === 'right kidney' || q === 'کلیه راست') {
+      return this.structures.filter((s) => /kidney\.r|renal.*\.r/i.test(s.name));
+    }
+    if (q === 'fma7201' || q === 'kidney' || q === 'renal' || q === 'کلیه') {
+      return this.structures.filter((s) => /kidney|renal/i.test(s.name));
+    }
+
+    // Lungs & Respiratory
+    if (q === 'fma7195' || q === 'fma7196' || q === 'lungs' || q === 'lung' || q === 'respiratory' || q === 'ریه' || q === 'ریه‌ها') {
+      return this.structures.filter((s) => /lung|bronch/i.test(s.name));
+    }
+
+    // Cerebrum & Brain
+    if (q === 'fma5018' || q === 'cerebrum' || q === 'brain' || q === 'مغز' || q === 'مخ') {
+      return this.structures.filter((s) =>
+        /gyrus|sulcus|cortex|cerebr|frontal|parietal|temporal|occipital|thalamus/i.test(s.name)
+      );
+    }
+
+    // Liver
+    if (q === 'fma7199' || q === 'liver' || q === 'کبد') {
+      return this.structures.filter((s) => /liver/i.test(s.name));
+    }
+
+    // Stomach
+    if (q === 'fma7148' || q === 'stomach' || q === 'معده') {
+      return this.structures.filter((s) => /stomach/i.test(s.name));
+    }
+
+    // Femur
+    if (q === 'fma9915' || q === 'femur' || q === 'ران') {
+      return this.structures.filter((s) => /femur/i.test(s.name));
+    }
+
+    // Biceps
+    if (q === 'biceps' || q === 'بازو') {
+      return this.structures.filter((s) => /biceps/i.test(s.name));
+    }
+
+    // Lymphatic
+    if (q === 'lymphatic' || q === 'lymph' || q === 'لنفاوی') {
+      return this.structures.filter((s) => s.system === 'lymphatic');
+    }
+
+    // Exact or substring match
+    return this.structures.filter(
+      (s) =>
+        s.cleanName.toLowerCase() === q ||
+        s.cleanName.toLowerCase().includes(q) ||
+        s.name.toLowerCase().includes(q)
     );
   }
 
+  public findStructureByName(query: string): ZStructureInfo | null {
+    const list = this.findStructures(query);
+    return list.length > 0 ? list[0] : null;
+  }
+
   private formatAnatomyName(rawName: string): string {
-    let clean = rawName
+    return rawName
       .replace(/\.l$/i, ' (Left)')
       .replace(/\.r$/i, ' (Right)')
       .replace(/_/g, ' ')
       .trim();
-
-    return clean;
   }
 
   public dispose(): void {
+    this.clearHighlight();
     this.allMeshes.forEach((m) => {
       m.geometry.dispose();
       if (Array.isArray(m.material)) m.material.forEach((mat) => mat.dispose());
       else m.material.dispose();
     });
     this.systemGroups.clear();
+    this.cardiacMeshes = [];
     this.structures = [];
     this.allMeshes = [];
   }

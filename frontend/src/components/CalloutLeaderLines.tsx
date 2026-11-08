@@ -5,15 +5,16 @@ import { DEFAULT_CALLOUTS } from '../engine/AnatomyViewer';
 interface Props {
   viewer: AnatomyViewer | null;
   onSelectCallout: (callout: AnatomicalCallout) => void;
+  showCallouts?: boolean;
 }
 
-export function CalloutLeaderLines({ viewer, onSelectCallout }: Props) {
+export function CalloutLeaderLines({ viewer, onSelectCallout, showCallouts = false }: Props) {
   const [points, setPoints] = useState<
     { callout: AnatomicalCallout; x: number; y: number; visible: boolean; isRightSide: boolean }[]
   >([]);
 
   useEffect(() => {
-    if (!viewer) return;
+    if (!viewer || !showCallouts) return;
 
     let frameId: number;
 
@@ -43,7 +44,7 @@ export function CalloutLeaderLines({ viewer, onSelectCallout }: Props) {
     };
   }, [viewer]);
 
-  if (!viewer) return null;
+  if (!viewer || !showCallouts) return null;
 
   return (
     <div className="absolute inset-0 pointer-events-none overflow-hidden z-20" dir="ltr">
@@ -53,11 +54,11 @@ export function CalloutLeaderLines({ viewer, onSelectCallout }: Props) {
 
           // Staggered line length to prevent label collisions
           let lineLength = 65;
-          if (callout.id === 'LUNGS') lineLength = 120;
-          if (callout.id === 'HEART') lineLength = 65;
+          if (callout.id === 'LUNGS' || callout.id === 'FMA7195') lineLength = 120;
+          if (callout.id === 'HEART' || callout.id === 'FMA7088') lineLength = 65;
           if (callout.id === 'RESPIRATORY') lineLength = 105;
           if (callout.id === 'BICEPS') lineLength = 70;
-          if (callout.id === 'LIVER') lineLength = 95;
+          if (callout.id === 'LIVER' || callout.id === 'FMA7199') lineLength = 95;
           if (callout.id === 'LYMPHATIC') lineLength = 85;
 
           const targetX = isRightSide ? x + lineLength : x - lineLength;
@@ -91,11 +92,11 @@ export function CalloutLeaderLines({ viewer, onSelectCallout }: Props) {
 
         // Staggered line length to match SVG
         let lineLength = 65;
-        if (callout.id === 'LUNGS') lineLength = 120;
-        if (callout.id === 'HEART') lineLength = 65;
+        if (callout.id === 'LUNGS' || callout.id === 'FMA7195') lineLength = 120;
+        if (callout.id === 'HEART' || callout.id === 'FMA7088') lineLength = 65;
         if (callout.id === 'RESPIRATORY') lineLength = 105;
         if (callout.id === 'BICEPS') lineLength = 70;
-        if (callout.id === 'LIVER') lineLength = 95;
+        if (callout.id === 'LIVER' || callout.id === 'FMA7199') lineLength = 95;
         if (callout.id === 'LYMPHATIC') lineLength = 85;
 
         const labelX = isRightSide ? x + lineLength + 6 : x - lineLength - 6;

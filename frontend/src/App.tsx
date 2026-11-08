@@ -4,6 +4,7 @@ import { AnatomyExplorerPanel } from './components/AnatomyExplorerPanel';
 import { StructureDetailsCard } from './components/StructureDetailsCard';
 import { CalloutLeaderLines } from './components/CalloutLeaderLines';
 import { ViewCubeGizmo } from './components/ViewCubeGizmo';
+import { CameraNavigationWidget } from './components/CameraNavigationWidget';
 import { CrossSectionPanel } from './components/CrossSectionPanel';
 import { PhysiologyPanel } from './components/PhysiologyPanel';
 import { PathologyDrawer } from './components/PathologyDrawer';
@@ -22,6 +23,7 @@ export function App() {
   const [showCrossSection, setShowCrossSection] = useState(false);
   const [showPhysiology, setShowPhysiology] = useState(false);
   const [showPathologyDrawer, setShowPathologyDrawer] = useState(false);
+  const [showCallouts, setShowCallouts] = useState(false);
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -105,6 +107,7 @@ export function App() {
         {/* 4. 3D Interactive Callout Leader Lines */}
         <CalloutLeaderLines
           viewer={viewer}
+          showCallouts={showCallouts}
           onSelectCallout={handleSelectCallout}
         />
 
@@ -132,6 +135,13 @@ export function App() {
         {/* 7. Bottom Right 3D ViewCube Gizmo */}
         <ViewCubeGizmo viewer={viewer} />
 
+        {/* 8. Bottom Left Camera Navigation & Label Control Widget */}
+        <CameraNavigationWidget
+          viewer={viewer}
+          showCallouts={showCallouts}
+          onToggleCallouts={() => setShowCallouts(!showCallouts)}
+        />
+
         {/* 8. Cross Section Floating Panel */}
         {showCrossSection && (
           <CrossSectionPanel
@@ -142,7 +152,10 @@ export function App() {
 
         {/* 9. Physiology Floating Panel */}
         {showPhysiology && (
-          <PhysiologyPanel viewer={viewer} />
+          <PhysiologyPanel
+            viewer={viewer}
+            onClose={() => setShowPhysiology(false)}
+          />
         )}
 
         {/* 10. Pathology Knowledge Graph Drawer */}
