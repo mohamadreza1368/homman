@@ -150,7 +150,6 @@ export class ZAnatomyLoader {
       { file: 'sinir.glb', defaultSystem: 'nervous' },
       { file: 'lenf.glb', defaultSystem: 'lymphatic' },
       { file: 'eklem.glb', defaultSystem: 'skeletal' },
-      { file: 'deri.glb', defaultSystem: 'integumentary' },
     ];
 
     let filesLoaded = 0;

@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import type { AnatomicalStructure } from '../types/anatomy';
 
 export type SystemCategory = 
   | 'skeletal'
@@ -37,7 +38,7 @@ export interface AtlasManifest {
 export const SYSTEM_COLORS: Record<string, string> = {
   skeletal: '#e2d9ba',      // Ivory bone
   muscular: '#a84c40',      // Deep striated muscle red
-  cardiac: '#b94740',       // Myocardial crimson
+  cardiac: '#be3a34',       // Myocardial crimson
   arterial: '#dc2626',      // Arterial bright red
   venous: '#2563eb',        // Venous royal blue
   nervous: '#eab308',       // Neural golden amber
@@ -49,7 +50,7 @@ export const SYSTEM_COLORS: Record<string, string> = {
   lymphatic: '#10b981',     // Lymphatic emerald
   endocrine: '#8b5cf6',     // Endocrine violet
   reproductive: '#f43f5e',  // Coral
-  integumentary: '#e2b89d', // Dermal flesh tone
+  integumentary: '#e5bba4', // Natural dermal skin tone
   connective: '#cbd5e1',    // Fascial cartilaginous grey
 };
 
@@ -83,8 +84,13 @@ export class AtlasModelLoader {
   public centers: THREE.Vector3[] = [];
   public bounds: THREE.Box3[] = [];
   public pickers: (THREE.Mesh | undefined)[] = [];
-  public systemMeshes: Map<string, THREE.Mesh> = new Map();
+  public allMeshes: THREE.Mesh[] = [];
+  public meshesBySystem: Map<string, THREE.Mesh[]> = new Map();
   public materials: Map<string, THREE.MeshStandardMaterial> = new Map();
+
+  // Physiological cardiac animation uniforms
+  public cardiacCenter = new THREE.Vector3(0.0214, 1.3050, 0.0234);
+  public cardiacScaleUniform = { value: 1.0 };
 
   private partTexture: THREE.DataTexture | null = null;
   private selectionTexture: THREE.DataTexture | null = null;
@@ -92,9 +98,10 @@ export class AtlasModelLoader {
   private selectionData: Uint8Array | null = null;
   private stateWidth = 1;
 
-  public halfDissectionMode = true; // Half muscular, half skeletal + translucent skin (like user mock)
+  public halfDissectionMode = true; // Half muscular, half skeletal + translucent skin
   public selectedPartIndex = -1;
   public isLoaded = false;
+  public isIsolated = false;
 
   public visibility: SystemVisibilityState = {
     skeletal: true,
@@ -141,6 +148,8 @@ export class AtlasModelLoader {
       THREE.RGBAFormat,
       THREE.FloatType
     );
+    this.partTexture.minFilter = THREE.NearestFilter;
+    this.partTexture.magFilter = THREE.NearestFilter;
     this.partTexture.needsUpdate = true;
 
     this.selectionTexture = new THREE.DataTexture(
@@ -148,6 +157,8 @@ export class AtlasModelLoader {
       this.stateWidth,
       1
     );
+    this.selectionTexture.minFilter = THREE.NearestFilter;
+    this.selectionTexture.magFilter = THREE.NearestFilter;
     this.selectionTexture.needsUpdate = true;
 
     this.centers = this.parts.map((p) => {
@@ -168,14 +179,19 @@ export class AtlasModelLoader {
     distinctSystems.forEach((sys) => {
       const colorHex = SYSTEM_COLORS[sys] || '#aebbb8';
       const isSkin = sys === 'integumentary';
+      const isCardiac = sys === 'cardiac';
+
       const mat = new THREE.MeshStandardMaterial({
         color: new THREE.Color(colorHex),
-        metalness: isSkin ? 0.02 : 0.12,
-        roughness: isSkin ? 0.45 : 0.48,
+        metalness: isSkin ? 0.02 : (isCardiac ? 0.08 : 0.12),
+        roughness: isSkin ? 0.52 : (isCardiac ? 0.42 : 0.48),
         side: THREE.DoubleSide,
         transparent: true,
         opacity: isSkin ? this.opacity.integumentary : 1.0,
         depthWrite: !isSkin,
+        polygonOffset: isSkin,
+        polygonOffsetFactor: isSkin ? -1.0 : 0.0,
+        polygonOffsetUnits: isSkin ? -1.0 : 0.0,
       });
 
       mat.onBeforeCompile = (shader) => {
@@ -183,23 +199,39 @@ export class AtlasModelLoader {
         shader.uniforms.selectionState = { value: this.selectionTexture };
         shader.uniforms.stateWidth = { value: this.stateWidth };
 
+        if (isCardiac) {
+          shader.uniforms.uCardiacScale = this.cardiacScaleUniform;
+          shader.uniforms.uCardiacCenter = { value: this.cardiacCenter };
+        }
+
         shader.vertexShader =
           'attribute float partIndex;\n' +
           'uniform sampler2D partState;\n' +
           'uniform sampler2D selectionState;\n' +
           'uniform float stateWidth;\n' +
+          (isCardiac ? 'uniform float uCardiacScale;\nuniform vec3 uCardiacCenter;\n' : '') +
           'varying float vPartVisible;\n' +
           'varying float vPartSelected;\n' +
           shader.vertexShader;
 
+        const vertexTransformSnippet = isCardiac
+          ? `#include <begin_vertex>
+             vec2 stateUv = vec2((partIndex + 0.5) / stateWidth, 0.5);
+             vec4 state = texture2D(partState, stateUv);
+             transformed += state.xyz;
+             transformed = uCardiacCenter + (transformed - uCardiacCenter) * uCardiacScale;
+             vPartVisible = state.w;
+             vPartSelected = texture2D(selectionState, stateUv).r;`
+          : `#include <begin_vertex>
+             vec2 stateUv = vec2((partIndex + 0.5) / stateWidth, 0.5);
+             vec4 state = texture2D(partState, stateUv);
+             transformed += state.xyz;
+             vPartVisible = state.w;
+             vPartSelected = texture2D(selectionState, stateUv).r;`;
+
         shader.vertexShader = shader.vertexShader.replace(
           '#include <begin_vertex>',
-          `#include <begin_vertex>
-           vec2 stateUv = vec2((partIndex + 0.5) / stateWidth, 0.5);
-           vec4 state = texture2D(partState, stateUv);
-           transformed += state.xyz;
-           vPartVisible = state.w;
-           vPartSelected = texture2D(selectionState, stateUv).r;`
+          vertexTransformSnippet
         );
 
         shader.fragmentShader =
@@ -216,16 +248,16 @@ export class AtlasModelLoader {
         shader.fragmentShader = shader.fragmentShader.replace(
           '#include <color_fragment>',
           `#include <color_fragment>
-           // Electric Blue Neon Highlight on selected structure
-           vec3 glowColor = vec3(0.18, 0.65, 1.0);
-           diffuseColor.rgb = mix(diffuseColor.rgb, glowColor, vPartSelected * 0.88);`
+           // High-contrast electric blue neon glow on selected structure
+           vec3 glowColor = vec3(0.15, 0.75, 1.0);
+           diffuseColor.rgb = mix(diffuseColor.rgb, glowColor, vPartSelected * 0.90);`
         );
       };
 
       this.materials.set(sys, mat);
     });
 
-    // Load chunks progressively
+    // Load chunks progressively with concurrency
     const totalChunks = this.manifest.chunks.length;
     let chunksLoaded = 0;
 
@@ -291,7 +323,11 @@ export class AtlasModelLoader {
         mesh.frustumCulled = false;
         mesh.userData = { system };
         scene.add(mesh);
-        this.systemMeshes.set(system, mesh);
+
+        const currentList = this.meshesBySystem.get(system) ?? [];
+        currentList.push(mesh);
+        this.meshesBySystem.set(system, currentList);
+        this.allMeshes.push(mesh);
       });
 
       chunksLoaded++;
@@ -300,18 +336,38 @@ export class AtlasModelLoader {
       }
     };
 
-    // Parallel fetch with concurrency pool of 4
-    let cursor = 0;
     const pool = Array.from({ length: 4 }, async () => {
+      let cursor = 0;
       while (cursor < totalChunks) {
+        // Atomic index pickup
         const ci = cursor++;
         await loadSingleChunk(ci);
       }
     });
 
-    await Promise.all(pool);
+    let globalCursor = 0;
+    const workerPool = Array.from({ length: 4 }, async () => {
+      while (globalCursor < totalChunks) {
+        const ci = globalCursor++;
+        await loadSingleChunk(ci);
+      }
+    });
+
+    await Promise.all(workerPool);
     this.isLoaded = true;
     this.updateVisibilityAndHalfDissection();
+  }
+
+  public setCardiacScale(scale: number): void {
+    this.cardiacScaleUniform.value = scale;
+  }
+
+  public updateClippingPlanes(planes: THREE.Plane[]): void {
+    this.materials.forEach((mat) => {
+      mat.clippingPlanes = planes;
+      mat.clipShadows = true;
+      mat.needsUpdate = true;
+    });
   }
 
   public updateVisibilityAndHalfDissection(): void {
@@ -324,22 +380,22 @@ export class AtlasModelLoader {
       let visible = isVisibleSystem;
 
       if (this.halfDissectionMode && visible) {
-        // Anatomical Right (x > 0) shows Muscular system
-        // Anatomical Left (x < 0) shows Skeletal system + translucent skin
+        // Anatomical Right (x < -0.015, screen Left) shows Muscular system
+        // Anatomical Left (x > 0.015, screen Right) shows Skeletal system + translucent skin
         // Central Axis & Visceral Organs (Cardiovascular, Digestive, Respiratory, Nervous, Urinary) are shown fully
         if (p.system === 'muscular') {
-          // Hide muscles on the left side (x < -0.01)
-          if (center.x < -0.015) {
+          // Hide muscles on anatomical left (x > 0.015)
+          if (center.x > 0.015) {
             visible = false;
           }
         } else if (p.system === 'skeletal' || p.system === 'connective') {
-          // Hide bones on the muscular right side (x > 0.01)
-          if (center.x > 0.015) {
+          // Hide bones on anatomical right (x < -0.015)
+          if (center.x < -0.015) {
             visible = false;
           }
         } else if (p.system === 'integumentary') {
           // Translucent skin silhouette on skeletal side
-          if (center.x > 0.015) {
+          if (center.x < -0.015) {
             visible = false;
           }
         }
@@ -371,6 +427,11 @@ export class AtlasModelLoader {
     }
   }
 
+  public setHalfDissection(enabled: boolean): void {
+    this.halfDissectionMode = enabled;
+    this.updateVisibilityAndHalfDissection();
+  }
+
   public setSystemOpacity(system: SystemCategory, opacity: number): void {
     if (system in this.opacity) {
       this.opacity[system] = opacity;
@@ -382,6 +443,7 @@ export class AtlasModelLoader {
           mat.opacity = opacity;
           mat.transparent = opacity < 0.99;
           mat.depthWrite = opacity >= 0.85;
+          mat.needsUpdate = true;
         }
       };
 
@@ -418,6 +480,13 @@ export class AtlasModelLoader {
     this.selectionTexture.needsUpdate = true;
   }
 
+  public clearSelection(): void {
+    if (!this.selectionData || !this.selectionTexture) return;
+    this.selectionData.fill(0);
+    this.selectedPartIndex = -1;
+    this.selectionTexture.needsUpdate = true;
+  }
+
   public raycast(raycaster: THREE.Raycaster): number {
     let nearest = Infinity;
     let found = -1;
@@ -439,18 +508,136 @@ export class AtlasModelLoader {
     return found;
   }
 
-  public findPartByConceptOrName(query: string): number {
+  /**
+   * Find parts matching a query, handling multi-mesh organs (heart, brain, kidneys, etc.)
+   */
+  public findParts(query: string): { indices: number[]; center: THREE.Vector3; bounds: THREE.Box3 } {
     const q = query.toLowerCase().trim();
-    return this.parts.findIndex(
-      (p) =>
-        p.conceptId.toLowerCase() === q ||
-        p.name.toLowerCase().includes(q)
-    );
+    const indices: number[] = [];
+    const combinedBox = new THREE.Box3();
+
+    this.parts.forEach((p, idx) => {
+      const name = p.name.toLowerCase();
+      const fma = p.conceptId.toLowerCase();
+      let match = false;
+
+      if (q === 'heart' || q === 'fma7088' || q === 'cardiac' || q === 'قلب') {
+        match = p.system === 'cardiac';
+      } else if (q === 'brain' || q === 'cerebrum' || q === 'fma5018' || q === 'مغز') {
+        match = p.system === 'nervous' && p.bounds[0][1] > 1.50;
+      } else if (q === 'lung' || q === 'lungs' || q === 'fma7195' || q === 'ریه') {
+        match = p.system === 'respiratory' && (name.includes('bronch') || name.includes('lung'));
+      } else if (q === 'liver' || q === 'fma7199' || q === 'کبد') {
+        match = name.includes('liver');
+      } else if (q === 'stomach' || q === 'fma7148' || q === 'معده') {
+        match = name.includes('stomach');
+      } else if (q === 'kidney' || q === 'kidney.l' || q === 'fma7201_l' || q === 'کلیه') {
+        match = name.includes('kidney');
+      } else if (q === 'femur' || q === 'fma9915' || q === 'ران') {
+        match = name.includes('femur');
+      } else if (q === 'biceps' || q === 'بازو') {
+        match = name.includes('biceps brachii');
+      } else if (q === 'spleen' || q === 'طحال') {
+        match = name.includes('spleen');
+      } else if (q === 'skin' || q === 'fma7163' || q === 'پوست') {
+        match = name.includes('skin');
+      } else {
+        match = fma === q || name.includes(q);
+      }
+
+      if (match) {
+        indices.push(idx);
+        combinedBox.union(this.bounds[idx]);
+      }
+    });
+
+    const center = new THREE.Vector3();
+    if (!combinedBox.isEmpty()) {
+      combinedBox.getCenter(center);
+    }
+
+    return { indices, center, bounds: combinedBox };
+  }
+
+  /**
+   * Bilingual metadata builder for the selected anatomical structure
+   */
+  public getStructureDetails(partIndex: number): AnatomicalStructure {
+    const p = this.parts[partIndex];
+    const nameEn = p.name;
+    const fmaId = p.conceptId || p.id;
+    const lower = nameEn.toLowerCase();
+
+    let nameFa = nameEn;
+    let sysCategory: AnatomicalStructure['systemCategory'] = 'Circulatory';
+
+    if (p.system === 'cardiac') {
+      sysCategory = 'Circulatory';
+      if (lower.includes('left ventricle')) nameFa = 'بطن چپ قلب';
+      else if (lower.includes('right ventricle')) nameFa = 'بطن راست قلب';
+      else if (lower.includes('left atrium')) nameFa = 'دهلیز چپ قلب';
+      else if (lower.includes('right atrium')) nameFa = 'دهلیز راست قلب';
+      else if (lower.includes('myocardium') || lower.includes('wall of ventricle')) nameFa = 'دیواره بطن (میوکارد قلب)';
+      else if (lower.includes('mitral')) nameFa = 'دریچه میترال قلب';
+      else if (lower.includes('aortic')) nameFa = 'دریچه آئورت قلب';
+      else if (lower.includes('tricuspid')) nameFa = 'دریچه سه‌لتی (تریکوسپید)';
+      else if (lower.includes('pulmonary valve')) nameFa = 'دریچه ریوی قلب';
+      else nameFa = `بخش قلبی (${nameEn})`;
+    } else if (p.system === 'nervous' || p.system === 'brain') {
+      sysCategory = 'Nervous';
+      if (lower.includes('lateral ventricle')) nameFa = 'بطن جانبی مغز (سیستم مایع مغزی-نخاعی)';
+      else if (lower.includes('third ventricle')) nameFa = 'بطن سوم مغز';
+      else if (lower.includes('fourth ventricle')) nameFa = 'بطن چهارم مغز';
+      else if (lower.includes('corpus callosum')) nameFa = 'جسم پینه‌ای مغز';
+      else if (lower.includes('gyrus')) nameFa = `شکنج مغزی (${nameEn})`;
+      else if (lower.includes('nerve')) nameFa = `عصب (${nameEn})`;
+      else nameFa = `بافت عصبی (${nameEn})`;
+    } else if (p.system === 'respiratory') {
+      sysCategory = 'Respiratory';
+      if (lower.includes('bronch')) nameFa = `درخت برونشیال و ریه (${nameEn})`;
+      else nameFa = `دستگاه تنفس (${nameEn})`;
+    } else if (p.system === 'digestive') {
+      sysCategory = 'Digestive';
+      if (lower.includes('liver')) nameFa = 'کبد';
+      else if (lower.includes('stomach')) nameFa = 'معده';
+      else if (lower.includes('colon')) nameFa = 'روده بزرگ';
+      else if (lower.includes('jejunum') || lower.includes('ileum')) nameFa = 'روده باریک';
+      else nameFa = `دستگاه گوارش (${nameEn})`;
+    } else if (p.system === 'urinary') {
+      sysCategory = 'Urinary';
+      if (lower.includes('kidney')) nameFa = lower.includes('left') ? 'کلیه چپ' : 'کلیه راست';
+      else if (lower.includes('bladder')) nameFa = 'مثانه';
+      else nameFa = `دستگاه ادراری (${nameEn})`;
+    } else if (p.system === 'integumentary') {
+      sysCategory = 'Integumentary' as never;
+      if (lower.includes('skin')) nameFa = 'پوست و پوشش سطحی بدن';
+      else if (lower.includes('eyebrow')) nameFa = 'ابرو';
+      else if (lower.includes('hair')) nameFa = 'مو';
+      else nameFa = `بافت پوششی (${nameEn})`;
+    } else if (p.system === 'muscular') {
+      sysCategory = 'Muscular';
+      nameFa = `عضله (${nameEn})`;
+    } else if (p.system === 'skeletal') {
+      sysCategory = 'Skeletal';
+      nameFa = `استخوان (${nameEn})`;
+    }
+
+    return {
+      fmaId,
+      snomedBodyStructureId: 'SNOMED_' + fmaId,
+      nameEn,
+      nameFa,
+      systemCategory: sysCategory,
+      genderModel: 'both',
+      meshNodeName: p.id,
+      descriptionEn: `${nameEn} is a segmented anatomical structure of the ${p.system} system from the BodyParts3D standard atlas.`,
+      descriptionFa: `عضو تشریحی ${nameFa} متعلق به دستگاه ${p.system} بدن انسان از اطلس استاندارد BodyParts3D.`,
+    };
   }
 
   public dispose(): void {
     this.pickers.forEach((p) => p?.geometry.dispose());
-    this.systemMeshes.forEach((m) => {
+    this.allMeshes.forEach((m) => {
       m.geometry.dispose();
       (m.material as THREE.Material).dispose();
     });
