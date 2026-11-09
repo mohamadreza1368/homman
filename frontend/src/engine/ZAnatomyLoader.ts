@@ -423,6 +423,9 @@ export class ZAnatomyLoader {
         transparent: true,
         opacity: this.opacity.integumentary ?? 0.18,
         depthWrite: false,
+        polygonOffset: true,
+        polygonOffsetFactor: -1.0,
+        polygonOffsetUnits: -1.0,
         side: THREE.DoubleSide,
       });
     }
