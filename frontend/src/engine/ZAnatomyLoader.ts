@@ -24,8 +24,8 @@ export interface ZStructureInfo {
 
 export interface CardiacMeshInfo {
   mesh: THREE.Mesh;
-  originalScale: THREE.Vector3;
-  originalPosition: THREE.Vector3;
+  origPositions: Float32Array;
+  localCenter: THREE.Vector3;
   chamberType: 'ventricle' | 'atrium' | 'vessel';
 }
 
@@ -150,6 +150,7 @@ export class ZAnatomyLoader {
       { file: 'sinir.glb', defaultSystem: 'nervous' },
       { file: 'lenf.glb', defaultSystem: 'lymphatic' },
       { file: 'eklem.glb', defaultSystem: 'skeletal' },
+      { file: 'deri.glb', defaultSystem: 'integumentary' },
     ];
 
     let filesLoaded = 0;
@@ -241,27 +242,26 @@ export class ZAnatomyLoader {
         const lower = rawName.toLowerCase();
         let chamberType: 'ventricle' | 'atrium' | 'vessel' | null = null;
         if (
-          (lower.includes('left ventricle') || lower.includes('right ventricle') || lower.includes('papillary muscle')) &&
+          (lower.includes('left_ventricle') || lower.includes('right_ventricle') || lower.includes('papillary_muscle')) &&
           !lower.includes('lateral') && !lower.includes('third') && !lower.includes('fourth')
         ) {
           chamberType = 'ventricle';
-        } else if (lower.includes('atrium') && (lower.includes('left atrium') || lower.includes('right atrium'))) {
+        } else if (lower.includes('left_atrium') || lower.includes('right_atrium')) {
           chamberType = 'atrium';
-        } else if (
-          lower.includes('coronary') ||
-          lower.includes('cardiac') ||
-          lower.includes('ascending aorta') ||
-          lower.includes('pulmonary trunk') ||
-          lower.includes('leaflet')
-        ) {
-          chamberType = 'vessel';
         }
 
-        if (chamberType) {
+        if (chamberType && child.geometry && child.geometry.attributes.position) {
+          child.geometry.computeBoundingBox();
+          const localCenter = new THREE.Vector3();
+          if (child.geometry.boundingBox) {
+            child.geometry.boundingBox.getCenter(localCenter);
+          }
+          const origPositions = new Float32Array(child.geometry.attributes.position.array);
+
           this.cardiacMeshes.push({
             mesh: child,
-            originalScale: child.scale.clone(),
-            originalPosition: child.position.clone(),
+            origPositions,
+            localCenter,
             chamberType,
           });
         }
@@ -411,6 +411,18 @@ export class ZAnatomyLoader {
         color: new THREE.Color('#1e3a8a'), // Deoxygenated deep venous navy
         roughness: 0.46,
         metalness: 0.04,
+        side: THREE.DoubleSide,
+      });
+    }
+
+    if (system === 'integumentary' || lower.includes('skin')) {
+      return new THREE.MeshStandardMaterial({
+        color: new THREE.Color('#f4d7c8'), // Authentic living translucent dermal tone
+        roughness: 0.52,
+        metalness: 0.02,
+        transparent: true,
+        opacity: this.opacity.integumentary ?? 0.18,
+        depthWrite: false,
         side: THREE.DoubleSide,
       });
     }
@@ -644,9 +656,17 @@ export class ZAnatomyLoader {
       return this.structures.filter((s) => /biceps/i.test(s.name));
     }
 
-    // Lymphatic
+    // Lymphatic & Spleen
+    if (q === 'spleen' || q === 'طحال' || q === 'fma7196_spleen') {
+      return this.structures.filter((s) => /spleen/i.test(s.name));
+    }
     if (q === 'lymphatic' || q === 'lymph' || q === 'لنفاوی') {
       return this.structures.filter((s) => s.system === 'lymphatic');
+    }
+
+    // Integumentary & Skin
+    if (q === 'fma7163' || q === 'skin' || q === 'پوست' || q === 'integumentary') {
+      return this.structures.filter((s) => s.system === 'integumentary');
     }
 
     // Exact or substring match

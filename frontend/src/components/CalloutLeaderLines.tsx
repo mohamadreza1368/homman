@@ -21,6 +21,16 @@ export function CalloutLeaderLines({ viewer, onSelectCallout, showCallouts = fal
     const updatePositions = () => {
       const containerWidth = viewer.renderer.domElement.clientWidth;
       const updated = DEFAULT_CALLOUTS.map((callout) => {
+        let systemVisible = true;
+        if (viewer.zAnatomyLoader?.visibility) {
+          const sysKey = callout.system.toLowerCase();
+          // Map Circulatory -> cardiovascular, etc.
+          const sysId = (sysKey === 'circulatory' ? 'cardiovascular' : sysKey) as keyof typeof viewer.zAnatomyLoader.visibility;
+          if (sysId in viewer.zAnatomyLoader.visibility) {
+            systemVisible = viewer.zAnatomyLoader.visibility[sysId];
+          }
+        }
+
         const { x, y, visible } = viewer.projectToScreen(callout.worldPos);
         // Is it on the right or left half of the screen
         const isRightSide = x > containerWidth / 2;
@@ -28,7 +38,7 @@ export function CalloutLeaderLines({ viewer, onSelectCallout, showCallouts = fal
           callout,
           x,
           y,
-          visible,
+          visible: visible && systemVisible,
           isRightSide
         };
       });

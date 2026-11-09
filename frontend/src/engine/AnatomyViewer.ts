@@ -35,7 +35,8 @@ export const DEFAULT_CALLOUTS: AnatomicalCallout[] = [
   { id: 'FMA7201_L', query: 'kidney.l', labelEn: 'Left Kidney', labelFa: 'کلیه چپ', system: 'Urinary', worldPos: new THREE.Vector3(0.065, 1.05, 0.02) },
   { id: 'FMA9915', query: 'femur', labelEn: 'Femur', labelFa: 'استخوان ران', system: 'Skeletal', worldPos: new THREE.Vector3(0.10, 0.65, 0.0) },
   { id: 'BICEPS', query: 'biceps', labelEn: 'Biceps Brachii', labelFa: 'عضله دوسر بازو', system: 'Muscular', worldPos: new THREE.Vector3(-0.24, 1.25, 0.02) },
-  { id: 'LYMPHATIC', query: 'lymph', labelEn: 'Lymphatic', labelFa: 'سیستم لنفاوی', system: 'Lymphatic', worldPos: new THREE.Vector3(0.20, 1.02, 0.0) },
+  { id: 'LYMPHATIC', query: 'spleen', labelEn: 'Spleen & Lymph Nodes', labelFa: 'سیستم لنفاوی (طحال و غدد)', system: 'Lymphatic', worldPos: new THREE.Vector3(0.086, 1.158, -0.007) },
+  { id: 'FMA7163', query: 'skin', labelEn: 'Integumentary', labelFa: 'پوست و کانتور سطحی', system: 'Integumentary', worldPos: new THREE.Vector3(0.18, 1.48, 0.08) },
 ];
 
 export class AnatomyViewer {
@@ -153,6 +154,15 @@ export class AnatomyViewer {
           this.onLoadingProgress(progress);
         }
       })
+      .then(() => {
+        // Automatically align callout positions with real anatomical centers
+        DEFAULT_CALLOUTS.forEach((callout) => {
+          const matches = this.zAnatomyLoader.findStructures(callout.query);
+          if (matches.length > 0) {
+            callout.worldPos.copy(matches[0].center);
+          }
+        });
+      })
       .catch((err) => {
         console.error('Failed loading Z-Anatomy models:', err);
       });
@@ -260,10 +270,13 @@ export class AnatomyViewer {
       this.setHeartBpm(bpm);
     }
     if (!enabled) {
-      // Reset all cardiac mesh scales and positions precisely to original
+      // Reset all cardiac chamber geometries precisely to original
       this.zAnatomyLoader.cardiacMeshes.forEach((item) => {
-        item.mesh.position.copy(item.originalPosition);
-        item.mesh.scale.copy(item.originalScale);
+        const posAttr = item.mesh.geometry.attributes.position;
+        if (posAttr && item.origPositions) {
+          (posAttr.array as Float32Array).set(item.origPositions);
+          posAttr.needsUpdate = true;
+        }
       });
     }
   }
@@ -586,20 +599,22 @@ export class AnatomyViewer {
         let scale = 1.0;
         if (item.chamberType === 'ventricle') scale = ventricleScale;
         else if (item.chamberType === 'atrium') scale = atriumScale;
-        else scale = vesselScale;
 
-        // Radial pivot scaling around the exact heart center C:
-        // Position offset: C * (1 - scale) + originalPosition * scale
-        item.mesh.position.set(
-          C.x * (1 - scale) + item.originalPosition.x * scale,
-          C.y * (1 - scale) + item.originalPosition.y * scale,
-          C.z * (1 - scale) + item.originalPosition.z * scale
-        );
-        item.mesh.scale.set(
-          item.originalScale.x * scale,
-          item.originalScale.y * scale,
-          item.originalScale.z * scale
-        );
+        const posAttr = item.mesh.geometry.attributes.position;
+        if (!posAttr || !item.origPositions) continue;
+        const posArray = posAttr.array as Float32Array;
+        const orig = item.origPositions;
+        const cx = item.localCenter.x;
+        const cy = item.localCenter.y;
+        const cz = item.localCenter.z;
+
+        const count = orig.length;
+        for (let i = 0; i < count; i += 3) {
+          posArray[i]     = cx + (orig[i]     - cx) * scale;
+          posArray[i + 1] = cy + (orig[i + 1] - cy) * scale;
+          posArray[i + 2] = cz + (orig[i + 2] - cz) * scale;
+        }
+        posAttr.needsUpdate = true;
       }
     }
 
