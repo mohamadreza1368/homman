@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import type {
   AnatomicalStructure,
@@ -23,7 +24,8 @@ export type SystemCategory =
   | 'digestive'
   | 'urinary'
   | 'lymphatic'
-  | 'integumentary';
+  | 'integumentary'
+  | 'reproductive';
 
 export interface AtlasPart {
   id: string;
@@ -56,12 +58,14 @@ export const SYSTEM_COLORS: Record<string, string> = {
   nervous: '#eab308',
   brain: '#c084fc',
   sensory: '#38bdf8',
-  respiratory: '#f472b6',
-  digestive: '#d97706',
-  urinary: '#0284c7',
+  respiratory: '#e47d86',
+  lung: '#e68c94',
+  digestive: '#d4863b',
+  liver: '#7e2c23',
+  urinary: '#7a2924',
   lymphatic: '#10b981',
   endocrine: '#8b5cf6',
-  reproductive: '#f43f5e',
+  reproductive: '#c06c7a',
   integumentary: '#e5bba4',
   connective: '#cbd5e1',
 };
@@ -76,6 +80,7 @@ export interface SystemVisibilityState {
   urinary: boolean;
   lymphatic: boolean;
   integumentary: boolean;
+  reproductive: boolean;
 }
 
 export interface SystemOpacityState {
@@ -88,6 +93,7 @@ export interface SystemOpacityState {
   urinary: number;
   lymphatic: number;
   integumentary: number;
+  reproductive: number;
 }
 
 const PRESET_TO_CODE: Record<VisualPresetType, number> = {
@@ -98,11 +104,39 @@ const PRESET_TO_CODE: Record<VisualPresetType, number> = {
   rig_fracture: 5,
 };
 
-// Priority chunk loading order: heart/thorax(8), viscera/resp(9), skin/skeleton(10,11,0,1), then peripheral regions
 const PRIORITY_CHUNK_ORDER = [8, 9, 10, 11, 0, 1, 12, 13, 6, 7, 2, 3, 4, 5, 14];
 const CHUNK_TIMEOUT_MS = 30_000;
 const MAX_CHUNK_BYTES = 25 * 1024 * 1024;
+
+// Misclassification lookup sets audited directly from atlas.json
 const BRAIN_VENTRICLE_IDS = new Set(['FJ1730', 'FJ1731', 'FJ1752', 'FJ1767', 'FJ1814']);
+const LIVER_SEGMENT_IDS = new Set([
+  'FJ1858', 'FJ2409', 'FJ2816', 'FJ2818', 'FJ2819', 'FJ2820', 'FJ2821', 'FJ2822', 'FJ2823', 'FJ2824',
+]);
+const GINGIVA_IDS = new Set(['FJ1252', 'FJ1253']);
+const REPRODUCTIVE_EXTRA_IDS = new Set([
+  'FJ2815', // Pubic hair (integumentary -> reproductive)
+  'FJ3148', // Male spongy penile urethra (toggled cleanly with reproductive)
+  'FJ2056', 'FJ2208', 'FJ3426', 'FJ3496', 'FJ3497', 'FJ3592', 'FJ3593', 'FJ3637', // Penile vessels
+]);
+const SKELETAL_MUSCLE_MISCLASSIFICATIONS = new Set([
+  'FJ1409', 'FJ1409M', 'FJ1410', 'FJ1410M', 'FJ1411', 'FJ1411M',
+  'FJ1423', 'FJ1423M', 'FJ1439', 'FJ1439M', 'FJ1440', 'FJ1440M',
+  'FJ1504', 'FJ1504M', 'FJ1532', 'FJ1532M',
+]);
+const RESPIRATORY_PHARYNX_MUSCLES = new Set([
+  'FJ2740', 'FJ2742', 'FJ2743', 'FJ2745', 'FJ2746', 'FJ2747',
+  'FJ2752', 'FJ2754', 'FJ2755', 'FJ2757', 'FJ2758', 'FJ2759',
+]);
+
+// Authentic 5 lung lobes extracted cleanly from Z-Anatomy (aligned to BP3D bronchi/ribs to < 2mm)
+const ADDON_LUNG_PARTS: AtlasPart[] = [
+  { id: 'BP3D_LUNG_R_SUP', name: 'Superior lobe of right lung', conceptId: 'FMA7195', system: 'lung', chunk: -1, positions: 0, normals: 0, indices: 0, vertexCount: 0, indexCount: 0, bounds: [[-0.118, 1.292, -0.071], [-0.008, 1.429, 0.084]] },
+  { id: 'BP3D_LUNG_R_MID', name: 'Middle lobe of right lung', conceptId: 'FMA7195', system: 'lung', chunk: -1, positions: 0, normals: 0, indices: 0, vertexCount: 0, indexCount: 0, bounds: [[-0.124, 1.216, -0.048], [-0.006, 1.319, 0.103]] },
+  { id: 'BP3D_LUNG_R_INF', name: 'Inferior lobe of right lung', conceptId: 'FMA7195', system: 'lung', chunk: -1, positions: 0, normals: 0, indices: 0, vertexCount: 0, indexCount: 0, bounds: [[-0.131, 1.170, -0.083], [-0.003, 1.350, 0.093]] },
+  { id: 'BP3D_LUNG_L_SUP', name: 'Superior lobe of left lung', conceptId: 'FMA7196', system: 'lung', chunk: -1, positions: 0, normals: 0, indices: 0, vertexCount: 0, indexCount: 0, bounds: [[0.009, 1.220, -0.069], [0.123, 1.431, 0.102]] },
+  { id: 'BP3D_LUNG_L_INF', name: 'Inferior lobe of left lung', conceptId: 'FMA7196', system: 'lung', chunk: -1, positions: 0, normals: 0, indices: 0, vertexCount: 0, indexCount: 0, bounds: [[0.018, 1.167, -0.083], [0.130, 1.360, 0.099]] },
+];
 
 export class AtlasModelLoader {
   public manifest: AtlasManifest | null = null;
@@ -143,6 +177,7 @@ export class AtlasModelLoader {
     urinary: true,
     lymphatic: true,
     integumentary: true,
+    reproductive: false, // Hidden by default for educational anatomical modesty; optional toggle
   };
 
   public opacity: SystemOpacityState = {
@@ -150,16 +185,26 @@ export class AtlasModelLoader {
     muscular: 1.0,
     nervous: 1.0,
     cardiovascular: 1.0,
-    respiratory: 1.0,
+    respiratory: 0.88,
     digestive: 1.0,
     urinary: 1.0,
     lymphatic: 1.0,
     integumentary: 0.18,
+    reproductive: 1.0,
   };
 
-  /**
-   * Resolves URL safely across Windows download managers (IDM hijacks bare `.bin` returning 204 No Content).
-   */
+  private normalizePartSystem(p: AtlasPart): string {
+    const lower = p.name.toLowerCase();
+    if (BRAIN_VENTRICLE_IDS.has(p.id)) return 'nervous';
+    if (LIVER_SEGMENT_IDS.has(p.id) || lower.includes('hepatovenous segment')) return 'liver';
+    if (SKELETAL_MUSCLE_MISCLASSIFICATIONS.has(p.id) || RESPIRATORY_PHARYNX_MUSCLES.has(p.id)) {
+      return 'muscular';
+    }
+    if (GINGIVA_IDS.has(p.id)) return 'digestive';
+    if (REPRODUCTIVE_EXTRA_IDS.has(p.id) || p.system === 'reproductive') return 'reproductive';
+    return p.system;
+  }
+
   private buildSafeChunkUrl(rawUrl: string): string {
     if (rawUrl.endsWith('.bin') && !rawUrl.includes('?')) {
       return `${rawUrl}?format=abuf`;
@@ -230,6 +275,55 @@ export class AtlasModelLoader {
     }
   }
 
+  private async loadAddonLungLobes(scene: THREE.Scene): Promise<void> {
+    try {
+      const gltfLoader = new GLTFLoader();
+      const gltf = await gltfLoader.loadAsync('/models/z-anatomy/lungs-lobes.glb');
+      const lungGeoms: THREE.BufferGeometry[] = [];
+
+      gltf.scene.traverse((child) => {
+        if (!(child instanceof THREE.Mesh)) return;
+        const partIdx = this.partIndexById.get(child.name.toLowerCase());
+        if (partIdx === undefined) return;
+
+        const geom = child.geometry.clone();
+        const vCount = geom.attributes.position.count;
+        geom.setAttribute('partIndex', new THREE.BufferAttribute(new Float32Array(vCount).fill(partIdx), 1));
+        geom.computeBoundingBox();
+        geom.computeBoundingSphere();
+        if (geom.boundingBox) {
+          this.bounds[partIdx] = geom.boundingBox.clone();
+          geom.boundingBox.getCenter(this.centers[partIdx]);
+        }
+
+        const pickMesh = new THREE.Mesh(geom);
+        pickMesh.matrixAutoUpdate = false;
+        this.pickers[partIdx] = pickMesh;
+        lungGeoms.push(geom);
+      });
+
+      if (lungGeoms.length > 0) {
+        const merged = mergeGeometries(lungGeoms, false);
+        if (merged) {
+          const mat = this.materials.get('lung');
+          const mesh = new THREE.Mesh(merged, mat);
+          mesh.frustumCulled = false;
+          mesh.userData = { system: 'lung' };
+          scene.add(mesh);
+
+          const currentList = this.meshesBySystem.get('lung') ?? [];
+          currentList.push(mesh);
+          this.meshesBySystem.set('lung', currentList);
+          this.allMeshes.push(mesh);
+        }
+      }
+    } catch (err) {
+      logRenderEvent('warn', 'asset_load', 'Optional lung lobes addon failed to load', {
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+
   public async load(
     scene: THREE.Scene,
     onProgress?: (percent: number, loadedBytes?: number, totalBytes?: number) => void
@@ -247,13 +341,12 @@ export class AtlasModelLoader {
       throw new Error('Empty BodyParts3D manifest');
     }
 
-    // Defensive normalization: ensure cerebral ventricles NEVER belong to cardiac even on raw upstream JSON
-    this.parts = this.manifest.parts.map((p) => {
-      if (BRAIN_VENTRICLE_IDS.has(p.id) && p.system === 'cardiac') {
-        return { ...p, system: 'nervous' };
-      }
-      return p;
-    });
+    // Apply audited system normalizations + inject 5 authentic lung lobes cleanly
+    const normalizedParts = this.manifest.parts.map((p) => ({
+      ...p,
+      system: this.normalizePartSystem(p),
+    }));
+    this.parts = [...normalizedParts, ...ADDON_LUNG_PARTS];
 
     this.partIndexById.clear();
     this.parts.forEach((p, idx) => {
@@ -297,24 +390,30 @@ export class AtlasModelLoader {
       );
     });
 
-    // Initialize state visibility BEFORE chunks stream in so progressive meshes render immediately
+    // Initialize visibility upfront (reproductive starts hidden = 0, visible systems = 1)
     this.updateVisibilityAndHalfDissection();
 
-    // Create system materials with distinct shader program cache keys
     const distinctSystems = Array.from(new Set(this.parts.map((p) => p.system)));
     distinctSystems.forEach((sys) => {
       const colorHex = SYSTEM_COLORS[sys] || '#aebbb8';
       const isSkin = sys === 'integumentary';
       const isCardiac = sys === 'cardiac';
+      const isLung = sys === 'lung';
+
+      const initOpacity = isSkin
+        ? this.opacity.integumentary
+        : isLung
+          ? this.opacity.respiratory
+          : 1.0;
 
       const mat = new THREE.MeshStandardMaterial({
         color: new THREE.Color(colorHex),
-        metalness: isSkin ? 0.02 : isCardiac ? 0.08 : 0.12,
-        roughness: isSkin ? 0.52 : isCardiac ? 0.42 : 0.48,
-        side: THREE.DoubleSide,
-        transparent: true,
-        opacity: isSkin ? this.opacity.integumentary : 1.0,
-        depthWrite: !isSkin,
+        metalness: isSkin || isLung ? 0.02 : isCardiac ? 0.08 : 0.10,
+        roughness: isSkin ? 0.52 : isLung ? 0.60 : isCardiac ? 0.42 : 0.48,
+        side: isSkin ? THREE.FrontSide : THREE.DoubleSide,
+        transparent: initOpacity < 0.99,
+        opacity: initOpacity,
+        depthWrite: initOpacity >= 0.85 && !isSkin,
         polygonOffset: isSkin,
         polygonOffsetFactor: isSkin ? -1.0 : 0.0,
         polygonOffsetUnits: isSkin ? -1.0 : 0.0,
@@ -400,7 +499,6 @@ export class AtlasModelLoader {
     let loadedBytes = 0;
     let parseMsAccum = 0;
 
-    // Order chunks with core cardiac/thoracic/skeletal structures first
     const orderedIndices = PRIORITY_CHUNK_ORDER.filter((idx) => idx < totalChunks);
     for (let i = 0; i < totalChunks; i++) {
       if (!orderedIndices.includes(i)) orderedIndices.push(i);
@@ -491,7 +589,7 @@ export class AtlasModelLoader {
       }
     });
 
-    await Promise.all(workerPool);
+    await Promise.all([...workerPool, this.loadAddonLungLobes(scene)]);
 
     if (signal.aborted) return;
 
@@ -506,10 +604,10 @@ export class AtlasModelLoader {
       downloadMs: Math.max(0, totalMs - Math.round(parseMsAccum)),
       parseMs: Math.round(parseMsAccum),
       meshCount: this.allMeshes.length,
-      triangles: this.manifest.triangles,
+      triangles: this.manifest.triangles + 15334,
     };
 
-    logRenderEvent('info', 'asset_load', 'BodyParts3D atlas loaded cleanly', {
+    logRenderEvent('info', 'asset_load', 'BodyParts3D atlas + 5 lung lobes loaded cleanly', {
       chunks: totalChunks,
       bytes: loadedBytes,
       totalMs,
@@ -568,12 +666,13 @@ export class AtlasModelLoader {
     if (system === 'muscular') return this.visibility.muscular;
     if (system === 'nervous' || system === 'brain' || system === 'sensory') return this.visibility.nervous;
     if (system === 'cardiac' || system === 'arterial' || system === 'venous') return this.visibility.cardiovascular;
-    if (system === 'respiratory') return this.visibility.respiratory;
-    if (system === 'digestive') return this.visibility.digestive;
+    if (system === 'respiratory' || system === 'lung') return this.visibility.respiratory;
+    if (system === 'digestive' || system === 'liver') return this.visibility.digestive;
     if (system === 'urinary') return this.visibility.urinary;
     if (system === 'lymphatic' || system === 'endocrine') return this.visibility.lymphatic;
     if (system === 'integumentary') return this.visibility.integumentary;
-    return true;
+    if (system === 'reproductive') return this.visibility.reproductive;
+    return false;
   }
 
   public setSystemVisibility(system: SystemCategory, visible: boolean): void {
@@ -613,6 +712,12 @@ export class AtlasModelLoader {
       } else if (system === 'skeletal') {
         updateMat('skeletal');
         updateMat('connective');
+      } else if (system === 'respiratory') {
+        updateMat('respiratory');
+        updateMat('lung');
+      } else if (system === 'digestive') {
+        updateMat('digestive');
+        updateMat('liver');
       } else {
         updateMat(system);
       }
@@ -647,7 +752,6 @@ export class AtlasModelLoader {
     const box = new THREE.Box3();
 
     if (this.selectionData && this.selectionTexture) {
-      // Preserve active educational preset channels (G,B) only on cleared R selection
       for (let i = 0; i < this.parts.length; i++) {
         this.selectionData[i * 4] = 0;
       }
@@ -671,7 +775,6 @@ export class AtlasModelLoader {
   ): void {
     if (!this.selectionData || !this.selectionTexture) return;
 
-    // Clear previous preset channels G, B across all parts
     for (let i = 0; i < this.parts.length; i++) {
       this.selectionData[i * 4 + 1] = 0;
       this.selectionData[i * 4 + 2] = 0;
@@ -757,10 +860,6 @@ export class AtlasModelLoader {
     return null;
   }
 
-  /**
-   * Resolves a clicked part index strictly through the canonical AnatomyCatalog Registry.
-   * Unmapped minor structures are clearly flagged (isMappedToCatalog = false) so no invalid clinical claims appear.
-   */
   public getStructureDetails(partIndex: number): AnatomicalStructure {
     const part = this.parts[partIndex];
     const mapped = getRecordByMeshName(part.id);

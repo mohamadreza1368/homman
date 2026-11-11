@@ -361,8 +361,17 @@
       "fmaId": "FMA7199",
       "snomedBodyStructureId": "181277001",
       "meshNames": [
+        "FJ1858",
         "FJ1883",
+        "FJ2409",
         "FJ2816",
+        "FJ2818",
+        "FJ2819",
+        "FJ2820",
+        "FJ2821",
+        "FJ2822",
+        "FJ2823",
+        "FJ2824",
         "FJ3071",
         "FJ3072",
         "FJ3088",
@@ -991,7 +1000,10 @@
         "FJ2524",
         "FJ2525",
         "FJ2526",
-        "FJ2539"
+        "FJ2539",
+        "BP3D_LUNG_R_SUP",
+        "BP3D_LUNG_R_MID",
+        "BP3D_LUNG_R_INF"
       ],
       "zAnatomyNames": [
         "Right_lung",
@@ -1068,7 +1080,9 @@
         "FJ2536",
         "FJ2537",
         "FJ2538",
-        "FJ2540"
+        "FJ2540",
+        "BP3D_LUNG_L_SUP",
+        "BP3D_LUNG_L_INF"
       ],
       "zAnatomyNames": [
         "Left_lung",

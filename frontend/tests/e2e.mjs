@@ -174,6 +174,25 @@ async function runE2E() {
       perf.meshCount > 0 || perf.triangles > 0,
       `Expected rendered meshes/triangles > 0, got ${JSON.stringify(perf)}`
     );
+
+    const sysChecks = await cdp.evalJson(`
+      (() => {
+        const loader = window.__viewer.atlasLoader;
+        const lungPart = loader.parts.find(p => p.id === 'BP3D_LUNG_R_SUP');
+        const liverPart = loader.parts.find(p => p.id === 'FJ2820');
+        const genitalIdx = loader.partIndexById.get('fj3132');
+        return {
+          reproHiddenByDefault: loader.visibility.reproductive === false && loader.stateData[genitalIdx * 4 + 3] === 0,
+          hasLungs: Boolean(lungPart && lungPart.system === 'lung'),
+          liverInDigestive: liverPart?.system === 'liver',
+        };
+      })()
+    `);
+    console.log('[E2E] System Anatomy Checks:', sysChecks);
+    assert.equal(sysChecks.reproHiddenByDefault, true, 'Reproductive system must be hidden by default');
+    assert.equal(sysChecks.hasLungs, true, 'Lungs parenchyma lobes must be loaded');
+    assert.equal(sysChecks.liverInDigestive, true, 'Liver segments must belong to digestive liver, not venous');
+
     await cdp.screenshot('e2e_2_body_loaded');
 
     // 3. Deterministic search -> select Heart (FMA7088) -> Details Card

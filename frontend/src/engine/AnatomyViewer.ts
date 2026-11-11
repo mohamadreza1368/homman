@@ -123,11 +123,11 @@ export class AnatomyViewer {
     this.scene = new THREE.Scene();
     this.scene.background = new THREE.Color(0x0a0e17);
 
-    // 2. Camera
+    // 2. Camera framing entire standing human height cleanly below top navbar
     const width = Math.max(1, this.container.clientWidth);
     const height = Math.max(1, this.container.clientHeight);
     this.camera = new THREE.PerspectiveCamera(36, width / height, 0.05, 50);
-    this.camera.position.set(0, 0.88, 2.45);
+    this.camera.position.set(0, 0.92, 2.75);
 
     // 3. WebGL Renderer with Lite Mode DPR scaling
     this.renderer = new THREE.WebGLRenderer({
@@ -439,8 +439,8 @@ export class AnatomyViewer {
   }
 
   public resetView() {
-    this.camera.position.set(0, 0.88, 2.45);
-    this.controls.target.set(0, 0.85, 0);
+    this.camera.position.set(0, 0.92, 2.75);
+    this.controls.target.set(0, 0.86, 0);
     this.controls.update();
   }
 

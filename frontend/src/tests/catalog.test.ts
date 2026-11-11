@@ -80,3 +80,20 @@ test('Isolation target resolution and unmapped sub-structure guard work cleanly'
   assert.equal(unmapped.isMappedToCatalog, false);
   assert.equal(unmapped.fmaId, 'UNMAPPED');
 });
+
+test('Liver Hepatovenous segments belong to Digestive Liver FMA7199, never Cardiovascular', () => {
+  const seg = getRecordByMeshName('FJ2820');
+  assert.ok(seg);
+  assert.equal(seg.fmaId, 'FMA7199');
+  assert.equal(seg.system, 'digestive');
+});
+
+test('Right and Left Lung parenchyma lobes resolve cleanly to FMA7195 and FMA7196', () => {
+  const rLung = getRecordByMeshName('BP3D_LUNG_R_SUP');
+  const lLung = getRecordByMeshName('BP3D_LUNG_L_SUP');
+  assert.ok(rLung && lLung);
+  assert.equal(rLung.fmaId, 'FMA7195');
+  assert.equal(rLung.system, 'respiratory');
+  assert.equal(lLung.fmaId, 'FMA7196');
+  assert.equal(lLung.system, 'respiratory');
+});

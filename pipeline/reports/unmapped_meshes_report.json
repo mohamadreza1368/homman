@@ -1,8 +1,8 @@
 {
-  "generatedAt": "2026-11-11T19:36:16.711223+00:00",
+  "generatedAt": "2026-11-11T21:09:34.033143+00:00",
   "totalAtlasParts": 2234,
-  "mappedPartsCount": 410,
-  "unmappedPartsCount": 1824,
+  "mappedPartsCount": 424,
+  "unmappedPartsCount": 1815,
   "note": "Unmapped anatomical sub-structures (e.g. minor vascular branches/individual muscles) must NOT be shown with clinical pathology assertions in public UI.",
   "unmappedSample": [
     {

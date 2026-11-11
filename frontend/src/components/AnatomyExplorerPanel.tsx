@@ -21,11 +21,12 @@ const SYSTEMS_LIST: SystemItem[] = [
   { id: 'muscular', nameEn: 'Muscular', nameFa: 'دستگاه عضلانی', color: '#a84c40' },
   { id: 'nervous', nameEn: 'Nervous', nameFa: 'سیستم عصبی و مغز', color: '#eab308' },
   { id: 'cardiovascular', nameEn: 'Cardiovascular', nameFa: 'قلب و عروق', color: '#dc2626' },
-  { id: 'respiratory', nameEn: 'Respiratory', nameFa: 'دستگاه تنفس و ریه‌ها', color: '#f472b6' },
-  { id: 'digestive', nameEn: 'Digestive', nameFa: 'گوارش و احشا', color: '#d97706' },
-  { id: 'urinary', nameEn: 'Urinary', nameFa: 'دستگاه ادراری و کلیه‌ها', color: '#7c2d12' },
+  { id: 'respiratory', nameEn: 'Respiratory', nameFa: 'دستگاه تنفس و ریه‌ها', color: '#e68c94' },
+  { id: 'digestive', nameEn: 'Digestive', nameFa: 'گوارش، کبد و احشا', color: '#d4863b' },
+  { id: 'urinary', nameEn: 'Urinary', nameFa: 'دستگاه ادراری و کلیه‌ها', color: '#7a2924' },
   { id: 'lymphatic', nameEn: 'Lymphatic', nameFa: 'سیستم لنفاوی و ایمنی', color: '#10b981' },
   { id: 'integumentary', nameEn: 'Integumentary', nameFa: 'پوست و کانتور سطحی', color: '#e2b89d' },
+  { id: 'reproductive', nameEn: 'Reproductive', nameFa: 'دستگاه تولیدمثل (نمایش اختیاری)', color: '#c06c7a' },
 ];
 
 export function AnatomyExplorerPanel({ viewer, onClose }: Props) {
@@ -40,6 +41,7 @@ export function AnatomyExplorerPanel({ viewer, onClose }: Props) {
     urinary: true,
     lymphatic: true,
     integumentary: true,
+    reproductive: false,
   });
 
   const [opacities, setOpacities] = useState({

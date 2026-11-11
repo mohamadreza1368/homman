@@ -100,9 +100,16 @@ if (!brainVentRecord || brainVentRecord.system !== 'nervous') {
 if (fs.existsSync(atlasPath)) {
   const atlas = JSON.parse(fs.readFileSync(atlasPath, 'utf-8'));
   const atlasIds = new Set(atlas.parts.map((p) => p.id));
+  const addonLungIds = new Set([
+    'BP3D_LUNG_R_SUP',
+    'BP3D_LUNG_R_MID',
+    'BP3D_LUNG_R_INF',
+    'BP3D_LUNG_L_SUP',
+    'BP3D_LUNG_L_INF',
+  ]);
   for (const mesh of seenMeshNames.keys()) {
-    if (!atlasIds.has(mesh)) {
-      errors.push(`Catalog meshName "${mesh}" not found in atlas.json`);
+    if (!atlasIds.has(mesh) && !addonLungIds.has(mesh)) {
+      errors.push(`Catalog meshName "${mesh}" not found in atlas.json or lungs-lobes.glb`);
     }
   }
 }

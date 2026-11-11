@@ -100,11 +100,11 @@ def match_parts_for_record(fma_id: str, part: dict) -> bool:
         return name == "trachea"
     if fma_id == "FMA55099":  # Larynx (epiglottis + thyroid cartilage)
         return part["id"] in ("FJ2770", "FJ2808")
-    if fma_id == "FMA7195":  # Right lung bronchial tree
+    if fma_id == "FMA7195":  # Right lung: 3 authentic lung lobes + right bronchial tree
         return sys_name == "respiratory" and (
             "right" in name and ("bronch" in name or "bronchus" in name)
         )
-    if fma_id == "FMA7196":  # Left lung bronchial tree
+    if fma_id == "FMA7196":  # Left lung: 2 authentic lung lobes + left bronchial tree
         return sys_name == "respiratory" and (
             ("left" in name or "lingular" in name) and ("bronch" in name or "lingular" in name)
         )
@@ -114,9 +114,11 @@ def match_parts_for_record(fma_id: str, part: dict) -> bool:
         return part["id"] == "FJ3096"  # Left hepatic duct
     if fma_id == "FMA14652":
         return part["id"] == "FJ3123"  # Right hepatic duct
-    if fma_id == "FMA7199":  # Liver / Caudate lobe + intrahepatic biliary tree
-        return sys_name == "digestive" and (
-            part["id"] == "FJ2816" or ("hepatic biliary tree" in name) or "caudate lobe" in name
+    if fma_id == "FMA7199":  # Whole Liver: Hepatovenous Couinaud segments II..IX + Caudate lobe + biliary tributaries
+        return (
+            part["id"] == "FJ2816"
+            or "hepatovenous segment" in name
+            or (sys_name == "digestive" and ("hepatic biliary tree" in name or "caudate lobe" in name))
         )
     if fma_id == "FMA7202":
         return part["id"] in ("FJ2817", "FJ3080")  # Gallbladder + Cystic duct
@@ -309,6 +311,18 @@ def main():
             if match_parts_for_record(fma_id, p):
                 matched_mesh_ids.append(p["id"])
                 assigned_mesh_ids.add(p["id"])
+
+        # Attach authentic 5-lobe lung meshes extracted from Z-Anatomy (lungs-lobes.glb)
+        if fma_id == "FMA7195":
+            for lid in ("BP3D_LUNG_R_SUP", "BP3D_LUNG_R_MID", "BP3D_LUNG_R_INF"):
+                if lid not in assigned_mesh_ids:
+                    matched_mesh_ids.append(lid)
+                    assigned_mesh_ids.add(lid)
+        elif fma_id == "FMA7196":
+            for lid in ("BP3D_LUNG_L_SUP", "BP3D_LUNG_L_INF"):
+                if lid not in assigned_mesh_ids:
+                    matched_mesh_ids.append(lid)
+                    assigned_mesh_ids.add(lid)
 
         bbox = (
             row.get("bbox")
