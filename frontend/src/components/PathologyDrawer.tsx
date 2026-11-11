@@ -1,30 +1,59 @@
-import React, { useState } from 'react';
-import { X, Activity, FileText, Zap, Eye, RotateCcw, Filter, Stethoscope, Dna, ShieldAlert } from 'lucide-react';
-import type { AnatomicalStructure, PathologyDisorder } from '../types/anatomy';
-import knowledgeGraphData from '../data/pathologyKnowledgeGraph.json';
+import React, { useEffect, useState } from 'react';
+import {
+  X,
+  BookOpen,
+  Eye,
+  RotateCcw,
+  Filter,
+  Info,
+  Dna,
+  AlertTriangle,
+  Sparkles,
+} from 'lucide-react';
+import type { AnatomicalStructure, PathologyDisorder, VisualPresetType } from '../types/anatomy';
+import {
+  getPublishedOrganKnowledge,
+  KNOWLEDGE_GRAPH_METADATA,
+} from '../data/anatomyRegistry';
 
 interface PathologyDrawerProps {
   structure: AnatomicalStructure | null;
   onClose: () => void;
-  stage: 1 | 2;
-  onIsolate?: (fmaId: string) => void;
+  onIsolate?: (recordId: string) => void;
   onClearIsolate?: () => void;
+  onApplyPreset?: (recordId: string, presetType: VisualPresetType) => void;
+  onClearPreset?: () => void;
 }
 
-interface OrganData {
-  fmaId: string;
-  nameEn: string;
-  nameFa: string;
-  snomedRootId: string;
-  disorders: PathologyDisorder[];
-}
-
-const PRESET_BADGES = {
-  pbr_inflammation: { label: 'التهاب PBR (قرمزی و تورم)', color: 'bg-rose-500/20 text-rose-300 border-rose-500/40' },
-  pbr_ischemia: { label: 'ایسکمی و نکروز بافتی', color: 'bg-purple-500/20 text-purple-300 border-purple-500/40' },
-  morph_atrophy: { label: 'آتروفی و دژنراسیون مورفولوژیک', color: 'bg-amber-500/20 text-amber-300 border-amber-500/40' },
-  procedural_mass: { label: 'توده نئوپلاستیک / تومور فضاگیر', color: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40' },
-  rig_fracture: { label: 'شکستگی اسکلتی و جابه‌جایی استخوان', color: 'bg-blue-500/20 text-blue-300 border-blue-500/40' },
+const PRESET_INFO: Record<
+  VisualPresetType,
+  { label: string; effectDesc: string; colorClass: string }
+> = {
+  pbr_inflammation: {
+    label: 'رنگ‌بندی آموزشی التهاب',
+    effectDesc: 'اعمال هایلایت رنگی قرمز روی مش ساختار برای نمایش کانون التهابی مفهومی',
+    colorClass: 'bg-rose-500/20 text-rose-300 border-rose-500/40',
+  },
+  pbr_ischemia: {
+    label: 'رنگ‌بندی آموزشی کاهش خون‌رسانی (ایسکمی)',
+    effectDesc: 'تغییر رنگ مفهومی ساختار به طیف بنفش/کبود جهت آموزش نواحی کم‌اکسیژن',
+    colorClass: 'bg-purple-500/20 text-purple-300 border-purple-500/40',
+  },
+  morph_atrophy: {
+    label: 'رنگ‌بندی آموزشی دژنراسیون / آتروفی',
+    effectDesc: 'اعمال نشانگر کهربایی روشن روی عضو برای اشاره به تغییرات ساختاری مزمن',
+    colorClass: 'bg-amber-500/20 text-amber-300 border-amber-500/40',
+  },
+  procedural_mass: {
+    label: 'نشانه آموزشی توده فضاگیر',
+    effectDesc: 'تفکیک رنگی سبز جهت نمایش موقعیت آناتومیک ضایعه آموزشی در مقطع',
+    colorClass: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40',
+  },
+  rig_fracture: {
+    label: 'نشانگر آموزشی گسیختگی استخوانی',
+    effectDesc: 'هایلایت آبی پرکنتراست روی استخوان جهت بررسی ناحیه تروما و آناتومی مجاور',
+    colorClass: 'bg-sky-500/20 text-sky-300 border-sky-500/40',
+  },
 };
 
 export const PathologyDrawer: React.FC<PathologyDrawerProps> = ({
@@ -32,23 +61,32 @@ export const PathologyDrawer: React.FC<PathologyDrawerProps> = ({
   onClose,
   onIsolate,
   onClearIsolate,
+  onApplyPreset,
+  onClearPreset,
 }) => {
   const [selectedDisorder, setSelectedDisorder] = useState<PathologyDisorder | null>(null);
-  const [severity, setSeverity] = useState(0.75);
+  const [isPresetActive, setIsPresetActive] = useState(false);
   const [isIsolated, setIsIsolated] = useState(false);
   const [selectedDept, setSelectedDept] = useState<string>('همه');
 
-  if (!structure) return null;
+  // Reset active conceptual preset when switching organs
+  useEffect(() => {
+    setSelectedDisorder(null);
+    setIsPresetActive(false);
+    setSelectedDept('همه');
+    onClearPreset?.();
+  }, [structure?.recordId]);
 
-  const organData = (knowledgeGraphData as unknown as Record<string, OrganData>)[structure.fmaId];
+  if (!structure || !structure.isMappedToCatalog) return null;
+
+  const organData = getPublishedOrganKnowledge(structure.fmaId);
   const allDisorders: PathologyDisorder[] = organData ? organData.disorders : [];
 
-  // Extract unique departments for filtering
   const departments = ['همه', ...Array.from(new Set(allDisorders.map((d) => d.clinicalDepartment)))];
-
-  const filteredDisorders = selectedDept === 'همه'
-    ? allDisorders
-    : allDisorders.filter((d) => d.clinicalDepartment === selectedDept);
+  const filteredDisorders =
+    selectedDept === 'همه'
+      ? allDisorders
+      : allDisorders.filter((d) => d.clinicalDepartment === selectedDept);
 
   const handleToggleIsolate = () => {
     if (isIsolated) {
@@ -56,29 +94,50 @@ export const PathologyDrawer: React.FC<PathologyDrawerProps> = ({
       onClearIsolate?.();
     } else {
       setIsIsolated(true);
-      onIsolate?.(structure.fmaId);
+      onIsolate?.(structure.recordId);
     }
   };
 
+  const handleSelectDisorder = (disorder: PathologyDisorder) => {
+    setSelectedDisorder(disorder);
+    setIsPresetActive(true);
+    onApplyPreset?.(structure.recordId, disorder.visualPresetType);
+  };
+
+  const handleClearPreset = () => {
+    setIsPresetActive(false);
+    onClearPreset?.();
+  };
+
+  const activePresetMeta = selectedDisorder ? PRESET_INFO[selectedDisorder.visualPresetType] : null;
+
   return (
-    <div className="absolute left-4 top-20 bottom-6 w-104 bg-card/95 backdrop-blur-xl border border-border rounded-xl shadow-2xl z-30 flex flex-col overflow-hidden animate-in fade-in slide-in-from-left duration-200 select-none">
+    <div
+      data-testid="pathology-drawer"
+      dir="rtl"
+      className="absolute left-4 top-16 bottom-20 w-96 max-w-[calc(100vw-2rem)] bg-slate-900/95 backdrop-blur-xl border border-slate-700/80 rounded-xl shadow-2xl z-40 flex flex-col overflow-hidden select-none text-slate-100"
+    >
       {/* Header */}
-      <div className="p-4 border-b border-border flex items-start justify-between bg-muted/40">
+      <div className="p-4 border-b border-slate-800 flex items-start justify-between bg-slate-950/60">
         <div>
-          <div className="flex items-center gap-2 mb-1.5">
-            <span className="text-[10px] bg-primary/20 text-primary px-2 py-0.5 rounded font-mono font-bold border border-primary/30">
+          <div className="flex flex-wrap items-center gap-1.5 mb-1.5">
+            <span className="text-[10px] bg-sky-500/20 text-sky-300 px-2 py-0.5 rounded font-mono font-bold border border-sky-500/30">
               {structure.fmaId}
             </span>
-            <span className="text-[10px] bg-muted text-muted-foreground px-2 py-0.5 rounded font-mono border border-border">
-              SNOMED: {structure.snomedBodyStructureId}
+            <span className="text-[10px] bg-amber-500/15 text-amber-300 px-2 py-0.5 rounded font-mono border border-amber-500/30">
+              educational_visualization
             </span>
           </div>
-          <h2 className="text-base font-bold text-foreground">{structure.nameFa}</h2>
-          <h3 className="text-xs text-muted-foreground font-sans">{structure.nameEn}</h3>
+          <h2 className="text-base font-bold text-white">{structure.nameFa}</h2>
+          <h3 className="text-xs text-slate-400 font-sans">{structure.nameEn}</h3>
         </div>
         <button
-          onClick={onClose}
-          className="p-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+          onClick={() => {
+            onClearPreset?.();
+            onClose();
+          }}
+          aria-label="بستن پنل"
+          className="p-1 rounded-md text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
         >
           <X className="w-4 h-4" />
         </button>
@@ -86,54 +145,63 @@ export const PathologyDrawer: React.FC<PathologyDrawerProps> = ({
 
       {/* Content Area */}
       <div className="p-4 flex-1 overflow-y-auto space-y-4">
+        {/* Educational Notice Banner (Always Visible) */}
+        <div
+          data-testid="educational-warning-banner"
+          className="p-2.5 rounded-xl bg-amber-950/40 border border-amber-500/40 text-[11px] text-amber-200 flex items-start gap-2 leading-relaxed"
+        >
+          <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+          <span>
+            «این تصویر نمایش مفهومی است و شدت، پیش‌آگهی یا مدل بالینی معتبر بیماری را نشان نمی‌دهد.»
+          </span>
+        </div>
+
         {/* Anatomical Overview & 3D Isolation Action */}
         <div>
           <div className="flex items-center justify-between mb-1.5">
-            <h4 className="text-xs font-semibold text-foreground flex items-center gap-1.5">
-              <FileText className="w-3.5 h-3.5 text-primary" />
-              مشخصات کالبدی و تشریحی
+            <h4 className="text-xs font-semibold text-slate-200 flex items-center gap-1.5">
+              <Info className="w-3.5 h-3.5 text-sky-400" />
+              مشخصات ساختار مرجع
             </h4>
             <button
+              data-testid="drawer-isolate-btn"
               onClick={handleToggleIsolate}
-              className={`flex items-center gap-1 text-[10px] px-2 py-0.5 rounded border transition-colors ${
+              className={`flex items-center gap-1 text-[10px] px-2.5 py-1 rounded border transition-colors ${
                 isIsolated
-                  ? 'bg-primary/20 text-primary border-primary/40 font-bold'
-                  : 'bg-muted text-muted-foreground hover:text-foreground border-border'
+                  ? 'bg-sky-500/20 text-sky-300 border-sky-500/40 font-bold'
+                  : 'bg-slate-800 text-slate-300 hover:text-white border-slate-700'
               }`}
             >
               {isIsolated ? <RotateCcw className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
-              {isIsolated ? 'خروج از ایزوله' : 'ایزولاسیون و محوسازی سایرین'}
+              {isIsolated ? 'بازگشت از ایزولاسیون' : 'ایزوله‌سازی عضو'}
             </button>
           </div>
-          <p className="text-xs text-muted-foreground leading-relaxed">
-            {structure.descriptionFa || 'اطلاعات بافت‌شناسی و موقعیت این ساختار در سیستم کالبدی ثبت شده است.'}
-          </p>
+          <p className="text-xs text-slate-300 leading-relaxed">{structure.descriptionFa}</p>
         </div>
 
-        {/* Phase 3: Clinical Knowledge Graph (SNOMED CT, ICD-10, ICD-O) */}
-        <div className="pt-2 border-t border-border space-y-2.5">
+        {/* Educational Disorders List */}
+        <div className="pt-2 border-t border-slate-800 space-y-2.5">
           <div className="flex items-center justify-between">
-            <h4 className="text-xs font-bold text-rose-400 flex items-center gap-1.5">
-              <Activity className="w-3.5 h-3.5" />
-              بیماری‌های مرتبط (الگوریتم ANAT و SEP)
+            <h4 className="text-xs font-bold text-rose-300 flex items-center gap-1.5">
+              <BookOpen className="w-3.5 h-3.5" />
+              مفاهیم و تغییرات پاتولوژیک مرتبط (آموزشی)
             </h4>
             <span className="text-[10px] bg-rose-500/20 text-rose-300 px-2 py-0.5 rounded font-mono border border-rose-500/30">
-              {allDisorders.length} اختلال شناسایی‌شده
+              {allDisorders.length} عنوان
             </span>
           </div>
 
-          {/* Department Filter Tabs */}
           {departments.length > 2 && (
             <div className="flex items-center gap-1 overflow-x-auto pb-1 text-[11px]">
-              <Filter className="w-3 h-3 text-muted-foreground shrink-0" />
+              <Filter className="w-3 h-3 text-slate-400 shrink-0" />
               {departments.map((dept) => (
                 <button
                   key={dept}
                   onClick={() => setSelectedDept(dept)}
                   className={`px-2 py-0.5 rounded-full shrink-0 transition-colors ${
                     selectedDept === dept
-                      ? 'bg-primary text-primary-foreground font-semibold'
-                      : 'bg-muted/60 text-muted-foreground hover:text-foreground'
+                      ? 'bg-sky-500 text-slate-950 font-semibold'
+                      : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
                   }`}
                 >
                   {dept}
@@ -143,118 +211,118 @@ export const PathologyDrawer: React.FC<PathologyDrawerProps> = ({
           )}
 
           {filteredDisorders.length === 0 ? (
-            <div className="text-xs text-muted-foreground bg-muted/30 p-3 rounded-lg border border-border/50 text-center">
-              اختلالی برای این ساختار یا دپارتمان انتخاب‌شده ثبت نشده است.
+            <div className="text-xs text-slate-400 bg-slate-950/60 p-3 rounded-lg border border-slate-800 text-center">
+              مفهوم آموزشی برای این ساختار در دپارتمان انتخاب‌شده ثبت نشده است.
             </div>
           ) : (
-            <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
+            <div className="space-y-2 max-h-56 overflow-y-auto pl-1">
               {filteredDisorders.map((disorder) => {
                 const isSelected = selectedDisorder?.snomedDisorderId === disorder.snomedDisorderId;
-                const presetInfo = PRESET_BADGES[disorder.visualPresetType] || { label: disorder.visualPresetType, color: 'bg-muted' };
+                const presetMeta = PRESET_INFO[disorder.visualPresetType];
 
                 return (
-                  <div
+                  <button
+                    type="button"
                     key={disorder.snomedDisorderId}
-                    onClick={() => setSelectedDisorder(disorder)}
-                    className={`p-2.5 rounded-lg border cursor-pointer transition-all ${
+                    data-testid={`disorder-item-${disorder.snomedDisorderId}`}
+                    onClick={() => handleSelectDisorder(disorder)}
+                    className={`w-full text-right p-2.5 rounded-lg border cursor-pointer transition-all ${
                       isSelected
                         ? 'bg-rose-950/40 border-rose-500/60 shadow-sm'
-                        : 'bg-muted/40 border-border/70 hover:border-border'
+                        : 'bg-slate-950/50 border-slate-800 hover:border-slate-600'
                     }`}
                   >
-                    <div className="flex items-center justify-between">
-                      <div className="font-semibold text-xs text-foreground flex items-center gap-1.5">
-                        <Stethoscope className="w-3 h-3 text-rose-400" />
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="font-semibold text-xs text-slate-100">
                         {disorder.preferredTermFa}
                       </div>
-                      <div className="flex items-center gap-1">
+                      <div className="flex items-center gap-1 shrink-0">
                         {disorder.icd10Code && (
-                          <span className="text-[10px] font-mono text-muted-foreground bg-card px-1.5 py-0.5 rounded border border-border">
+                          <span className="text-[10px] font-mono text-slate-300 bg-slate-900 px-1.5 py-0.5 rounded border border-slate-700">
                             {disorder.icd10Code}
                           </span>
                         )}
                         {disorder.icdoTopographyCode && (
-                          <span className="text-[10px] font-mono text-emerald-400 bg-emerald-950/40 px-1 py-0.5 rounded border border-emerald-500/30" title="ICD-O Oncology Topography">
+                          <span className="text-[10px] font-mono text-emerald-300 bg-emerald-950/40 px-1 py-0.5 rounded border border-emerald-500/30">
                             {disorder.icdoTopographyCode}
                           </span>
                         )}
                       </div>
                     </div>
 
-                    <div className="text-[11px] text-muted-foreground font-sans mt-0.5">{disorder.fsnEn}</div>
+                    <div className="text-[11px] text-slate-400 font-sans mt-0.5" dir="ltr">
+                      {disorder.fsnEn}
+                    </div>
 
                     <div className="flex flex-wrap items-center gap-1.5 mt-2 text-[10px]">
-                      <span className="bg-primary/10 text-primary px-1.5 py-0.5 rounded">
+                      <span className="bg-sky-500/15 text-sky-300 px-1.5 py-0.5 rounded">
                         {disorder.clinicalDepartment}
                       </span>
-                      <span className="bg-muted text-muted-foreground px-1.5 py-0.5 rounded">
-                        {disorder.etiologyCategory}
-                      </span>
-                      <span className={`px-1.5 py-0.5 rounded border font-mono ${presetInfo.color}`}>
-                        {presetInfo.label}
+                      <span className={`px-1.5 py-0.5 rounded border font-mono ${presetMeta.colorClass}`}>
+                        {presetMeta.label}
                       </span>
                       {disorder.orphanCode && (
-                        <span className="text-amber-400 bg-amber-950/40 px-1.5 py-0.5 rounded border border-amber-500/30 flex items-center gap-1">
+                        <span className="text-amber-300 bg-amber-950/40 px-1.5 py-0.5 rounded border border-amber-500/30 flex items-center gap-1">
                           <Dna className="w-2.5 h-2.5" />
                           {disorder.orphanCode}
                         </span>
                       )}
                     </div>
-                  </div>
+                  </button>
                 );
               })}
             </div>
           )}
         </div>
 
-        {/* Selected Disorder Simulation Controls (Stage 2) */}
-        {selectedDisorder && (
-          <div className="p-3 bg-card border border-rose-500/40 rounded-xl space-y-3 animate-in fade-in duration-150">
-            <div className="flex items-center justify-between border-b border-border/60 pb-1.5">
-              <span className="text-xs font-bold text-rose-300 flex items-center gap-1.5">
-                <Zap className="w-3.5 h-3.5" />
-                شبیه‌سازی پارامتریک اثر پاتولوژی روی بافت
+        {/* Controlled Educational Visual Preset Panel (Replaces misleading simulated severity controls) */}
+        {selectedDisorder && activePresetMeta && (
+          <div
+            data-testid="educational-preset-details"
+            className="p-3 bg-slate-950/80 border border-amber-500/40 rounded-xl space-y-2.5"
+          >
+            <div className="flex items-center justify-between border-b border-slate-800 pb-2">
+              <span className="text-xs font-bold text-amber-300 flex items-center gap-1.5">
+                <Sparkles className="w-3.5 h-3.5" />
+                نمایش آموزشی تغییرات مرتبط (مفهومی)
               </span>
-              <span className="text-[10px] font-mono text-primary bg-primary/20 px-1.5 py-0.5 rounded">
-                Preset: {selectedDisorder.visualPresetType}
-              </span>
+              {isPresetActive ? (
+                <button
+                  data-testid="clear-preset-btn"
+                  onClick={handleClearPreset}
+                  className="text-[10px] px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-600"
+                >
+                  حذف رنگ‌آمیزی از مدل
+                </button>
+              ) : (
+                <button
+                  onClick={() => handleSelectDisorder(selectedDisorder)}
+                  className="text-[10px] px-2 py-0.5 rounded bg-amber-500/20 hover:bg-amber-500/30 text-amber-200 border border-amber-500/40"
+                >
+                  اعمال نمایش رنگی
+                </button>
+              )}
             </div>
 
-            <p className="text-[11px] text-muted-foreground leading-relaxed">
+            <div className="text-[11px] text-slate-200 leading-relaxed">
               {selectedDisorder.descriptionFa}
-            </p>
-
-            {/* Clinical Mechanism Tags */}
-            <div className="grid grid-cols-2 gap-1.5 text-[10px]">
-              <div className="p-1.5 rounded bg-muted/40 border border-border/50">
-                <span className="text-muted-foreground block">سیر بالینی (|Course|):</span>
-                <span className="font-semibold text-foreground">{selectedDisorder.clinicalCourse || 'حاد'}</span>
-              </div>
-              <div className="p-1.5 rounded bg-muted/40 border border-border/50">
-                <span className="text-muted-foreground block">مورفولوژی بافتی (|Morphology|):</span>
-                <span className="font-mono text-primary">{selectedDisorder.associatedMorphologyId || '56246009'}</span>
-              </div>
+            </div>
+            <div className="text-[10px] text-slate-400 font-sans" dir="ltr">
+              {selectedDisorder.descriptionEn}
             </div>
 
-            {/* Severity Slider */}
-            <div className="space-y-1 pt-1">
-              <div className="flex justify-between text-[11px]">
-                <span className="text-muted-foreground">شدت بالینی بیماری (|Severity|):</span>
-                <span className="font-mono text-rose-400 font-bold">{Math.round(severity * 100)}%</span>
-              </div>
-              <input
-                type="range"
-                min="0"
-                max="1"
-                step="0.05"
-                value={severity}
-                onChange={(e) => setSeverity(parseFloat(e.target.value))}
-                className="w-full accent-rose-500 cursor-pointer h-1.5 bg-muted rounded-lg"
-              />
-              <div className="flex justify-between text-[9px] text-muted-foreground">
-                <span>سالم (0.0)</span>
-                <span>متوسط (0.5)</span>
-                <span>پیشرفته / نکروز (1.0)</span>
+            <div className="p-2 rounded-lg bg-slate-900/90 border border-slate-800 text-[10px] text-sky-300">
+              اثر فعال در صحنه سه‌بعدی: {activePresetMeta.effectDesc}
+            </div>
+
+            {/* Required Source, Version & Scientific Review Traceability */}
+            <div className="p-2.5 rounded-lg bg-slate-900 border border-slate-800 text-[10px] text-slate-300 space-y-1">
+              <div className="font-semibold text-slate-200">شناسنامه و منشأ علمی رکورد:</div>
+              <div>منبع: {selectedDisorder.source} ({selectedDisorder.sourceVersion})</div>
+              <div>بازبین علمی: {selectedDisorder.reviewedBy}</div>
+              <div>تاریخ بازبینی: {selectedDisorder.reviewedAt} | وضعیت: <span className="font-mono text-amber-300">{selectedDisorder.contentStatus}</span></div>
+              <div className="text-[9px] text-slate-400 pt-1 border-t border-slate-800">
+                {selectedDisorder.licenseRestriction || KNOWLEDGE_GRAPH_METADATA.terminologyNotice}
               </div>
             </div>
           </div>

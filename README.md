@@ -1,63 +1,80 @@
-# پلتفرم هوشمند سه‌بعدی آناتومی و شبیه‌ساز پاتوفیزیولوژی (هومان ۳D)
-### Interactive 3D Anatomy Atlas & Smart Pathophysiology Simulation Platform
+# هومان ۳D — اطلس آموزشی سه‌بعدی آناتومی و مرور مفاهیم پاتوفیزیولوژی
 
-این پروژه بر اساس نقشه راه جامع ۲۴ اسپرینت (۱۲ ماهه) مندرج در [ROADMAP.md](file:///D:/my_projects/homman/ROADMAP.md) و [TECHNICAL_ROADMAP.md](file:///D:/my_projects/homman/TECHNICAL_ROADMAP.md) در حال توسعه است.
+**هومان 3D** یک ابزار آموزشی و مرجع تصویری سه‌بعدی (فارسی/انگلیسی) مبتنی بر React، TypeScript و Three.js برای مشاهده ساختارهای تشریحی بدن، جست‌وجوی دو‌زبانه، برش مقطعی سه‌محوره، ایزوله‌سازی اندام‌ها و نمایش آموزشی/مفهومی تغییرات مرتبط است.
+
+---
+
+## ⚠️ محدودیت‌های پزشکی و علمی (Medical & Scientific Disclaimers)
+
+> **«هومان 3D یک ابزار آموزشی و مرجع تصویری است. محتوای آن جایگزین نظر پزشک، تشخیص، درمان یا تصمیم‌گیری بالینی نیست.»**
+
+- این محصول برای **تشخیص بیماری برای بیمار واقعی، تحلیل تصاویر پزشکی/داده آزمایشگاهی، توصیه درمان یا دارو، تریاژ، پشتیبانی از تصمیم بالینی، یا شبیه‌سازی بالینی معتبر** طراحی **نشده** و خارج از دامنه کاربرد مجاز است.
+- نمایش‌های بیماری و تپش قلب در این برنامه دارای برچسب **`educational_visualization` (نمایش آموزشی و مفهومی)** هستند و به هیچ وجه نشان‌دهنده شدت واقعی، پیش‌آگهی یا مدل فیزیولوژیک کالیبره‌شده بالینی نیستند.
+- مطالعه مستند کامل دامنه و رگولاتوری: [docs/REGULATORY_INTENDED_USE.md](docs/REGULATORY_INTENDED_USE.md)
+- مطالعه چک‌لیست پیش از انتشار: [docs/RELEASE_CHECKLIST.md](docs/RELEASE_CHECKLIST.md)
+- مجوزها و حقوق مالکیت دارایی‌ها و واژگان پزشکی: [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)
 
 ---
 
 ## 🏗️ ساختار پروژه
 
-```
-homman/
-├── ROADMAP.md                  # نقشه راه کلان محصول و برنامه‌ریزی تیمی/تجاری
-├── TECHNICAL_ROADMAP.md        # نقشه راه فنی عمیق اسپرینت‌به‌اسپرینت و نمونه کدها
-├── docs/                       # مستندات رگولاتوری (FDA/EU MDR) و معماری
-│   └── REGULATORY_INTENDED_USE.md
-├── frontend/                   # اپلیکیشن وب و موبایل (Three.js + React + Vite + Tailwind + RTL)
-│   ├── public/
-│   │   └── wasm/               # فایل‌های دیکودر Draco و ترنسکودر Basis/KTX2
-│   │       ├── draco/          # DRACOLoader WebAssembly
-│   │       └── basis/          # KTX2Loader Basis Universal Transcoder
-│   ├── src/
-│   │   ├── engine/             # موتور رندرینگ سه‌بعدی (Three.js، شیدرها، لودر KTX2/Draco)
-│   │   │   ├── AssetLoader.ts
-│   │   │   └── AnatomyViewer.ts
-│   │   ├── components/         # رابط کاربری راست‌به‌چپ (Navbar, Sidebar, PathologyDrawer)
-│   │   └── data/               # نگاشت‌های پایه FMA و اختلالات بالینی
-└── pipeline/                   # پایپ‌لاین آفلاین داده‌های پزشکی و اسکریپت‌های Blender
-    ├── data/
-    │   └── medical_knowledge.db # دیتابیس محلی رابطه FMA <-> SNOMED CT <-> ICD-10
-    └── scripts/
-        ├── schema.sql          # اسکیمای کامل جداول ساختارها، سلسله‌مراتب SEP و پاتولوژی
-        ├── init_database.py    # اسکریپت راه‌اندازی و سید دیتابیس
-        ├── query_anat.py       # پیاده‌سازی و تست الگوریتم بازگشتی ANAT
-        └── cure_meshes.py      # اسکریپت پایتون بلندر برای پاکسازی هندسه مش‌ها (Watertight)
-```
+- [frontend/](frontend/) — رابط کاربری RTL و موتور WebGL/Three.js (`AtlasModelLoader`, `ZAnatomyLoader` + `DRACOLoader`/`KTX2Loader`, `AnatomyViewer`)
+- [pipeline/](pipeline/) — پایگاه‌داده آفلاین SQLite و اسکریپت بازتولید کاتالوگ `AnatomyRecord` و گراف مفاهیم
+- [scripts/](scripts/) — اسکریپت‌های اعتبارسنجی اسکیما، نگاشت و خط‌مشی متن آموزشی (`validate-data.mjs`, `lint-check.mjs`)
+- [docs/](docs/) — مستندات مرزبندی کاربرد و چک‌لیست انتشار
+- [ROADMAP.md](ROADMAP.md) و [TECHNICAL_ROADMAP.md](TECHNICAL_ROADMAP.md) — اسناد طراحی کلان و فنی
 
 ---
 
-## 🚀 راهنمای اجرای سریع
+## 💻 پیش‌نیازها (نسخه‌های آزموده‌شده)
 
-### ۱. اجرای فرانت‌اند (رابط کاربری و موتور سه‌بعدی)
+- **Node.js:** `v22+` (آزموده‌شده با `Node v26.7.0` با اجرای مستقیم فایل‌های تست TypeScript)
+- **Python:** `3.12+` (آزموده‌شده با `Python 3.14.5` به همراه `sqlite3` استاندارد)
+
+---
+
+## 🚀 راهنمای اجرا و بررسی
+
+### ۱. نصب وابستگی‌ها و اجرای محیط توسعه فرانت‌اند
+
 ```bash
-cd frontend
-npm install
+npm --prefix frontend ci
 npm run dev
 ```
-سپس مرورگر را در آدرس `http://localhost:5173` باز کنید.
 
-### ۲. اجرای پایپ‌لاین داده‌های پزشکی (پایتون)
+**خروجی مورد انتظار:** سرور محلی Vite روی `http://localhost:5173` آماده می‌شود.
+
+### ۲. بازتولید خروجی داده‌های پزشکی از پایپ‌لاین
+
 ```bash
-python pipeline/scripts/init_database.py
-python pipeline/scripts/query_anat.py FMA7088
+npm run pipeline:export
+npm run pipeline:check
 ```
 
----
+**خروجی مورد انتظار:**
+```text
+[OK] Exported 54 AnatomyRecords (410 mapped atlas meshes, 1824 unmapped in dev report) and 20 organs / 41 educational disorders.
+[OK] Pipeline check passed cleanly.
+```
 
-## ✅ وضعیت پیشرفت فاز صفر (اسپرینت ۱ و ۲)
-- [x] راه‌اندازی پروژه فرانت‌اند با React، Three.js، Vite، Tailwind CSS و رابط راست‌به‌چپ (RTL).
-- [x] پیکربندی `DRACOLoader` و `KTX2Loader` به همراه ترنسکودر Basis Universal در مسیر `/wasm/`.
-- [x] پیاده‌سازی موتور سه‌بعدی `AnatomyViewer` مجهز به OrbitControls، سیستم لایه‌ها، نمای انفجاری (Explode View) و برش مقطعی (Clipping Planes).
-- [x] طراحی و اجرای اسکیمای دیتابیس استاندارد بر پایه مدل OMOP و سلسله‌مراتب SEP.
-- [x] پیاده‌سازی موفق الگوریتم پیمایش بازگشتی `ANAT` در پایتون با کشف روابط ساختار به بیماری.
-- [x] تدوین سند رسمی رگولاتوری معافیت تجهیزات پزشکی (**FDA/EU MDR Category 1: Non-Device**).
+### ۳. اعتبارسنجی داده‌ها، بررسی کد، تست واحد و بیلد تولید
+
+```bash
+npm run lint
+npm run validate:data
+npm run typecheck
+npm test
+npm run build
+```
+
+**خروجی مورد انتظار:**
+- `lint`: عبور بدون عبارت‌های ممنوعه تشخیصی یا داده‌ی نمونه در کد محصول
+- `validate:data`: تأیید یکتایی تمام `meshNames` و صحت شناسه‌ها و متادیتای منبع/بازبین
+- `test`: موفقیت تمام تست‌های واحد (9/9)
+- `build`: تولید خروجی بدون خطا در `frontend/dist/`
+
+### ۴. تست End-to-End مرورگر واقعی (در صورت نصب Chrome/Edge و فعال بودن سرور)
+
+```bash
+npm run test:e2e
+```

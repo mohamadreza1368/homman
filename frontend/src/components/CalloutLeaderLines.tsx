@@ -52,7 +52,7 @@ export function CalloutLeaderLines({ viewer, onSelectCallout, showCallouts = fal
     return () => {
       cancelAnimationFrame(frameId);
     };
-  }, [viewer]);
+  }, [viewer, showCallouts]);
 
   if (!viewer || !showCallouts) return null;
 

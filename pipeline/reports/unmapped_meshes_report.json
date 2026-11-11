@@ -1,0 +1,609 @@
+{
+  "generatedAt": "2026-11-11T19:36:16.711223+00:00",
+  "totalAtlasParts": 2234,
+  "mappedPartsCount": 410,
+  "unmappedPartsCount": 1824,
+  "note": "Unmapped anatomical sub-structures (e.g. minor vascular branches/individual muscles) must NOT be shown with clinical pathology assertions in public UI.",
+  "unmappedSample": [
+    {
+      "id": "FJ1252",
+      "name": "Gingiva of upper jaw",
+      "conceptId": "FMA59763",
+      "system": "skeletal"
+    },
+    {
+      "id": "FJ1253",
+      "name": "Gingiva of lower jaw",
+      "conceptId": "FMA59764",
+      "system": "skeletal"
+    },
+    {
+      "id": "FJ1254",
+      "name": "Left lower first secondary molar tooth",
+      "conceptId": "FMA55704",
+      "system": "skeletal"
+    },
+    {
+      "id": "FJ1255",
+      "name": "Left lower first secondary premolar tooth",
+      "conceptId": "FMA55693",
+      "system": "skeletal"
+    },
+    {
+      "id": "FJ1256",
+      "name": "Left lower second secondary molar tooth",
+      "conceptId": "FMA55703",
+      "system": "skeletal"
+    },
+    {
+      "id": "FJ1257",
+      "name": "Left lower second secondary premolar tooth",
+      "conceptId": "FMA55692",
+      "system": "skeletal"
+    },
+    {
+      "id": "FJ1258",
+      "name": "Left lower central secondary incisor tooth",
+      "conceptId": "FMA57143",
+      "system": "skeletal"
+    },
+    {
+      "id": "FJ1259",
+      "name": "Left lower lateral secondary incisor tooth",
+      "conceptId": "FMA57141",
+      "system": "skeletal"
+    },
+    {
+      "id": "FJ1260",
+      "name": "Left lower secondary canine tooth",
+      "conceptId": "FMA55687",
+      "system": "skeletal"
+    },
+    {
+      "id": "FJ1261",
+      "name": "Left upper first secondary molar tooth",
+      "conceptId": "FMA55699",
+      "system": "skeletal"
+    },
+    {
+      "id": "FJ1262",
+      "name": "Left upper first secondary premolar tooth",
+      "conceptId": "FMA55690",
+      "system": "skeletal"
+    },
+    {
+      "id": "FJ1263",
+      "name": "Left upper second secondary molar tooth",
+      "conceptId": "FMA55700",
+      "system": "skeletal"
+    },
+    {
+      "id": "FJ1264",
+      "name": "Left upper second secondary premolar tooth",
+      "conceptId": "FMA55691",
+      "system": "skeletal"
+    },
+    {
+      "id": "FJ1265",
+      "name": "Left upper central secondary incisor tooth",
+      "conceptId": "FMA55682",
+      "system": "skeletal"
+    },
+    {
+      "id": "FJ1266",
+      "name": "Left upper lateral secondary incisor tooth",
+      "conceptId": "FMA55683",
+      "system": "skeletal"
+    },
+    {
+      "id": "FJ1267",
+      "name": "Left upper secondary canine tooth",
+      "conceptId": "FMA55799",
+      "system": "skeletal"
+    },
+    {
+      "id": "FJ1268",
+      "name": "Right lower first secondary molar tooth",
+      "conceptId": "FMA55705",
+      "system": "skeletal"
+    },
+    {
+      "id": "FJ1269",
+      "name": "Right lower first secondary premolar tooth",
+      "conceptId": "FMA55694",
+      "system": "skeletal"
+    },
+    {
+      "id": "FJ1270",
+      "name": "Right lower second secondary molar tooth",
+      "conceptId": "FMA55706",
+      "system": "skeletal"
+    },
+    {
+      "id": "FJ1271",
+      "name": "Right lower second secondary premolar tooth",
+      "conceptId": "FMA55695",
+      "system": "skeletal"
+    },
+    {
+      "id": "FJ1272",
+      "name": "Right lower central secondary incisor tooth",
+      "conceptId": "FMA57142",
+      "system": "skeletal"
+    },
+    {
+      "id": "FJ1273",
+      "name": "Right lower lateral secondary incisor tooth",
+      "conceptId": "FMA57140",
+      "system": "skeletal"
+    },
+    {
+      "id": "FJ1274",
+      "name": "Right lower secondary canine tooth",
+      "conceptId": "FMA55686",
+      "system": "skeletal"
+    },
+    {
+      "id": "FJ1275",
+      "name": "Right upper second secondary molar tooth",
+      "conceptId": "FMA55697",
+      "system": "skeletal"
+    },
+    {
+      "id": "FJ1276",
+      "name": "Right upper first secondary molar tooth",
+      "conceptId": "FMA55698",
+      "system": "skeletal"
+    },
+    {
+      "id": "FJ1277",
+      "name": "Right upper first secondary premolar tooth",
+      "conceptId": "FMA55689",
+      "system": "skeletal"
+    },
+    {
+      "id": "FJ1278",
+      "name": "Right upper second secondary premolar tooth",
+      "conceptId": "FMA55688",
+      "system": "skeletal"
+    },
+    {
+      "id": "FJ1279",
+      "name": "Right upper central secondary incisor tooth",
+      "conceptId": "FMA55681",
+      "system": "skeletal"
+    },
+    {
+      "id": "FJ1280",
+      "name": "Right upper lateral secondary incisor tooth",
+      "conceptId": "FMA55680",
+      "system": "skeletal"
+    },
+    {
+      "id": "FJ1281",
+      "name": "Right upper secondary canine tooth",
+      "conceptId": "FMA55798",
+      "system": "skeletal"
+    },
+    {
+      "id": "FJ1282",
+      "name": "Anterior chamber of left eyeball",
+      "conceptId": "FMA58082",
+      "system": "sensory"
+    },
+    {
+      "id": "FJ1283",
+      "name": "Left anterior ethmoidal nerve",
+      "conceptId": "FMA52677",
+      "system": "nervous"
+    },
+    {
+      "id": "FJ1284",
+      "name": "Check ligament of left lateral rectus",
+      "conceptId": "FMA49145",
+      "system": "connective"
+    },
+    {
+      "id": "FJ1285",
+      "name": "Left choroid",
+      "conceptId": "FMA58300",
+      "system": "sensory"
+    },
+    {
+      "id": "FJ1286",
+      "name": "Left choroid",
+      "conceptId": "FMA58300",
+      "system": "sensory"
+    },
+    {
+      "id": "FJ1287",
+      "name": "Left corona ciliaris",
+      "conceptId": "FMA58484",
+      "system": "sensory"
+    },
+    {
+      "id": "FJ1288",
+      "name": "Left ciliary ganglion",
+      "conceptId": "FMA53550",
+      "system": "nervous"
+    },
+    {
+      "id": "FJ1289",
+      "name": "Left cornea",
+      "conceptId": "FMA58240",
+      "system": "sensory"
+    },
+    {
+      "id": "FJ1290",
+      "name": "Left frontal nerve",
+      "conceptId": "FMA52640",
+      "system": "nervous"
+    },
+    {
+      "id": "FJ1291",
+      "name": "Left common tendinous ring",
+      "conceptId": "FMA49073",
+      "system": "sensory"
+    },
+    {
+      "id": "FJ1292",
+      "name": "Check ligament of left medial rectus",
+      "conceptId": "FMA49148",
+      "system": "connective"
+    },
+    {
+      "id": "FJ1293",
+      "name": "Inferior branch of left oculomotor nerve",
+      "conceptId": "FMA52577",
+      "system": "nervous"
+    },
+    {
+      "id": "FJ1294",
+      "name": "Left inferior oblique",
+      "conceptId": "FMA49051",
+      "system": "muscular"
+    },
+    {
+      "id": "FJ1295",
+      "name": "Left inferior rectus",
+      "conceptId": "FMA49047",
+      "system": "muscular"
+    },
+    {
+      "id": "FJ1296",
+      "name": "Left infratrochlear nerve",
+      "conceptId": "FMA52699",
+      "system": "nervous"
+    },
+    {
+      "id": "FJ1297",
+      "name": "Left iris",
+      "conceptId": "FMA58237",
+      "system": "sensory"
+    },
+    {
+      "id": "FJ1298",
+      "name": "Left lacrimal canaliculus",
+      "conceptId": "FMA59583",
+      "system": "sensory"
+    },
+    {
+      "id": "FJ1299",
+      "name": "Left lacrimal gland",
+      "conceptId": "FMA59103",
+      "system": "sensory"
+    },
+    {
+      "id": "FJ1300",
+      "name": "Left lacrimal nerve",
+      "conceptId": "FMA52630",
+      "system": "nervous"
+    },
+    {
+      "id": "FJ1301",
+      "name": "Left lacrimal lake",
+      "conceptId": "FMA59542",
+      "system": "sensory"
+    },
+    {
+      "id": "FJ1302",
+      "name": "Left nasolacrimal duct",
+      "conceptId": "FMA59556",
+      "system": "sensory"
+    },
+    {
+      "id": "FJ1304",
+      "name": "Left lateral rectus",
+      "conceptId": "FMA49055",
+      "system": "muscular"
+    },
+    {
+      "id": "FJ1305",
+      "name": "Left lens",
+      "conceptId": "FMA58243",
+      "system": "sensory"
+    },
+    {
+      "id": "FJ1306",
+      "name": "Left levator palpebrae superioris",
+      "conceptId": "FMA49049",
+      "system": "muscular"
+    },
+    {
+      "id": "FJ1308",
+      "name": "Left medial rectus",
+      "conceptId": "FMA49057",
+      "system": "muscular"
+    },
+    {
+      "id": "FJ1309",
+      "name": "Left lacrimal sac",
+      "conceptId": "FMA59546",
+      "system": "sensory"
+    },
+    {
+      "id": "FJ1310",
+      "name": "Left nasociliary nerve",
+      "conceptId": "FMA52670",
+      "system": "nervous"
+    },
+    {
+      "id": "FJ1311",
+      "name": "Communicating branch of left nasociliary nerve with left ciliary ganglion",
+      "conceptId": "FMA52674",
+      "system": "nervous"
+    },
+    {
+      "id": "FJ1312",
+      "name": "Left ophthalmic nerve",
+      "conceptId": "FMA52623",
+      "system": "nervous"
+    },
+    {
+      "id": "FJ1313",
+      "name": "Left optic nerve",
+      "conceptId": "FMA50878",
+      "system": "nervous"
+    },
+    {
+      "id": "FJ1315",
+      "name": "Left posterior ethmoidal nerve",
+      "conceptId": "FMA52716",
+      "system": "nervous"
+    },
+    {
+      "id": "FJ1316",
+      "name": "Optic part of left retina",
+      "conceptId": "FMA58608",
+      "system": "sensory"
+    },
+    {
+      "id": "FJ1317",
+      "name": "Left sclera",
+      "conceptId": "FMA58272",
+      "system": "sensory"
+    },
+    {
+      "id": "FJ1318",
+      "name": "Left long ciliary nerve",
+      "conceptId": "FMA82735",
+      "system": "nervous"
+    },
+    {
+      "id": "FJ1319",
+      "name": "Short ciliary nerve",
+      "conceptId": "FMA7041",
+      "system": "nervous"
+    },
+    {
+      "id": "FJ1320",
+      "name": "Suspensory ligament of left lens",
+      "conceptId": "FMA58840",
+      "system": "sensory"
+    },
+    {
+      "id": "FJ1321",
+      "name": "Superior branch of left oculomotor nerve",
+      "conceptId": "FMA52575",
+      "system": "nervous"
+    },
+    {
+      "id": "FJ1322",
+      "name": "Left superior oblique",
+      "conceptId": "FMA49053",
+      "system": "muscular"
+    },
+    {
+      "id": "FJ1323",
+      "name": "Left superior rectus",
+      "conceptId": "FMA49045",
+      "system": "muscular"
+    },
+    {
+      "id": "FJ1324",
+      "name": "Tarsal plate of left upper eyelid",
+      "conceptId": "FMA59092",
+      "system": "sensory"
+    },
+    {
+      "id": "FJ1325",
+      "name": "Left supra-orbital nerve",
+      "conceptId": "FMA52657",
+      "system": "nervous"
+    },
+    {
+      "id": "FJ1326",
+      "name": "Left supratrochlear nerve",
+      "conceptId": "FMA52644",
+      "system": "nervous"
+    },
+    {
+      "id": "FJ1328",
+      "name": "Tarsal plate of left lower eyelid",
+      "conceptId": "FMA59090",
+      "system": "sensory"
+    },
+    {
+      "id": "FJ1329",
+      "name": "Trochlea of left superior oblique",
+      "conceptId": "FMA49068",
+      "system": "connective"
+    },
+    {
+      "id": "FJ1330",
+      "name": "Left trochlear nerve",
+      "conceptId": "FMA50882",
+      "system": "nervous"
+    },
+    {
+      "id": "FJ1331",
+      "name": "Left vitreous body",
+      "conceptId": "FMA58829",
+      "system": "sensory"
+    },
+    {
+      "id": "FJ1332",
+      "name": "Anterior chamber of right eyeball",
+      "conceptId": "FMA58081",
+      "system": "sensory"
+    },
+    {
+      "id": "FJ1333",
+      "name": "Right anterior ethmoidal nerve",
+      "conceptId": "FMA52676",
+      "system": "nervous"
+    },
+    {
+      "id": "FJ1334",
+      "name": "Check ligament of right lateral rectus",
+      "conceptId": "FMA49144",
+      "system": "connective"
+    },
+    {
+      "id": "FJ1335",
+      "name": "Check ligament of right medial rectus",
+      "conceptId": "FMA49147",
+      "system": "connective"
+    },
+    {
+      "id": "FJ1336",
+      "name": "Right choroid",
+      "conceptId": "FMA58299",
+      "system": "sensory"
+    },
+    {
+      "id": "FJ1337",
+      "name": "Right choroid",
+      "conceptId": "FMA58299",
+      "system": "sensory"
+    },
+    {
+      "id": "FJ1338",
+      "name": "Right corona ciliaris",
+      "conceptId": "FMA58483",
+      "system": "sensory"
+    },
+    {
+      "id": "FJ1339",
+      "name": "Right ciliary ganglion",
+      "conceptId": "FMA53549",
+      "system": "nervous"
+    },
+    {
+      "id": "FJ1340",
+      "name": "Right cornea",
+      "conceptId": "FMA58239",
+      "system": "sensory"
+    },
+    {
+      "id": "FJ1341",
+      "name": "Right frontal nerve",
+      "conceptId": "FMA52639",
+      "system": "nervous"
+    },
+    {
+      "id": "FJ1342",
+      "name": "Right common tendinous ring",
+      "conceptId": "FMA49072",
+      "system": "sensory"
+    },
+    {
+      "id": "FJ1343",
+      "name": "Tendon of right levator palpebrae superioris",
+      "conceptId": "FMA54159",
+      "system": "connective"
+    },
+    {
+      "id": "FJ1344",
+      "name": "Inferior branch of right oculomotor nerve",
+      "conceptId": "FMA52576",
+      "system": "nervous"
+    },
+    {
+      "id": "FJ1345",
+      "name": "Right inferior oblique",
+      "conceptId": "FMA49050",
+      "system": "muscular"
+    },
+    {
+      "id": "FJ1346",
+      "name": "Right inferior rectus",
+      "conceptId": "FMA49046",
+      "system": "muscular"
+    },
+    {
+      "id": "FJ1347",
+      "name": "Right infratrochlear nerve",
+      "conceptId": "FMA52698",
+      "system": "nervous"
+    },
+    {
+      "id": "FJ1348",
+      "name": "Right iris",
+      "conceptId": "FMA58236",
+      "system": "sensory"
+    },
+    {
+      "id": "FJ1349",
+      "name": "Right lacrimal canaliculus",
+      "conceptId": "FMA59582",
+      "system": "sensory"
+    },
+    {
+      "id": "FJ1350",
+      "name": "Right lacrimal gland",
+      "conceptId": "FMA59102",
+      "system": "sensory"
+    },
+    {
+      "id": "FJ1351",
+      "name": "Right lacrimal nerve",
+      "conceptId": "FMA52629",
+      "system": "nervous"
+    },
+    {
+      "id": "FJ1352",
+      "name": "Right lacrimal lake",
+      "conceptId": "FMA59541",
+      "system": "sensory"
+    },
+    {
+      "id": "FJ1353",
+      "name": "Right nasolacrimal duct",
+      "conceptId": "FMA59555",
+      "system": "sensory"
+    },
+    {
+      "id": "FJ1355",
+      "name": "Right lateral rectus",
+      "conceptId": "FMA49054",
+      "system": "muscular"
+    },
+    {
+      "id": "FJ1356",
+      "name": "Right lens",
+      "conceptId": "FMA58242",
+      "system": "sensory"
+    }
+  ]
+}

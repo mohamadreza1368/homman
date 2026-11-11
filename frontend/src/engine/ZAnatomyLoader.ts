@@ -1,5 +1,8 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { createMedicalAssetLoader } from './AssetLoader';
+import { getRecordByZAnatomyName } from '../data/anatomyRegistry';
+import { logRenderEvent } from '../utils/renderLogger';
 
 export type ZSystemId = 
   | 'skeletal'
@@ -79,7 +82,7 @@ export const Z_SYSTEM_PALETTE: Record<ZSystemId, { color: string; roughness: num
 };
 
 export class ZAnatomyLoader {
-  private loader = new GLTFLoader();
+  private loader: GLTFLoader = new GLTFLoader();
   public structures: ZStructureInfo[] = [];
   public systemGroups = new Map<ZSystemId, THREE.Group>();
   public allMeshes: THREE.Mesh[] = [];
@@ -121,8 +124,13 @@ export class ZAnatomyLoader {
 
   public async loadAll(
     parentScene: THREE.Scene,
-    onProgress?: (percent: number) => void
+    onProgress?: (percent: number, loadedBytes?: number, totalBytes?: number) => void,
+    renderer?: THREE.WebGLRenderer
   ): Promise<void> {
+    if (renderer) {
+      this.loader = createMedicalAssetLoader(renderer);
+    }
+
     const systemIds: ZSystemId[] = [
       'skeletal',
       'muscular',
@@ -142,28 +150,39 @@ export class ZAnatomyLoader {
       this.systemGroups.set(sys, g);
     });
 
-    const filesToLoad: { file: string; defaultSystem: ZSystemId }[] = [
-      { file: 'iskelet.glb', defaultSystem: 'skeletal' },
-      { file: 'kas.glb', defaultSystem: 'muscular' },
-      { file: 'ic-organlar.glb', defaultSystem: 'digestive' },
-      { file: 'dolasim.glb', defaultSystem: 'cardiovascular' },
-      { file: 'sinir.glb', defaultSystem: 'nervous' },
-      { file: 'lenf.glb', defaultSystem: 'lymphatic' },
-      { file: 'eklem.glb', defaultSystem: 'skeletal' },
+    const filesToLoad: { file: string; defaultSystem: ZSystemId; approxBytes: number }[] = [
+      { file: 'iskelet.glb', defaultSystem: 'skeletal', approxBytes: 5_268_924 },
+      { file: 'kas.glb', defaultSystem: 'muscular', approxBytes: 8_080_656 },
+      { file: 'ic-organlar.glb', defaultSystem: 'digestive', approxBytes: 4_818_260 },
+      { file: 'dolasim.glb', defaultSystem: 'cardiovascular', approxBytes: 7_875_580 },
+      { file: 'sinir.glb', defaultSystem: 'nervous', approxBytes: 8_061_008 },
+      { file: 'lenf.glb', defaultSystem: 'lymphatic', approxBytes: 1_510_536 },
+      { file: 'eklem.glb', defaultSystem: 'skeletal', approxBytes: 3_650_796 },
     ];
 
-    let filesLoaded = 0;
-    const totalFiles = filesToLoad.length;
+    const totalExpected = filesToLoad.reduce((a, b) => a + b.approxBytes, 0);
+    let completedBytes = 0;
 
     for (const item of filesToLoad) {
+      const startMs = performance.now();
       try {
-        await this.loadSingleGlb(item.file, item.defaultSystem);
-        filesLoaded++;
+        await this.loadSingleGlb(item.file, item.defaultSystem, (evt) => {
+          if (onProgress && evt.lengthComputable) {
+            const current = completedBytes + evt.loaded;
+            onProgress(Math.min(99, Math.round((current / totalExpected) * 100)), current, totalExpected);
+          }
+        });
+        completedBytes += item.approxBytes;
         if (onProgress) {
-          onProgress(Math.round((filesLoaded / totalFiles) * 100));
+          onProgress(Math.round((completedBytes / totalExpected) * 100), completedBytes, totalExpected);
         }
+        logRenderEvent('info', 'asset_load', `Loaded GLB fallback ${item.file}`, {
+          ms: Math.round(performance.now() - startMs),
+        });
       } catch (err) {
-        console.warn(`Failed loading Z-Anatomy file ${item.file}:`, err);
+        logRenderEvent('warn', 'asset_load', `Failed loading Z-Anatomy GLB ${item.file}`, {
+          error: err instanceof Error ? err.message : String(err),
+        });
       }
     }
 
@@ -178,9 +197,13 @@ export class ZAnatomyLoader {
     this.updateVisibilityAndHalfDissection();
   }
 
-  private async loadSingleGlb(filename: string, defaultSys: ZSystemId): Promise<void> {
+  private async loadSingleGlb(
+    filename: string,
+    defaultSys: ZSystemId,
+    onProgress?: (event: ProgressEvent) => void
+  ): Promise<void> {
     const url = `/models/z-anatomy/${filename}`;
-    const gltf = await this.loader.loadAsync(url);
+    const gltf = await this.loader.loadAsync(url, onProgress);
     const scene = gltf.scene;
 
     scene.updateMatrixWorld(true);
@@ -214,6 +237,7 @@ export class ZAnatomyLoader {
       child.castShadow = true;
       child.receiveShadow = true;
 
+      const matchedRecord = getRecordByZAnatomyName(rawName);
       child.userData = {
         rawName,
         cleanName,
@@ -221,6 +245,8 @@ export class ZAnatomyLoader {
         side,
         center,
         originalMaterial: mat,
+        recordId: matchedRecord?.id ?? null,
+        fmaId: matchedRecord?.fmaId ?? null,
       };
 
       const info: ZStructureInfo = {

@@ -2,11 +2,18 @@
   "name": "homman",
   "version": "1.0.0",
   "private": true,
-  "description": "Interactive 3D Anatomy Atlas & Smart Pathophysiology Simulation Platform",
+  "description": "Educational 3D Human Anatomy Atlas & Conceptual Pathophysiology Visualization Platform",
   "scripts": {
     "dev": "npm --prefix frontend run dev",
-    "build": "npm --prefix frontend run build",
+    "build": "npm run validate:data && npm --prefix frontend run build",
     "preview": "npm --prefix frontend run preview",
-    "lint": "npm --prefix frontend run lint"
+    "typecheck": "npm --prefix frontend run typecheck",
+    "lint": "node scripts/lint-check.mjs",
+    "validate:data": "node scripts/validate-data.mjs",
+    "test": "npm --prefix frontend run test",
+    "test:watch": "npm --prefix frontend run test:watch",
+    "test:e2e": "npm --prefix frontend run test:e2e",
+    "pipeline:export": "python pipeline/scripts/build_release_data.py",
+    "pipeline:check": "python pipeline/scripts/build_release_data.py --check"
   }
 }

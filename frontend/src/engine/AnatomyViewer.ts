@@ -1,12 +1,27 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
-import type { AnatomicalStructure, ClippingState, HeartAnimationConfig } from '../types/anatomy';
+import type {
+  AnatomicalStructure,
+  ClippingState,
+  HeartAnimationConfig,
+  RenderPerformanceSnapshot,
+  VisualPresetType,
+} from '../types/anatomy';
 import { AtlasModelLoader, type SystemCategory } from './AtlasModelLoader';
+import { ZAnatomyLoader, type ZSystemId } from './ZAnatomyLoader';
+import {
+  buildStructureFromRecord,
+  buildUnmappedStructure,
+  resolveCatalogRecord,
+} from '../data/anatomyRegistry';
+import { logRenderEvent } from '../utils/renderLogger';
 
 export interface ViewerOptions {
   container: HTMLDivElement;
   onStructureSelect?: (structure: AnatomicalStructure | null) => void;
-  onLoadingProgress?: (percent: number) => void;
+  onLoadingProgress?: (percent: number, loadedBytes?: number, totalBytes?: number) => void;
+  onLoadingError?: (messageFa: string | null) => void;
+  initialLiteMode?: boolean;
 }
 
 export interface AnatomicalCallout {
@@ -25,18 +40,18 @@ export const CORTICAL_LOBE_COLORS = {
   occipital: 0xf59e0b,
 };
 
-// Verified 3D anatomical landmarks mapped to authentic BodyParts3D coordinates
+// Verified 3D anatomical landmarks mapped to canonical FMA IDs
 export const DEFAULT_CALLOUTS: AnatomicalCallout[] = [
-  { id: 'FMA5018', query: 'brain', labelEn: 'Cerebrum', labelFa: 'مغز (مخ)', system: 'Nervous', worldPos: new THREE.Vector3(-0.001, 1.635, -0.027) },
-  { id: 'FMA7195', query: 'lung', labelEn: 'Lungs', labelFa: 'ریه‌ها', system: 'Respiratory', worldPos: new THREE.Vector3(0.071, 1.297, 0.026) },
-  { id: 'FMA7088', query: 'heart', labelEn: 'Heart', labelFa: 'قلب', system: 'Circulatory', worldPos: new THREE.Vector3(0.038, 1.296, 0.022) },
-  { id: 'FMA7199', query: 'liver', labelEn: 'Liver', labelFa: 'کبد', system: 'Digestive', worldPos: new THREE.Vector3(-0.011, 1.209, 0.022) },
-  { id: 'FMA7148', query: 'stomach', labelEn: 'Stomach', labelFa: 'معده', system: 'Digestive', worldPos: new THREE.Vector3(0.038, 1.176, 0.038) },
-  { id: 'FMA7201_L', query: 'kidney.l', labelEn: 'Left Kidney', labelFa: 'کلیه چپ', system: 'Urinary', worldPos: new THREE.Vector3(0.062, 1.116, -0.020) },
-  { id: 'FMA9915', query: 'femur', labelEn: 'Femur', labelFa: 'استخوان ران', system: 'Skeletal', worldPos: new THREE.Vector3(0.091, 0.679, -0.019) },
-  { id: 'BICEPS', query: 'biceps', labelEn: 'Biceps Brachii', labelFa: 'عضله دوسر بازو', system: 'Muscular', worldPos: new THREE.Vector3(0.182, 1.245, -0.011) },
-  { id: 'LYMPHATIC', query: 'spleen', labelEn: 'Spleen & Lymph Nodes', labelFa: 'سیستم لنفاوی (طحال و غدد)', system: 'Lymphatic', worldPos: new THREE.Vector3(0.085, 1.165, -0.006) },
-  { id: 'FMA7163', query: 'skin', labelEn: 'Integumentary', labelFa: 'پوست و کانتور سطحی', system: 'Integumentary', worldPos: new THREE.Vector3(0.18, 1.48, 0.08) },
+  { id: 'FMA5018', query: 'FMA5018', labelEn: 'Cerebrum', labelFa: 'مغز (مخ)', system: 'Nervous', worldPos: new THREE.Vector3(-0.001, 1.635, -0.027) },
+  { id: 'FMA7195', query: 'FMA7195', labelEn: 'Right Lung', labelFa: 'ریه راست و برونش‌ها', system: 'Respiratory', worldPos: new THREE.Vector3(-0.068, 1.305, 0.022) },
+  { id: 'FMA7088', query: 'FMA7088', labelEn: 'Heart', labelFa: 'قلب', system: 'Circulatory', worldPos: new THREE.Vector3(0.021, 1.305, 0.023) },
+  { id: 'FMA7199', query: 'FMA7199', labelEn: 'Liver & Biliary', labelFa: 'کبد و مجاری صفراوی', system: 'Digestive', worldPos: new THREE.Vector3(-0.011, 1.209, 0.022) },
+  { id: 'FMA7148', query: 'FMA7148', labelEn: 'Stomach', labelFa: 'معده', system: 'Digestive', worldPos: new THREE.Vector3(0.038, 1.176, 0.038) },
+  { id: 'FMA7201_L', query: 'FMA7201_L', labelEn: 'Left Kidney', labelFa: 'کلیه چپ', system: 'Urinary', worldPos: new THREE.Vector3(0.062, 1.116, -0.020) },
+  { id: 'FMA9915', query: 'FMA9915', labelEn: 'Femur', labelFa: 'استخوان ران', system: 'Skeletal', worldPos: new THREE.Vector3(0.091, 0.679, -0.019) },
+  { id: 'FMA37670', query: 'FMA37670', labelEn: 'Biceps Brachii', labelFa: 'عضله دوسر بازو', system: 'Muscular', worldPos: new THREE.Vector3(0.182, 1.245, -0.011) },
+  { id: 'FMA7194', query: 'FMA7194', labelEn: 'Spleen (Lymphatic)', labelFa: 'طحال (سیستم لنفاوی)', system: 'Lymphatic', worldPos: new THREE.Vector3(0.085, 1.165, -0.006) },
+  { id: 'FMA7163', query: 'FMA7163', labelEn: 'Integumentary', labelFa: 'پوست و کانتور سطحی', system: 'Integumentary', worldPos: new THREE.Vector3(0.18, 1.48, 0.08) },
 ];
 
 export class AnatomyViewer {
@@ -45,10 +60,14 @@ export class AnatomyViewer {
   public renderer: THREE.WebGLRenderer;
   public controls: OrbitControls;
   public atlasLoader: AtlasModelLoader;
+  private fallbackLoader: ZAnatomyLoader | null = null;
+  private activeBackend: 'BodyParts3D' | 'Z-Anatomy' = 'BodyParts3D';
 
-  // Backward compatibility alias
+  // Backward compatibility getter exposing whichever loader is active
   public get zAnatomyLoader() {
-    return this.atlasLoader;
+    return this.activeBackend === 'Z-Anatomy' && this.fallbackLoader
+      ? this.fallbackLoader
+      : this.atlasLoader;
   }
 
   private container: HTMLDivElement;
@@ -57,11 +76,20 @@ export class AnatomyViewer {
   private raycaster = new THREE.Raycaster();
   private mouse = new THREE.Vector2();
   private onStructureSelect?: (structure: AnatomicalStructure | null) => void;
-  private onLoadingProgress?: (percent: number) => void;
+  private onLoadingProgress?: (percent: number, loadedBytes?: number, totalBytes?: number) => void;
+  private onLoadingError?: (messageFa: string | null) => void;
 
-  // Track pointer for distinguishing clicks from camera rotation
   private pointerDownPos = { x: 0, y: 0 };
   private onContextMenu: (e: MouseEvent) => void;
+  private onVisibilityChange: () => void;
+  private onWebGLContextLost: (e: Event) => void;
+  private onWebGLContextRestored: () => void;
+  private intersectionObserver: IntersectionObserver | null = null;
+
+  private isDocumentVisible = true;
+  private isCanvasVisible = true;
+  private isDisposed = false;
+  public liteMode = false;
 
   // 3-Axis Clipping Planes
   public axialPlane = new THREE.Plane(new THREE.Vector3(0, -1, 0), 2.0);
@@ -77,7 +105,7 @@ export class AnatomyViewer {
     coronalOffset: 0.0,
   };
 
-  // Beating Heart Simulation
+  // Conceptual Educational Heart Animation
   public heartConfig: HeartAnimationConfig = {
     isBeating: true,
     bpm: 72,
@@ -87,39 +115,39 @@ export class AnatomyViewer {
     this.container = options.container;
     this.onStructureSelect = options.onStructureSelect;
     this.onLoadingProgress = options.onLoadingProgress;
+    this.onLoadingError = options.onLoadingError;
+    this.liteMode = Boolean(options.initialLiteMode);
 
     // 1. Scene
     (window as unknown as { THREE: unknown }).THREE = THREE;
     this.scene = new THREE.Scene();
-    this.scene.background = new THREE.Color(0x0a0e17); // Deep medical charcoal slate
+    this.scene.background = new THREE.Color(0x0a0e17);
 
-    // 2. Camera: Focused on human body height (1.72m, center at Y = 0.86m)
-    const width = this.container.clientWidth;
-    const height = this.container.clientHeight;
+    // 2. Camera
+    const width = Math.max(1, this.container.clientWidth);
+    const height = Math.max(1, this.container.clientHeight);
     this.camera = new THREE.PerspectiveCamera(36, width / height, 0.05, 50);
     this.camera.position.set(0, 0.88, 2.45);
 
-    // 3. WebGL Renderer
+    // 3. WebGL Renderer with Lite Mode DPR scaling
     this.renderer = new THREE.WebGLRenderer({
-      antialias: true,
-      powerPreference: 'high-performance',
+      antialias: !this.liteMode,
+      powerPreference: this.liteMode ? 'default' : 'high-performance',
     });
     this.renderer.setSize(width, height);
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    this.applyPixelRatio();
     this.renderer.localClippingEnabled = true;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.20;
     this.container.appendChild(this.renderer.domElement);
 
-    // 4. OrbitControls: Full Pan, Zoom, and Rotation
+    // 4. OrbitControls
     this.controls = new OrbitControls(this.camera, this.renderer.domElement);
     this.controls.enableDamping = true;
     this.controls.dampingFactor = 0.06;
     this.controls.target.set(0, 0.85, 0);
     this.controls.minDistance = 0.15;
     this.controls.maxDistance = 6.0;
-    
-    // Enable Screen-Space Panning (Up/Down, Left/Right)
     this.controls.enablePan = true;
     this.controls.screenSpacePanning = true;
     this.controls.panSpeed = 1.0;
@@ -133,17 +161,56 @@ export class AnatomyViewer {
       TWO: THREE.TOUCH.DOLLY_PAN,
     };
 
-    // Prevent context menu on right click so right-drag pan works seamlessly
     this.onContextMenu = (e: MouseEvent) => e.preventDefault();
     this.renderer.domElement.addEventListener('contextmenu', this.onContextMenu);
 
-    // 5. Lighting: Soft medical studio illumination
+    // WebGL Context resilience
+    this.onWebGLContextLost = (e: Event) => {
+      e.preventDefault();
+      this.stopLoop();
+      logRenderEvent('error', 'webgl', 'WebGL rendering context lost');
+      this.onLoadingError?.('ارتباط گرافیکی مرورگر (WebGL) قطع شد. در حال بازیابی یا دکمه تلاش مجدد را بزنید.');
+    };
+    this.onWebGLContextRestored = () => {
+      logRenderEvent('info', 'webgl', 'WebGL rendering context restored');
+      this.onLoadingError?.(null);
+      this.startLoop();
+    };
+    this.renderer.domElement.addEventListener('webglcontextlost', this.onWebGLContextLost);
+    this.renderer.domElement.addEventListener('webglcontextrestored', this.onWebGLContextRestored);
+
+    // Pause render loop when tab is hidden or viewport leaves screen
+    this.onVisibilityChange = () => {
+      this.isDocumentVisible = !document.hidden;
+      if (this.isDocumentVisible && this.isCanvasVisible) {
+        this.clock.getDelta();
+        this.startLoop();
+      } else {
+        this.stopLoop();
+      }
+    };
+    document.addEventListener('visibilitychange', this.onVisibilityChange);
+
+    if (typeof IntersectionObserver !== 'undefined') {
+      this.intersectionObserver = new IntersectionObserver((entries) => {
+        const entry = entries[0];
+        this.isCanvasVisible = entry ? entry.isIntersecting : true;
+        if (this.isDocumentVisible && this.isCanvasVisible) {
+          this.startLoop();
+        } else {
+          this.stopLoop();
+        }
+      });
+      this.intersectionObserver.observe(this.container);
+    }
+
+    // 5. Studio lighting & platform
     this.setupLighting();
 
-    // 6. Unified BodyParts3D 4.0 Atlas Loader
+    // 6. Initialize Atlas Loader
     this.atlasLoader = new AtlasModelLoader();
 
-    // 7. Event listeners
+    // 7. Pointer & resize listeners
     this.onResize = this.onResize.bind(this);
     this.onPointerDown = this.onPointerDown.bind(this);
     this.onPointerUp = this.onPointerUp.bind(this);
@@ -152,56 +219,111 @@ export class AnatomyViewer {
     this.renderer.domElement.addEventListener('pointerdown', this.onPointerDown);
     this.renderer.domElement.addEventListener('pointerup', this.onPointerUp);
 
-    // 8. Load the authentic BodyParts3D structures
+    // 8. Start loading model dataset
+    this.startModelLoad();
+
+    // 9. Start render loop
+    this.startLoop();
+  }
+
+  private applyPixelRatio() {
+    const cap = this.liteMode ? 1.0 : Math.min(window.devicePixelRatio || 1, 2);
+    this.renderer.setPixelRatio(cap);
+  }
+
+  public setLiteMode(enabled: boolean) {
+    this.liteMode = enabled;
+    this.applyPixelRatio();
+    const width = Math.max(1, this.container.clientWidth);
+    const height = Math.max(1, this.container.clientHeight);
+    this.renderer.setSize(width, height);
+    logRenderEvent('info', 'render_loop', `Lite mode ${enabled ? 'enabled' : 'disabled'}`, {
+      pixelRatio: this.renderer.getPixelRatio(),
+    });
+  }
+
+  private startModelLoad() {
+    this.onLoadingError?.(null);
+
     this.atlasLoader
-      .load(this.scene, (progress) => {
-        if (this.onLoadingProgress) {
-          this.onLoadingProgress(progress);
-        }
+      .load(this.scene, (progress, loadedBytes, totalBytes) => {
+        this.onLoadingProgress?.(progress, loadedBytes, totalBytes);
       })
       .then(() => {
-        // Automatically align callout positions with real anatomical centers
+        if (this.isDisposed) return;
+        this.activeBackend = 'BodyParts3D';
         DEFAULT_CALLOUTS.forEach((callout) => {
-          const res = this.atlasLoader.findParts(callout.query);
-          if (res.indices.length > 0 && res.center.lengthSq() > 0) {
-            callout.worldPos.copy(res.center);
+          const center = this.atlasLoader.getCenterForQuery(callout.query);
+          if (center && center.lengthSq() > 0) {
+            callout.worldPos.copy(center);
           }
         });
       })
-      .catch((err) => {
-        console.error('Failed loading BodyParts3D atlas:', err);
-      });
+      .catch(async (err) => {
+        if (this.isDisposed) return;
+        const msg = err instanceof Error ? err.message : String(err);
 
-    // 9. Start render loop
-    this.animate();
+        // If BodyParts3D manifest is missing (e.g. clean git clone without ignored binary chunks),
+        // seamlessly fall back to GLB Z-Anatomy loader wired with DRACOLoader + KTX2Loader.
+        if (msg.includes('Manifest unavailable (HTTP 404)')) {
+          logRenderEvent('warn', 'asset_load', 'BodyParts3D manifest missing; switching to Z-Anatomy GLB fallback');
+          try {
+            this.activeBackend = 'Z-Anatomy';
+            this.fallbackLoader = new ZAnatomyLoader();
+            await this.fallbackLoader.loadAll(
+              this.scene,
+              (pct, loaded, total) => this.onLoadingProgress?.(pct, loaded, total),
+              this.renderer
+            );
+            DEFAULT_CALLOUTS.forEach((callout) => {
+              const matches = this.fallbackLoader?.findStructures(callout.query) ?? [];
+              if (matches.length > 0) {
+                callout.worldPos.copy(matches[0].center);
+              }
+            });
+            return;
+          } catch (fallbackErr) {
+            logRenderEvent('error', 'asset_load', 'Z-Anatomy GLB fallback also failed', {
+              error: fallbackErr instanceof Error ? fallbackErr.message : String(fallbackErr),
+            });
+          }
+        }
+
+        logRenderEvent('error', 'asset_load', 'Failed loading 3D anatomy atlas', { error: msg });
+        this.onLoadingError?.(
+          'بارگذاری مدل‌های سه‌بعدی با خطا مواجه شد. اتصال شبکه یا دسترسی فایل‌های مدل را بررسی کنید و دوباره تلاش کنید.'
+        );
+      });
+  }
+
+  public retryLoad() {
+    if (this.atlasLoader.isLoaded || this.fallbackLoader?.isLoaded) return;
+    this.atlasLoader.dispose();
+    this.atlasLoader = new AtlasModelLoader();
+    this.onLoadingProgress?.(0, 0, 0);
+    this.startModelLoad();
   }
 
   private setupLighting() {
-    // Hemispherical skylight gives biological soft ambient gradients
     const hemiLight = new THREE.HemisphereLight(0xe2e8f0, 0x1e293b, 1.15);
     this.scene.add(hemiLight);
 
-    // Soft frontal clinical light
     const frontLight = new THREE.DirectionalLight(0xffffff, 1.1);
     frontLight.position.set(0, 1.6, 3.2);
     this.scene.add(frontLight);
 
-    // Key light
     const keyLight = new THREE.DirectionalLight(0xffffff, 1.2);
     keyLight.position.set(2.2, 3.0, 2.2);
     this.scene.add(keyLight);
 
-    // Fill light with subtle cool undertone
     const fillLight = new THREE.DirectionalLight(0x93c5fd, 0.65);
     fillLight.position.set(-2.2, 1.8, 1.8);
     this.scene.add(fillLight);
 
-    // Rim light to outline silhouette
     const rimLight = new THREE.DirectionalLight(0x38bdf8, 0.7);
     rimLight.position.set(0, 1.2, -2.8);
     this.scene.add(rimLight);
 
-    // Dark circular examination platform beneath feet
     const platform = new THREE.Mesh(
       new THREE.CylinderGeometry(0.55, 0.58, 0.02, 64),
       new THREE.MeshStandardMaterial({ color: 0x111827, roughness: 0.85, metalness: 0.05 })
@@ -220,7 +342,16 @@ export class AnatomyViewer {
 
   private updateMaterialsClipping() {
     const activePlanes = this.getActivePlanes();
-    this.atlasLoader.updateClippingPlanes(activePlanes);
+    if (this.activeBackend === 'Z-Anatomy' && this.fallbackLoader) {
+      this.fallbackLoader.allMeshes.forEach((mesh) => {
+        const mat = mesh.material as THREE.MeshStandardMaterial;
+        mat.clippingPlanes = activePlanes;
+        mat.clipShadows = true;
+        mat.needsUpdate = true;
+      });
+    } else {
+      this.atlasLoader.updateClippingPlanes(activePlanes);
+    }
   }
 
   public setNeuroMode(enabled: boolean) {
@@ -275,8 +406,11 @@ export class AnatomyViewer {
   }
 
   public focusOnHeart() {
-    this.selectAndFocusStructure('heart');
-    const C = this.atlasLoader.cardiacCenter;
+    this.selectAndFocusStructure('FMA7088');
+    const C =
+      this.activeBackend === 'Z-Anatomy' && this.fallbackLoader
+        ? this.fallbackLoader.cardiacCenter
+        : this.atlasLoader.cardiacCenter;
     this.camera.position.set(C.x, C.y, C.z + 0.55);
     this.controls.target.copy(C);
     this.controls.update();
@@ -315,66 +449,145 @@ export class AnatomyViewer {
   }
 
   public setExplodeView(factor: number) {
-    // Explode view expands vertices along normal
-    // Factor between 0 and 1
-    if (this.atlasLoader.isLoaded) {
-      // In AtlasModelLoader, explode can displace meshes
+    if (this.activeBackend === 'Z-Anatomy' && this.fallbackLoader) {
       const center = new THREE.Vector3(0, 0.85, 0);
+      this.fallbackLoader.structures.forEach((st) => {
+        const dir = st.center.clone().sub(center).normalize();
+        st.mesh.position.copy(dir.multiplyScalar(factor * 0.25));
+      });
+    } else if (this.atlasLoader.isLoaded) {
       this.atlasLoader.allMeshes.forEach((mesh) => {
         mesh.position.y = factor * 0.05;
       });
     }
   }
 
-  public isolateStructure(query: string) {
-    const res = this.atlasLoader.findParts(query);
-    if (res.indices.length === 0) return;
+  public isolateStructure(idOrFmaOrQuery: string) {
+    if (this.activeBackend === 'Z-Anatomy' && this.fallbackLoader) {
+      const matches = this.fallbackLoader.findStructures(idOrFmaOrQuery);
+      if (matches.length === 0) return;
+      this.fallbackLoader.isolateStructures(matches);
+      const box = new THREE.Box3();
+      matches.forEach((m) => box.expandByObject(m.mesh));
+      this.controls.target.copy(box.getCenter(new THREE.Vector3()));
+      return;
+    }
 
-    this.atlasLoader.selectPart(res.indices[0]);
-    if (res.center.lengthSq() > 0) {
-      this.controls.target.copy(res.center);
+    if (!this.atlasLoader.isLoaded) return;
+    const record = resolveCatalogRecord(idOrFmaOrQuery);
+    if (record) {
+      const center = this.atlasLoader.isolateRecord(record);
+      if (center) {
+        this.controls.target.copy(center);
+        this.controls.update();
+      }
+      return;
+    }
+
+    if (idOrFmaOrQuery.startsWith('unmapped:')) {
+      const partId = idOrFmaOrQuery.replace('unmapped:', '');
+      const idx = this.atlasLoader.partIndexById.get(partId.toLowerCase());
+      if (idx !== undefined) {
+        const center = this.atlasLoader.isolatePartIndex(idx);
+        if (center) {
+          this.controls.target.copy(center);
+          this.controls.update();
+        }
+      }
     }
   }
 
   public clearIsolation() {
-    this.atlasLoader.clearSelection();
+    if (this.activeBackend === 'Z-Anatomy' && this.fallbackLoader) {
+      this.fallbackLoader.clearIsolation();
+    } else {
+      this.atlasLoader.clearIsolation();
+      this.atlasLoader.clearSelection();
+    }
+  }
+
+  public applyEducationalPreset(
+    recordIdOrFma: string,
+    presetType: VisualPresetType | null
+  ) {
+    if (this.activeBackend === 'BodyParts3D' && this.atlasLoader.isLoaded) {
+      const record = presetType ? resolveCatalogRecord(recordIdOrFma) : null;
+      this.atlasLoader.applyVisualPreset(record, presetType);
+    }
+  }
+
+  public clearEducationalPreset() {
+    if (this.activeBackend === 'BodyParts3D' && this.atlasLoader.isLoaded) {
+      this.atlasLoader.applyVisualPreset(null, null);
+    }
   }
 
   public setSystemVisibility(systemCategory: string, visible: boolean) {
     const sysLower = (systemCategory === 'circulatory' ? 'cardiovascular' : systemCategory.toLowerCase()) as SystemCategory;
-    this.atlasLoader.setSystemVisibility(sysLower, visible);
+    if (this.activeBackend === 'Z-Anatomy' && this.fallbackLoader) {
+      this.fallbackLoader.setSystemVisibility(sysLower as ZSystemId, visible);
+    } else {
+      this.atlasLoader.setSystemVisibility(sysLower, visible);
+    }
   }
 
   public setSystemOpacity(systemCategory: string, opacity: number) {
     const sysLower = (systemCategory === 'circulatory' ? 'cardiovascular' : systemCategory.toLowerCase()) as SystemCategory;
-    this.atlasLoader.setSystemOpacity(sysLower, opacity);
+    if (this.activeBackend === 'Z-Anatomy' && this.fallbackLoader) {
+      this.fallbackLoader.setSystemOpacity(sysLower as ZSystemId, opacity);
+    } else {
+      this.atlasLoader.setSystemOpacity(sysLower, opacity);
+    }
   }
 
   public setHalfDissection(enabled: boolean) {
-    this.atlasLoader.setHalfDissection(enabled);
+    if (this.activeBackend === 'Z-Anatomy' && this.fallbackLoader) {
+      this.fallbackLoader.setHalfDissection(enabled);
+    } else {
+      this.atlasLoader.setHalfDissection(enabled);
+    }
   }
 
-  public selectAndFocusStructure(query: string) {
+  /**
+   * Canonical single-identity selection & focus flow via AnatomyRecord ID/FMA ID.
+   */
+  public selectAndFocusStructure(idOrFmaOrQuery: string) {
+    if (this.activeBackend === 'Z-Anatomy' && this.fallbackLoader?.isLoaded) {
+      const rec = resolveCatalogRecord(idOrFmaOrQuery);
+      const matches = this.fallbackLoader.findStructures(rec?.fmaId ?? idOrFmaOrQuery);
+      if (matches.length === 0) return;
+      this.fallbackLoader.highlightStructures(matches);
+      const box = new THREE.Box3();
+      matches.forEach((m) => box.expandByObject(m.mesh));
+      this.controls.target.copy(box.getCenter(new THREE.Vector3()));
+      if (this.onStructureSelect) {
+        this.onStructureSelect(
+          rec
+            ? buildStructureFromRecord(rec, matches[0].name)
+            : buildUnmappedStructure(matches[0].name, matches[0].cleanName, matches[0].system)
+        );
+      }
+      return;
+    }
+
     if (!this.atlasLoader.isLoaded) return;
 
-    const res = this.atlasLoader.findParts(query);
-    if (res.indices.length === 0) return;
+    const record = resolveCatalogRecord(idOrFmaOrQuery);
+    if (!record) return;
 
-    const primaryIndex = res.indices[0];
-    this.atlasLoader.selectPart(primaryIndex);
-
-    if (res.center.lengthSq() > 0) {
-      this.controls.target.copy(res.center);
+    const { center } = this.atlasLoader.selectRecord(record);
+    if (center.lengthSq() > 0) {
+      this.controls.target.copy(center);
+      this.controls.update();
     }
 
     if (this.onStructureSelect) {
-      const details = this.atlasLoader.getStructureDetails(primaryIndex);
-      this.onStructureSelect(details);
+      this.onStructureSelect(buildStructureFromRecord(record));
     }
   }
 
-  public focusOnStructure(query: string) {
-    this.selectAndFocusStructure(query);
+  public focusOnStructure(idOrFmaOrQuery: string) {
+    this.selectAndFocusStructure(idOrFmaOrQuery);
   }
 
   public setViewOrientation(view: 'front' | 'back' | 'left' | 'right' | 'top' | 'isometric') {
@@ -424,7 +637,6 @@ export class AnatomyViewer {
   }
 
   private onPointerUp(event: PointerEvent) {
-    // If pointer was dragged more than 5px, user was rotating/panning the camera!
     const dist = Math.hypot(
       event.clientX - this.pointerDownPos.x,
       event.clientY - this.pointerDownPos.y
@@ -436,16 +648,32 @@ export class AnatomyViewer {
     this.mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
     this.raycaster.setFromCamera(this.mouse, this.camera);
 
+    if (this.activeBackend === 'Z-Anatomy' && this.fallbackLoader?.isLoaded) {
+      const hit = this.fallbackLoader.raycast(this.raycaster);
+      if (hit) {
+        this.selectAndFocusStructure(hit.name);
+      } else {
+        this.resetSelection();
+      }
+      return;
+    }
+
     if (this.atlasLoader.isLoaded) {
       const hitIndex = this.atlasLoader.raycast(this.raycaster);
       if (hitIndex >= 0) {
-        this.atlasLoader.selectPart(hitIndex);
-        if (this.onStructureSelect) {
-          const details = this.atlasLoader.getStructureDetails(hitIndex);
-          this.onStructureSelect(details);
+        const structure = this.atlasLoader.getStructureDetails(hitIndex);
+        if (structure.isMappedToCatalog) {
+          const rec = resolveCatalogRecord(structure.recordId);
+          if (rec) {
+            this.atlasLoader.selectRecord(rec);
+          } else {
+            this.atlasLoader.selectPart(hitIndex);
+          }
+        } else {
+          this.atlasLoader.selectPart(hitIndex);
         }
+        this.onStructureSelect?.(structure);
       } else {
-        // Clicked empty background -> reset selection
         this.resetSelection();
       }
     }
@@ -453,48 +681,72 @@ export class AnatomyViewer {
 
   public resetSelection() {
     this.clearIsolation();
-    if (this.onStructureSelect) {
-      this.onStructureSelect(null);
-    }
+    this.clearEducationalPreset();
+    this.onStructureSelect?.(null);
+  }
+
+  public getPerformanceSnapshot(): RenderPerformanceSnapshot {
+    const loaderStats = this.atlasLoader.getPerformanceStats();
+    return {
+      backend: this.activeBackend,
+      chunksLoaded: loaderStats.chunksLoaded ?? 0,
+      totalBytes: loaderStats.totalBytes ?? 0,
+      downloadMs: loaderStats.downloadMs ?? 0,
+      parseMs: loaderStats.parseMs ?? 0,
+      meshCount: loaderStats.meshCount ?? 0,
+      drawCalls: this.renderer.info.render.calls,
+      triangles: this.renderer.info.render.triangles,
+      liteMode: this.liteMode,
+    };
   }
 
   private onResize() {
     if (!this.container) return;
-    const width = this.container.clientWidth;
-    const height = this.container.clientHeight;
+    const width = Math.max(1, this.container.clientWidth);
+    const height = Math.max(1, this.container.clientHeight);
     this.camera.aspect = width / height;
     this.camera.updateProjectionMatrix();
     this.renderer.setSize(width, height);
   }
 
+  private startLoop() {
+    if (this.animationFrameId !== null || this.isDisposed) return;
+    this.animate();
+  }
+
+  private stopLoop() {
+    if (this.animationFrameId !== null) {
+      cancelAnimationFrame(this.animationFrameId);
+      this.animationFrameId = null;
+    }
+  }
+
   private animate = () => {
+    if (this.isDisposed || !this.isDocumentVisible || !this.isCanvasVisible) {
+      this.animationFrameId = null;
+      return;
+    }
+
     this.animationFrameId = requestAnimationFrame(this.animate);
     const elapsedTime = this.clock.getElapsedTime();
 
-    // Physiological Wiggers Beating Heart Simulation on the GPU
-    if (this.heartConfig.isBeating && this.atlasLoader.isLoaded) {
+    // Conceptual Wiggers-like heartbeat cycle visualization on GPU
+    if (this.heartConfig.isBeating && this.atlasLoader.isLoaded && this.activeBackend === 'BodyParts3D') {
       const bpm = this.heartConfig.bpm;
       const cycleSeconds = 60 / bpm;
-      const t = (elapsedTime % cycleSeconds) / cycleSeconds; // 0.0 to 1.0
+      const t = (elapsedTime % cycleSeconds) / cycleSeconds;
 
-      // Natural physiological cardiac wave:
-      // Ventricles contract ~8% in systole, relax in diastole, resting pause
       let cardiacScale = 1.0;
-
       if (t < 0.28) {
-        // Systole: Rapid ventricular contraction
         const s = Math.sin((t / 0.28) * Math.PI);
         cardiacScale = 1.0 - s * 0.085;
       } else if (t < 0.42) {
-        // Isovolumetric relaxation
         const s = Math.cos(((t - 0.28) / 0.14) * (Math.PI / 2));
         cardiacScale = 0.915 + (1.0 - s) * 0.065;
       } else if (t < 0.80) {
-        // Diastole: Ventricular filling
         const d = Math.sin(((t - 0.42) / 0.38) * Math.PI);
         cardiacScale = 0.98 + d * 0.04;
       } else {
-        // Atrial kick & resting pause
         const a = Math.sin(((t - 0.80) / 0.20) * Math.PI);
         cardiacScale = 1.02 - a * 0.02;
       }
@@ -507,17 +759,21 @@ export class AnatomyViewer {
   };
 
   public dispose() {
-    if (this.animationFrameId !== null) {
-      cancelAnimationFrame(this.animationFrameId);
-    }
+    this.isDisposed = true;
+    this.stopLoop();
     window.removeEventListener('resize', this.onResize);
+    document.removeEventListener('visibilitychange', this.onVisibilityChange);
+    this.intersectionObserver?.disconnect();
     this.renderer.domElement.removeEventListener('contextmenu', this.onContextMenu);
     this.renderer.domElement.removeEventListener('pointerdown', this.onPointerDown);
     this.renderer.domElement.removeEventListener('pointerup', this.onPointerUp);
+    this.renderer.domElement.removeEventListener('webglcontextlost', this.onWebGLContextLost);
+    this.renderer.domElement.removeEventListener('webglcontextrestored', this.onWebGLContextRestored);
     if (this.renderer.domElement.parentNode) {
       this.renderer.domElement.parentNode.removeChild(this.renderer.domElement);
     }
     this.atlasLoader.dispose();
+    this.fallbackLoader?.dispose();
     this.controls.dispose();
     this.renderer.dispose();
   }
