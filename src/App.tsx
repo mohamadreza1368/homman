@@ -196,7 +196,7 @@ function TopBar({
 }) {
   const fa = useInterfaceLanguage((s) => s.language === 'fa');
   return (
-    <div className="absolute inset-x-0 top-0 flex items-center gap-2 bg-slate-900/80 px-2 py-1.5 backdrop-blur">
+    <div className="absolute inset-x-0 top-0 flex items-center gap-2 border-b border-teal-900/40 bg-[#091a20]/90 px-3 py-2 shadow-lg backdrop-blur">
       <PanelToggle
         active={!treeCollapsed}
         onClick={onToggleTree}

@@ -1,0 +1,20 @@
+Mondo Disease Ontology (Mondo), release 2026-11-03.
+Source: https://github.com/monarch-initiative/mondo/releases/tag/v2026-11-03
+Download: https://github.com/monarch-initiative/mondo/releases/download/v2026-11-03/mondo-base.obo
+License: Creative Commons Attribution 4.0 International, https://creativecommons.org/licenses/by/4.0/
+The mondo-index.json file is a modified extract: it retains Mondo identifiers,
+English labels and exact synonyms; obsolete terms and terms marked not_a_disease
+are excluded. The original release and complete ontology remain available above.
+This index is for terminology search; it is not a diagnosis, a complete list
+of all possible diseases, or an anatomical mapping.
+
+Disease Ontology, release 2026-10-29: https://disease-ontology.org/
+Source: http://purl.obolibrary.org/obo/doid/releases/2026-10-29/doid.owl
+License: CC0 1.0, https://creativecommons.org/publicdomain/zero/1.0/
+Uberon, release 2026-11-05: https://obophenotype.github.io/uberon/
+Source: http://purl.obolibrary.org/obo/uberon/releases/2026-11-05/uberon-basic.obo
+License: CC BY 3.0, https://creativecommons.org/licenses/by/3.0/
+do-sites.json is a modified extract of direct disease-has-location assertions
+and inherited superclass assertions, with automatic exact-label atlas mappings
+and a small number of explicit paired-organ mappings. These are unreviewed
+educational associations; paired mappings do not indicate patient laterality.

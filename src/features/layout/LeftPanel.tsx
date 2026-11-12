@@ -9,8 +9,10 @@ import { StorageNotice } from "./StorageNotice";
 import { APP_VERSION_LABEL } from "@/lib/appVersion";
 import { useStudyStore } from "@/stores/studyStore";
 import { useInterfaceLanguage } from "@/stores/interfaceLanguage";
+import { DiseasePanel } from "@/features/diseases/DiseasePanel";
+import { BrandLogo } from "@/components/BrandLogo";
 
-type Tab = "atlas" | "study" | "usage";
+type Tab = "atlas" | "diseases" | "study" | "usage";
 
 /**
  * The left column: the atlas, the student's own journal, and what the
@@ -36,10 +38,17 @@ export function LeftPanel() {
   const fa = language === 'fa';
 
   return (
-    <div dir={fa ? "rtl" : "ltr"} className="flex h-full min-h-0 flex-col">
-      <div className="flex shrink-0 border-b border-slate-800">
+    <div dir={fa ? "rtl" : "ltr"} className="flex h-full min-h-0 flex-col bg-[#09151c]">
+      <div className="flex items-center gap-3 border-b border-teal-900/50 px-4 py-4">
+        <BrandLogo variant="mark-dark" className="h-9 w-9" decorative />
+        <div className="min-w-0"><div className="text-sm font-bold tracking-[0.18em] text-white" dir="ltr">HOMMAN</div><div className="mt-0.5 text-[10px] text-teal-300/80">{fa ? "فضای یادگیری بدن انسان" : "Explore the human body"}</div></div>
+      </div>
+      <div className="flex shrink-0 border-b border-slate-800 px-1">
         <TabButton active={tab === "atlas"} onClick={() => setTab("atlas")}>
           {fa ? 'اطلس' : 'Atlas'}
+        </TabButton>
+        <TabButton active={tab === "diseases"} onClick={() => setTab("diseases")}>
+          {fa ? 'بیماری‌ها' : 'Diseases'}
         </TabButton>
         <TabButton active={tab === "study"} onClick={() => setTab("study")}>
           {fa ? 'مطالعه' : 'Study'}
@@ -68,9 +77,9 @@ export function LeftPanel() {
           {APP_VERSION_LABEL}
         </button>
       </div>
-      <div className="flex justify-end gap-1 border-b border-slate-800 px-2 py-1" aria-label="Interface language">
-        <button type="button" aria-pressed={fa} onClick={() => setLanguage('fa')} className={`rounded px-2 py-1 text-xs ${fa ? 'bg-sky-700 text-white' : 'text-slate-400'}`}>فارسی</button>
-        <button type="button" aria-pressed={!fa} onClick={() => setLanguage('en')} className={`rounded px-2 py-1 text-xs ${!fa ? 'bg-sky-700 text-white' : 'text-slate-400'}`}>English</button>
+      <div className="flex justify-end gap-1 border-b border-slate-800 px-3 py-2" aria-label="Interface language">
+        <button type="button" aria-pressed={fa} onClick={() => setLanguage('fa')} className={`rounded-lg px-2 py-1 text-xs ${fa ? 'bg-teal-700 text-white' : 'text-slate-400'}`}>فارسی</button>
+        <button type="button" aria-pressed={!fa} onClick={() => setLanguage('en')} className={`rounded-lg px-2 py-1 text-xs ${!fa ? 'bg-teal-700 text-white' : 'text-slate-400'}`}>English</button>
       </div>
 
       {/* Rendered from here rather than from `App`, because the button that
@@ -80,6 +89,9 @@ export function LeftPanel() {
 
       <div className={`min-h-0 flex-1 ${tab === "atlas" ? "" : "hidden"}`}>
         <AnatomyTree />
+      </div>
+      <div className={`min-h-0 flex-1 ${tab === "diseases" ? "" : "hidden"}`}>
+        <DiseasePanel />
       </div>
       <div className={`min-h-0 flex-1 ${tab === "study" ? "" : "hidden"}`}>
         <StudyPanel />
@@ -118,9 +130,9 @@ function TabButton({
       type="button"
       onClick={onClick}
       aria-pressed={active}
-      className={`flex-1 border-b-2 px-3 py-1.5 text-[11px] font-medium transition ${
+      className={`min-w-0 flex-1 border-b-2 px-1 py-3 text-[11px] font-medium transition focus-visible:outline-2 focus-visible:outline-teal-300 ${
         active
-          ? "border-sky-500 text-slate-100"
+          ? "border-teal-400 text-teal-100"
           : "border-transparent text-slate-500 hover:text-slate-300"
       }`}
     >

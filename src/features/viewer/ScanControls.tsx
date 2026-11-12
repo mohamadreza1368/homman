@@ -8,7 +8,7 @@ import { SWEEP_PROGRESS } from "./scanBand";
 import { SECTION_VIEW, wantSection } from "./axialSlice";
 import { SCAN_TINTS, scanTint } from "./scanTints";
 import { primeScanSound } from "./scanSound";
-import { OVERLAY_CHIP, OVERLAY_CHIP_ACTION, OVERLAY_GROUND, OVERLAY_SWITCH_OFF, OVERLAY_SWITCH_ON } from "./overlayChrome";
+import { OVERLAY_CHIP, OVERLAY_CHIP_ACTION, OVERLAY_GROUND } from "./overlayChrome";
 
 /**
  * The scanner's switch, and the handle that puts its light where you want it.
@@ -115,11 +115,11 @@ export function ScanControls() {
             ? "Stop the scanner"
             : "Sweep a plane of light through the body, lighting each structure it reaches"
         }
-        className={`rounded border px-2 py-1 text-xs ${
-          enabled ? OVERLAY_SWITCH_ON.cyan : OVERLAY_SWITCH_OFF
+        className={`rounded-xl border px-3 py-2 text-xs font-semibold shadow-lg backdrop-blur transition focus-visible:outline-2 focus-visible:outline-teal-300 ${
+          enabled ? "border-teal-400/70 bg-teal-950/95 text-teal-100" : "border-slate-600 bg-slate-950/90 text-slate-200 hover:border-teal-400"
         }`}
       >
-        {fa ? "اسکنر" : "Scanner"}
+        <span className="mr-2 text-[9px] tracking-[0.16em] text-teal-300">HOMMAN</span>{fa ? "اسکنر" : "Scanner"}
       </button>
 
       {/*
@@ -144,7 +144,7 @@ export function ScanControls() {
             className="inline-block h-2 w-2 rounded-sm"
             style={{ backgroundColor: scanTint(tint).hex }}
           />
-          light · show
+          {fa ? "نمایش تنظیمات اسکنر" : "Scanner controls"}
         </button>
       )}
 
@@ -156,15 +156,15 @@ export function ScanControls() {
         viewport.
       */}
       {enabled && panel && (
-        <div className="max-w-52 rounded border border-cyan-900/60 bg-slate-950/80 px-2 py-1.5">
+        <div dir={fa ? "rtl" : "ltr"} className="max-w-52 rounded-2xl border border-teal-500/30 bg-slate-950/95 px-3 py-3 shadow-xl backdrop-blur">
           <button
             type="button"
             onClick={togglePanel}
             title="Fold these away without stopping the scanner"
             className="mb-1 flex w-full items-center justify-between gap-3 text-[9px] uppercase tracking-wider text-cyan-500/70 hover:text-cyan-300"
           >
-            <span>Drag to hold the light</span>
-            <span className="text-slate-500 normal-case">hide</span>
+            <span className="text-teal-300">HOMMAN · {fa ? "کنترل اسکن" : "SCAN CONTROLS"}</span>
+            <span className="text-slate-400 normal-case">{fa ? "بستن" : "hide"}</span>
           </button>
           {/*
             Which way the light reads the body. Above the handle, because it
@@ -179,12 +179,12 @@ export function ScanControls() {
             {[
               {
                 value: "axial" as const,
-                label: "Axial",
+                label: fa ? "محوری" : "Axial",
                 hint: "Sweep head to feet and section the body at a height",
               },
               {
                 value: "front" as const,
-                label: "Front",
+                label: fa ? "از روبه‌رو" : "Front",
                 hint: "Sweep front to back and section the body at a depth, seen from the front",
               },
             ].map((choice) => (
@@ -229,7 +229,7 @@ export function ScanControls() {
           <input
             ref={slider}
             id="scan-position"
-            aria-label="Drag to hold the light"
+            aria-label={fa ? "تغییر موقعیت اسکنر" : "Drag to hold the light"}
             type="range"
             min={0}
             max={1}
@@ -344,7 +344,7 @@ export function ScanControls() {
               onChange={(event) => setReveal(event.target.checked)}
               className="mt-[1px] accent-cyan-500"
             />
-            Reveal colour, not light
+            {fa ? "نمایش رنگ ساختارها" : "Reveal colour, not light"}
           </label>
 
           {/*
@@ -367,7 +367,7 @@ export function ScanControls() {
               onChange={(event) => setAxial(event.target.checked)}
               className="mt-[1px] accent-cyan-500"
             />
-            Cross-section where I let go
+            {fa ? "نمایش برش در محل توقف" : "Cross-section where I let go"}
           </label>
 
           {/*

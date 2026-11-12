@@ -144,7 +144,7 @@ const NAMEPLATE_REPEATS = 5;
 export function nameplateText(byAssistant: boolean, plane: SectionPlaneName = "axial"): string {
   // And which way it is reading, because the same ring serves both planes and
   // the picture beside it is a different kind of picture.
-  return ["ANATRIA 3D", byAssistant ? "AI" : null, plane === "front" ? "FRONT" : null]
+  return ["HOMMAN", byAssistant ? "AI" : null, plane === "front" ? "FRONT" : null]
     .filter(Boolean)
     .join(" ");
 }
@@ -523,9 +523,9 @@ export function ScanRing({
             <torusGeometry args={[shape.radius, shape.tube, 10, 96]} />
             <meshStandardMaterial
               ref={shellMaterial}
-              color="#1b2735"
-              roughness={0.3}
-              metalness={0.75}
+              color="#102d32"
+              roughness={0.28}
+              metalness={0.8}
             />
           </mesh>
 
