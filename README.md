@@ -1,1214 +1,143 @@
-# Anatria3D
+# Homman | هومان
 
-[![Gates](https://github.com/Nurkan1/Anatria-3D/actions/workflows/gates.yml/badge.svg)](https://github.com/Nurkan1/Anatria-3D/actions/workflows/gates.yml)
-[![License](https://img.shields.io/badge/code-BUSL--1.1-blue)](LICENSE)
-[![Male atlas](https://img.shields.io/badge/male%20atlas-CC%20BY--SA%204.0-blue)](public/anatomy/NOTICE)
-[![Female atlas](https://img.shields.io/badge/female%20atlas-CC%20BY%204.0-blue)](public/anatomy/NOTICE)
-[![DOI](https://img.shields.io/badge/DOI-10.5281%2Fzenodo.21921085-blue)](https://doi.org/10.5281/zenodo.21921085)
+هومان یک اطلس آموزشی سه‌بعدی بدن انسان است. کاربر می‌تواند ساختارها را انتخاب و بررسی کند، اطلاعات آموزشی و بیماری‌های مرتبط را ببیند و با تمرین روی مدل، آموخته‌های خود را مرور کند. هومان با استفاده از [Anatria3D](https://github.com/Nurkan1/Anatria-3D) به‌عنوان پروژهٔ پایه توسعه داده می‌شود.
 
-Interactive anatomy and AI insights — a local-first desktop application.
+> **کاربرد آموزشی:** هومان وسیلهٔ پزشکی نیست و برای تشخیص، درمان یا تصمیم‌گیری دربارهٔ بیمار طراحی یا اعتبارسنجی نشده است. محتوای پزشکی، ترجمه‌ها و ارتباط‌های خودکار آناتومی به بازبینی تخصصی نیاز دارند.
 
-An educational anatomy atlas whose AI assistant can drive the 3D viewport
-directly: ask it to show the left ventricle with hypertrophy and the scene
-responds, because the agent's tools are typed and validated against the meshes
-actually loaded.
+> **مجوز:** کد پایه تحت [Business Source License 1.1](LICENSE) است. دارایی‌های آناتومی و داده‌های بیماری مجوزهای جداگانه دارند. پیش از استفاده، تغییر برند، توزیع یا بهره‌برداری تجاری، بخش [مجوزها و انتساب](#مجوزها-و-انتساب) را بخوانید.
 
-> **Not a medical device.** Anatria3D is for anatomical education and study. It
-> does not diagnose, treat, or give advice about any individual. See
-> [Regulatory positioning](#regulatory-positioning).
+## امکانات
 
-> **Free to study with, licensed to deploy commercially.** From v0.5.0 the
-> application's code is under the Business Source License 1.1: free for
-> students, teachers, academic research and non-commercial evaluation by
-> healthcare professionals, and each version converts to Apache-2.0 four years
-> after its release. Use in
-> a clinic or any other revenue-generating setting needs a commercial licence —
-> anatria@digitalrose.org. The anatomy keeps its own Creative Commons licences,
-> which this does not touch. See [Licensing](#licensing).
+- **اطلس سه‌بعدی:** چرخش و بزرگ‌نمایی، انتخاب ساختارها، جست‌وجوی آناتومی، روشن و خاموش‌کردن دستگاه‌های بدن، جداسازی و نمایش برش مدل.
+- **مدل‌های بدن مرد و زن:** دو اطلس با منابع و پوشش متفاوت؛ وضعیت پوشش در برنامه قابل مشاهده است.
+- **اسکنر هومان:** نمایش نور متحرک و برش هندسی مدل. تصویر اسکنر از خود مدل ساخته می‌شود و CT، MRI یا تصویر بیمار نیست.
+- **پروندهٔ آموزشی ساختار:** نام و اطلاعات ساختار انتخاب‌شده، و برای مفاهیم دارای محتوا توضیح، منبع و بیماری‌های مرتبط.
+- **کتابخانهٔ بیماری‌ها:** چند مدخل فارسی با توضیح آموزشی و جست‌وجو در فهرست گستردهٔ بیماری‌ها به زبان انگلیسی و شناسهٔ استاندارد.
+- **تمرین و مرور:** انتخاب ساختار روی مدل یا از فهرست، بازخورد پاسخ و زمان‌بندی سادهٔ مرور. پیشرفت تمرین در صورت دسترسی به حافظهٔ محلی دستگاه ذخیره می‌شود.
+- **رابط فارسی و انگلیسی:** تغییر زبان رابط؛ ترجمهٔ تمامی نام‌های آناتومی، بیماری‌ها و بخش‌های برنامه هنوز کامل نیست.
+- **دستیار و API دلخواه:** تنظیم سرویس سازگار با API گفت‌وگو و ترجمهٔ درخواستی برخی توضیحات. دسترسی و هزینه به سرویس انتخابی وابسته است.
 
----
+## وضعیت فعلی و محدودیت‌ها
 
-![Study memory: a holographic brain over a projector, every study session, case
-visit and note on it as a point of light, with a body standing beside it and the
-thyroid gland lit inside it in amber. The memory being read is open on the right,
-a case drill about a patient with fatigue, weight gain and an enlarged
-thyroid.](docs/screenshots/study-memory.jpg)
-
-**Your journal, as a map of memories.** Everything you have studied is kept on
-this computer, and *Study memory* shows it as one sequence: a point of light per
-study session, case visit and note, laid on a brain in the order you made them.
-Open one and it is read beside the hologram, while the body on the left lights
-the structures that memory was about — here the thyroid gland, from a case drill
-about a patient who was invented for teaching. Nothing is fetched to draw any of
-it, and nothing leaves the machine.
-
-![The scanner running on a carbon body: a lit ring descends onto the head and
-a plane of light travels down through the figure, giving each structure its own
-colour as it reaches it while a panel names what is being
-crossed.](docs/screenshots/patient-scan.gif)
-
-**The scanner, running.** A plane of light sweeps the body and lights each
-structure *whole* as it reaches it, naming what it crosses on the way — and on a
-carbon body it can give each one its own colour back instead of lighting it.
-There is a still of it further down, with the measured cost of drawing it.
-
-![The atlas with the body surface ghosted, showing the brain and the cerebral
-vessels, while the assistant explains why a smell recalls a memory. Numbered
-pins in the answer link each named structure to the model.](docs/screenshots/atlas-and-tutor.png)
-
-**Ask, and the model answers with you.** The assistant moves the camera, ghosts
-the layers in the way and marks what it is naming, so the explanation and the
-thing being explained are on screen together. Every structure it names carries a
-numbered pin: hover to highlight it, click to fly there.
-
-![The heart isolated with sixty-two vessels folded in, every structure labelled
-in Terminologia Anatomica Latin with leader lines into the
-margins.](docs/screenshots/heart-with-its-vessels.png)
-
-**An organ is studied with its supply, or it is not studied.** The atlas files
-structures by system, so isolating the heart leaves the coronary arteries behind
-under *Systemic arteries*. One button folds in every vessel that reaches what
-you are studying — here, sixty-two of them — and the labelled view turns it into
-a plate you can print.
-
-![The scanner running on a glass body: a lit ring around the standing figure
-with a plane of light across the chest, the vagus nerve pinned inside it, and a
-panel listing the structures the plane is crossing — fascia, intercostal nodes,
-pleura, and 292 more. The renderer's own counters sit beside it: 2,792 draw
-calls, 8 programs, 492 MB.](docs/screenshots/patient-scan.png)
-
-**A plane of light that reads the body, and says what it finds.** Press
-*Scanner* and a ring comes down onto the crown of the head, then travels to the
-feet and back. Every structure the plane reaches lights up *whole* while it
-passes — not the slice of it the plane happens to cut — and a panel names what
-is being crossed as it goes: the six largest, with the rest counted, because a
-plane through the chest passes two hundred structures and listing them all tells
-you nothing.
-
-It is a way of reading rather than an effect. Structures you would never think
-to click on announce themselves on the way past, in the order they actually lie
-in the body — which is the one thing a list of names in a sidebar cannot show
-you. Drag the slider to hold the light where you want it, or press *Hold* to pin
-it there and look. It also runs by itself while the assistant is writing, which
-is the one moment you are waiting with nothing to look at.
-
-**What it costs, since the screenshot is showing you the counters anyway:** no
-extra draw calls, no extra triangles, one extra compiled shader program, and
-0.6 ms on the 95th-percentile frame. Three and a half thousand materials share
-that one program rather than compiling one each — three.js builds its program
-cache key from the source of `onBeforeCompile`, so handing every material the
-same module-level function is the whole trick, and the difference between a mode
-that opens instantly and one that freezes the window for several seconds.
-
-![The scanner taking a section at T8: the ring stops across the chest, the axial
-section opens full size with the anterior at the top, is magnified from 115 cm
-across to 20 cm, and a caliper measures 3.1 cm across the vertebral body before
-the ring moves up the body again.](docs/screenshots/scanner-sections.gif)
-
-**And it reads the body in section.** Let go of the light and the body is drawn
-at that height the way an axial image is read — anterior at the top, the
-patient's left on your right — with the vertebral level named and the structures
-it crosses listed beside it. The wheel steps a centimetre at a time; magnifying
-renders the section again at the narrower width, so it adds detail rather than
-pixels; a caliper measures in the body's own coordinates and keeps each line on
-the level it was drawn on; and the assistant can put the plane at any structure
-you name. Switched to *Front*, the same instrument sections the body at a depth
-instead, seen from the front with the head at the top; and with the light held
-at a level and nothing selected, the assistant knows where it is, so *"what is
-in this part?"* needs no other words. A section is the atlas's geometry cut at a
-height or a depth, not a radiograph, and every picture it produces says so.
-
-![The frontal scanner, put there by the assistant: the ring stands around the
-chest reading ANATRIA 3D AI FRONT, the body is opened at a plane 14 cm in from
-the front with the great vessels and the spine showing through it, the frontal
-section sits in its own panel, and the answer beside it says the plane is
-centred on the left atrium.](docs/screenshots/scanner-front.png)
-
-**The heart, beating.** Switch on *Heartbeat* and the atlas's heart contracts
-in the order of the cardiac cycle, with its heart sounds and a schematic ECG in
-time with it. Nineteen textbook patterns — conduction blocks, atrial and
-ventricular rhythms, valve murmurs, S3 and S4 — change the movement, the trace
-and the sound together; in a glass body each beat sends light along the arteries.
-The assistant can play the one it is explaining. They are illustrations for study
-and teaching at one representative rate, not a model of anyone's heart.
-
-![Four views of the same head at once. The panel the reader drives sits
-top-left with the vessels and nerves of the head and neck; beside and below it,
-anterior, left lateral and superior views of the same structures, lettered at
-the centre of the screen.](docs/screenshots/study-views.png)
-
-**One structure, from four sides at once.** An atlas plate shows a single view
-and leaves the rest to your imagination. Isolate something and the viewport
-splits: the panel you drive behaves exactly as it did — orbit, zoom, click,
-select — and three fixed anatomical views follow it, so all four agree about how
-big the thing is and where you are looking from. Click a letter to close a view;
-the ones left take the space.
-
-It asks for something isolated first, and that is arithmetic rather than
-fussiness. Four views of the whole atlas is four passes over three and a half
-thousand structures; four views of one isolated structure cost four times almost
-nothing.
-
-![The revision coverage map: the body coloured by the reader's own notes and
-sessions, with a legend reading not yet, been here,
-most.](docs/screenshots/revision-coverage.png)
-
-**And it knows what you have already studied.** Notes and sessions are filed
-locally against the structures they were about, so the atlas can be coloured by
-your own revision. Forty notes on the thorax and nothing on the pelvis is
-invisible in a list, and impossible to miss as a shape on a body.
-
-![The settings drawer open beside the four-panel view: the audience and reading
-pace, the answer language, a Claude API key field showing only a placeholder,
-the model picker reporting the stored key valid, and the control bridge switched
-off.](docs/screenshots/settings-and-key.png)
-
-**Your key, your provider, your machine.** Three providers sit side by side and
-you switch between them mid-conversation — the application never picks for you.
-The key you paste goes into your operating system's credential manager, and
-nothing in this window can read it back: no command returns a key, so the
-interface can store one and ask whether one exists, and nothing more. The
-control bridge, which lets another program on this computer move the view, is
-off until you turn it on.
-
-![The Usage tab beside a case drill in Spanish. The left panel lists fourteen
-days of token consumption broken down by model, with stars annotated against
-four of them; the assistant is reasoning through an acute pancreatitis case with
-the duodenum, pancreas and gallbladder pinned to the
-anatomy.](docs/screenshots/usage-by-model.png)
-
-**You can see what it costs, and you are not locked to one provider.** Every
-answer's token count is recorded on your machine and totalled per day and per
-model. No prices are shown anywhere: rates change, and they differ by tier and
-region, so your provider's own dashboard is the authority on the bill. This
-panel answers the other question — *where is it going?*
-
-**The stars are annotations on this screenshot, not something the application
-shows.** They are one maintainer's judgement after real use, and they rate
-**balance rather than quality**: speed, reliability at calling the scene tools,
-and precision when explaining — weighed against price.
-
-- **Three stars — `gemini-3.7-flash`.** The best balance today. Not the best
-  model here: it is fast, it isolates the structure you asked for reliably, it
-  explains accurately enough for study, and it costs a fraction of the others.
-- **Two stars — `claude-haiku-4.5`, `claude-sonnet-5`, `gpt-5.6-terra`.** As good
-  or better at the anatomy and the reasoning. The star they lose is price,
-  nothing else.
-
-The answer in the screenshot is in Spanish while every label around it is in
-English. That is the arrangement described under [Status](#status): the chrome is
-English by decision, and the assistant answers in the reader's own language.
-
-This is a snapshot, not a benchmark. It reflects one person's use on one date,
-model versions move quickly, and the application never picks for you — the three
-providers sit side by side in the interface and you switch mid-conversation.
-
----
-
-## Download
-
-**[Latest release](https://github.com/Nurkan1/Anatria-3D/releases/latest)** —
-Windows and Linux, 64-bit. Four files, for four situations:
-
-| File | Take this one if |
+| موضوع | وضعیت |
 |---|---|
-| `Anatria3D_<version>_x64-setup.exe` | Windows, on your own machine. |
-| `Anatria3D_<version>_x64_en-US.msi` | Windows, deploying across a faculty or a lab through Group Policy or Intune. |
-| `Anatria3D_<version>_amd64.deb` | Debian, Ubuntu, Mint, Kali. Installs to your applications menu. |
-| `Anatria3D_<version>_amd64.AppImage` | Any Linux. No installation and no root — `chmod +x` and run it. |
+| مدل مرد | اطلس موجود دارای ۳٬۴۷۸ ساختار ثبت‌شده است. |
+| مدل زن | اطلس موجود ۲۶۴ ساختار دارد و تنها بخشی از بدن را پوشش می‌دهد؛ مدل کامل و هم‌سطح با مدل مرد نیست. |
+| تطبیق مدل‌ها | تعداد ساختارها معیار کامل‌بودن یا معادل‌بودن نیست. پرونده‌های آموزشی و تطبیق دستی فعلاً محدودند. |
+| بیماری‌ها | فهرست Mondo بیش از ۳۲ هزار اصطلاح دارد. ارتباط بیماری و اندام تنها برای بخشی از موارد موجود است و تطبیق خودکار آن به بازبینی نیاز دارد. |
+| توضیحات بیماری | برای تعدادی از بیماری‌های رایج خلاصهٔ فارسی وجود دارد؛ بسیاری از تعریف‌های منبع به انگلیسی هستند. ترجمهٔ ماشینی، در صورت استفاده، بازبینی‌نشده است. |
+| تمرین | تمرین و مرور فعلاً برای مفاهیم آموزشی ثبت‌شده در برنامه در دسترس است، نه همهٔ ساختارها. |
+| تصویر پزشکی | ورود و هم‌ترازسازی CT/MRI یا فایل DICOM روی مدل فعلاً پیاده‌سازی نشده است. |
+| ورود | صفحهٔ ورود فعلی یک نشست محلی ایجاد می‌کند؛ رمز را با سرور تأیید نمی‌کند و حساب کاربری امن نیست. |
+| امنیت API | تنظیمات API دلخواه، شامل کلید، در حافظهٔ محلی رابط ذخیره می‌شود؛ برای اسرار حساس مناسب نیست و به بهبود نیاز دارد. |
+| نسخهٔ دسکتاپ | سیاست اتصال فعلی Tauri ممکن است درخواست‌های API خارجی یا محلی را مسدود کند؛ اتصال باید در محیط مقصد آزمایش شود. |
 
-The Linux packages are built on Ubuntu 22.04 deliberately, so they also run on
-newer distributions.
+تعدادها مربوط به فایل‌های فعلی مخزن‌اند و با به‌روزرسانی داده‌ها ممکن است تغییر کنند. نشان‌دادن یک عضو مرتبط به معنی تعیین محل دقیق ضایعه یا درگیری قطعی هر دو سمت بدن در یک بیمار نیست.
 
-**Windows installs without administrator rights.** On a university laptop where
-you are not an administrator, you can still install it.
+## شروع سریع: رابط وب
 
-**No account, no key and no internet are needed to start.** All 3,742
-structures — 3,478 in the male atlas, 264 in the female trunk — the
-labelling, cross-sections, exploded views and image export work offline the
-moment you install. Only the AI tutor needs an API key of your own —
-which also means your questions go straight to your provider, never through a
-server of ours. If you have [Ollama](https://ollama.com) and a model installed,
-**Local** gives you a conversation on your own computer with no key at all: it
-talks, but it cannot move the atlas, and its answers are less reliable.
+### پیش‌نیازها
 
-> **Windows will warn you the first time.** Anatria3D is not code-signed — a
-> certificate costs money the project does not spend — so you will see *"Windows
-> protected your PC"*. Click **More info**, then **Run anyway**.
->
-> If you would rather check before trusting it, every release lists the SHA-256
-> of each file. Compare with `certutil -hashfile <file> SHA256`. The source for
-> that exact build is the tag it was cut from, and you can build it yourself.
+- Node.js نسخهٔ ۲۴ یا جدیدتر
+- pnpm نسخهٔ ۹؛ نسخهٔ ثبت‌شده در پروژه `9.14.2` است
+- مرورگر دارای پشتیبانی WebGL
 
-There is **no auto-updater**, on purpose: the application never reaches the
-network by itself. New versions appear on the releases page, and nowhere else —
-Anatria3D is not distributed by email or on request. Because reinstalling is
-something you have to decide to do, [CHANGELOG.md](CHANGELOG.md) says what is
-different in each one.
-
-Every installer is built by
-[GitHub Actions](https://github.com/Nurkan1/Anatria-3D/actions/workflows/release.yml)
-from the tag it is named after, so the path from this source to that file is
-public and checkable. Releases are cut following [RELEASING.md](RELEASING.md).
-
----
-
-## Status
-
-| Phase | Scope | State |
-|---|---|---|
-| 1 | Tauri shell, IPC chain, OS-keyring credentials, Python sidecar | **Done** |
-| 2 | 3D engine, Z-Anatomy asset pipeline, scene store | **Done** |
-| 3 | Pydantic AI agent, scene-control tools, compliance guardrails | **Done** |
-| 4 | Chat panel, model discovery, text↔model references, resizable shell | **Done** |
-| 5 | Study journal, printing, exploded view, depth probe, revision map | **Done** |
-
-Every panel is a production component and the quality gates are green across
-TypeScript, Rust and Python.
-
-**The interface is English only, by decision rather than omission.** Translating
-the chrome would leave the anatomy untranslated beside it, which is the harder
-half and the one that must not be a frozen lookup table — rendering a structure
-for a layperson, a student and a clinician needs three different explanations per
-language. That is the assistant's job, done per turn with the reader's profile in
-hand, and it already answers in the reader's own language even when the
-interface does not offer it.
-
-Open: the female head, thorax and limbs, and female musculature anywhere, which
-need a source that does not exist in the open — see
-[There are two atlases, and the female one is a trunk](#there-are-two-atlases-and-the-female-one-is-a-trunk).
-
----
-
-## Requirements
-
-| Tool | Version | Notes |
-|---|---|---|
-| Node | 24+ | |
-| pnpm | 9+ | |
-| Python | 3.12+ | |
-| Rust | 1.82+ | plus the platform toolchain Tauri v2 needs |
-
-## Setup
+از ریشهٔ مخزن:
 
 ```bash
-pnpm install
-python -m venv .venv
-.venv/Scripts/python -m pip install -e "engine[dev]"   # POSIX: .venv/bin/python
+git clone https://github.com/mohamadreza1368/homman.git
+cd homman
+corepack enable
+pnpm install --frozen-lockfile
+pnpm dev
 ```
 
-The MCP atlas server has a virtualenv of its own and **must not** be installed
-into this one — see [Using the atlas from another
-agent](#using-the-atlas-from-another-agent) for what that costs if it is.
+آدرسی را که در خروجی نمایش داده می‌شود باز کنید؛ در تنظیمات فعلی معمولاً `http://localhost:1420/` است. برای ورود می‌توانید گزینهٔ مهمان را انتخاب کنید.
 
-## Development
+اجرای Vite برای توسعهٔ رابط و مشاهدهٔ مدل است. قابلیت‌هایی که به برنامهٔ بومی Tauri، موتور Python یا ذخیره‌سازی بومی وابسته‌اند ممکن است در مرورگر کامل کار نکنند. استفاده از دستیار API دلخواه نیز به دسترسی شبکه و تنظیمات سرویس بستگی دارد.
 
-The Rust process launches the frozen Python engine, so **the engine must be
-built before the app will start**:
+## اجرای نسخهٔ دسکتاپ برای توسعه‌دهندگان
 
-```bash
-pnpm sidecar:build     # freezes engine/ -> engine/dist/anatria-engine/
+علاوه بر پیش‌نیازهای بالا، Python نسخهٔ ۳٫۱۲ یا جدیدتر، Rust و ابزارهای لازم برای [Tauri 2](https://v2.tauri.app/start/prerequisites/) در سیستم‌عامل مورد استفاده لازم‌اند. در ویندوز، دستورهای زیر را از ریشهٔ مخزن اجرا کنید:
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\python -m pip install -e "engine[dev]"
+pnpm sidecar:build
 pnpm tauri dev
 ```
 
-Rebuild the sidecar after changing anything under `engine/`. Frontend changes
-hot-reload as usual; only Python needs the re-freeze. Note that `pnpm tauri
-build` does **not** do it for you — `beforeBuildCommand` is only `tsc` and Vite,
-so a forgotten re-freeze pairs a new window with whatever engine was last
-frozen. The app says so in the assistant panel when a frame arrives that it
-cannot read, which is what that mismatch looks like from the inside.
+موتور Python باید قبل از اجرای توسعه‌ای دسکتاپ ساخته شود. پس از تغییر کد موتور، آن را دوباره بسازید. برای ساخت نسخهٔ قابل توزیع، پیکربندی `beforeBuildCommand` در [پیکربندی Tauri](src-tauri/tauri.conf.json) موتور و رابط را می‌سازد. پیش‌نیازها و خروجی بومی باید روی سیستم هدف بررسی شوند.
 
-**Test the frozen build, not just the interpreter.** Two failure modes only
-appear after PyInstaller: distributions that read their own version through
-`importlib.metadata` need `--copy-metadata` or raise `PackageNotFoundError`
-from deep inside pydantic-ai's imports, and symbols re-exported through a module
-`__getattr__` resolve under a normal interpreter but not in the bundle.
+## کار با برنامه
 
-## Checks
+1. پس از ورود، از تب **اطلس** مدل بدن را انتخاب کنید.
+2. یک ساختار را از فهرست یا روی مدل انتخاب کنید. پروندهٔ آموزشی، در صورت وجود داده، اطلاعات آن را نشان می‌دهد.
+3. برای تمرین، در اطلس «شروع تمرین» را بزنید، ساختار خواسته‌شده را انتخاب و پاسخ را بررسی کنید.
+4. در تب **بیماری‌ها** نام بیماری یا شناسهٔ آن را جست‌وجو کنید. برای برخی موارد دکمهٔ نمایش ساختار مرتبط وجود دارد.
+5. منبع و وضعیت بازبینی را پیش از استفاده از هر توضیح بررسی کنید. برای موارد بدون ترجمهٔ آماده، ترجمهٔ ماشینی مستلزم سرویس تنظیم‌شده است.
+
+برنامهٔ مرور یک زمان‌بندی ساده است: پاسخ نادرست پس از ۱۰ دقیقه آمادهٔ مرور می‌شود و فاصلهٔ پاسخ‌های درست پیاپی افزایش می‌یابد. این برنامه سنجهٔ قطعی تسلط یا جایگزین ارزیابی آموزشی نیست.
+
+## بررسی و آزمون
 
 ```bash
-pnpm typecheck                                    # TypeScript
-pnpm test                                         # includes the IPC contract test
-
-cd engine && .venv/Scripts/python -m pytest -q    # POSIX: .venv/bin/python
-cd engine && .venv/Scripts/python -m ruff check .
-
-cd src-tauri && cargo test
-cd src-tauri && cargo clippy --all-targets -- -D warnings
+pnpm typecheck
+pnpm test
+pnpm build
 ```
 
-`tests/protocol-contract.test.ts` spawns the project virtualenv to compare the
-Zod and Pydantic definitions of the wire format. It needs the venv to exist.
+برای آزمون‌های موتور Python، پس از نصب محیط توسعه:
+
+```powershell
+.\.venv\Scripts\python -m pytest engine/tests
+```
+
+برخی آزمون‌های قرارداد به محیط Python پروژه و برخی قابلیت‌های بومی به ابزارهای Tauri نیاز دارند. موفقیت ساخت وب به‌تنهایی نشان‌دهندهٔ سلامت کامل نسخهٔ دسکتاپ یا درستی پزشکی محتوا نیست.
+
+## معماری مخزن
+
+```text
+src/                       رابط React و نمایشگر Three.js
+  features/anatomy/        مفاهیم، پروندهٔ آموزشی و تمرین
+  features/diseases/       کتابخانه و توضیحات بیماری‌ها
+  features/viewer/         صحنه، انتخاب ساختار و اسکنر
+  stores/                  وضعیت برنامه و ترجیحات محلی
+src-tauri/                 پوسته و قابلیت‌های بومی Tauri / Rust
+engine/                    موتور Python و قراردادهای دستیار
+public/anatomy/            مدل‌ها، فهرست ساختارها و مجوز دارایی‌ها
+public/diseases/           فهرست‌ها، توضیحات و انتساب منابع بیماری
+tools/                     ابزارهای ساخت داده و پردازش مدل
+```
+
+رابط با React، TypeScript، Zustand و React Three Fiber ساخته شده است. پوستهٔ دسکتاپ Tauri/Rust است و موتور Python به‌صورت فرایند جداگانه اجرا می‌شود. شناسه‌های داخلی هومان در پرونده‌های آموزشی از شناسه‌های فایل مدل جدا نگهداری می‌شوند؛ فعلاً این لایه فقط بخشی از ساختارها را پوشش می‌دهد.
+
+## منابع و بازتولید داده‌ها
+
+- فهرست‌ها و تعریف‌های بیماری از [Mondo Disease Ontology](https://mondo.monarchinitiative.org/) و [Disease Ontology](https://disease-ontology.org/) تهیه شده‌اند.
+- ارتباط‌های آناتومی با استفاده از [Uberon](https://obophenotype.github.io/uberon/) و تطبیق با مدل‌های موجود ساخته شده‌اند. تطبیق خودکار معادل تأیید متخصص نیست.
+- نسخه‌ها، مجوزها و توضیح تغییرات داده در [NOTICE داده‌های بیماری](public/diseases/NOTICE.txt) آمده‌اند.
+- اسکریپت‌های `tools/build-mondo-index.mjs`، `tools/build-disease-sites.py` و `tools/build-disease-definitions.py` داده‌های استخراج‌شده را از فایل‌های منبع می‌سازند. پیش از اجرای آن‌ها نسخه و مجوز منابع را بررسی کنید.
+- خلاصه‌های آموزشی فارسی و برخی ارتباط‌های دستی در کد پروژه نگهداری می‌شوند و نیازمند بازبینی تخصصی‌اند.
+
+## حریم خصوصی و هوش مصنوعی
+
+انتخاب مدل و مشاهدهٔ داده‌های محلی نیازی به ارسال آن‌ها به سرویس هوش مصنوعی ندارد. در صورت استفاده از سرویس دلخواه برای گفت‌وگو یا ترجمه، متن درخواست به همان سرویس ارسال می‌شود. پیش از استفاده از سرویس خارجی، شرایط، هزینه و سیاست نگهداری دادهٔ ارائه‌دهنده را بررسی کنید و اطلاعات واقعی بیمار را وارد نکنید.
+
+کلید API دلخواه در `localStorage` رابط ذخیره می‌شود. این محل جایگزین مخزن امن رمز سیستم‌عامل نیست. هیچ سرویس یا مدل رایگان خاصی به‌صورت پیش‌فرض تضمین نشده است.
+
+## مجوزها و انتساب
+
+- **کد برنامه:** [BUSL-1.1](LICENSE)، شامل شرایط استفاده و تاریخ تغییر مجوز مندرج در فایل. مجوز پایه محدودیت‌هایی برای استفادهٔ تولیدی، تجاری و تغییر برند دارد؛ آن را کامل مطالعه کنید.
+- **اطلس مرد:** مشتق از Z-Anatomy و BodyParts3D، با شرایط انتساب و اشتراک مشابه؛ جزئیات در [مجوز دارایی‌ها](public/anatomy/LICENSE) و [اطلاعیهٔ آناتومی](public/anatomy/NOTICE).
+- **اطلس زن:** برگرفته از NIH Human Reference Atlas / Visible Human Female، با مجوز و انتساب ذکرشده در همان فایل‌ها.
+- **داده‌های بیماری:** Mondo با CC BY 4.0، دادهٔ Disease Ontology با CC0 و Uberon با CC BY 3.0؛ جزئیات نسخه‌ها در [NOTICE](public/diseases/NOTICE.txt).
+- **پروژهٔ پایه و وابستگی‌ها:** [Anatria3D](https://github.com/Nurkan1/Anatria-3D) و [اطلاعیه‌های شخص ثالث](THIRD-PARTY-NOTICES.txt).
+
+## مسیر توسعه
+
+اولویت‌های فعلی شامل تکمیل پوشش مدل زن، گسترش مفاهیم و ترجمه‌های فارسیِ بازبینی‌شده، بهبود عملکرد و کیفیت تجربهٔ آموزشی، افزایش محتوای تمرین و مطالعه، و طراحی مسیر ورود تصاویر پزشکی است. هیچ‌یک از این موارد تا زمان پیاده‌سازی و اعتبارسنجی، قابلیت کامل‌شده محسوب نمی‌شود.
 
 ---
 
-## Architecture
-
-```
-React (webview)          Rust (native)              Python (sidecar)
-─────────────────        ──────────────             ─────────────────
-invoke('ask_agent')  ──► reads key from OS      ──► Pydantic AI agent
-  (no api_key)           keyring, writes             tools validated against
-                         NDJSON to stdin             the loaded manifest
-                                                          │
-sceneStore  ◄── emit ◄── reads stdout lines  ◄──── NDJSON events
-  │                                                 (text deltas +
-  └─► R3F scene reacts                               scene commands)
-```
-
-Three properties this buys, each deliberate:
-
-**The API key never enters JavaScript.** Rust reads it from the OS credential
-store and injects it into the sidecar's stdin. No Tauri command returns a key —
-the webview can store one and ask whether one exists, nothing more.
-
-**Engine state is asked for, not awaited.** `ready` is emitted once, and Rust
-spawns the sidecar in `setup()` — before the window has run a line of
-JavaScript. A frontend that only listens is betting on winning that race, and
-losing it leaves the composer disabled with no way back. `EngineHandle`
-therefore remembers both the readiness and the reason it is absent, and
-`engine_status` answers whatever already happened; the event carries whatever
-happens next. A failed spawn is the sharper case — reported from `setup()`, it
-is *always* lost, so a missing engine binary would otherwise read as an
-unexplained "offline".
-
-**No network surface.** The engine speaks NDJSON over stdio rather than serving
-HTTP on localhost, which any other process on the machine could reach. This
-process holds the user's API keys; it has no port.
-
-**The AI cannot invent anatomy.** Every scene-control tool validates its
-`organ_id` against the manifest actually loaded, and raises `ModelRetry` on a
-miss. A hallucinated identifier never reaches the viewport.
-
-The app ships with **no shell permission at all** — the engine is spawned from
-Rust with `std::process::Command`, so the webview has no path to executing
-anything. See [`src-tauri/src/sidecar.rs`](src-tauri/src/sidecar.rs) for why
-that is also what makes PyInstaller `--onedir` workable.
-
-Found a hole in any of that? [`SECURITY.md`](SECURITY.md) says where to send it
-— privately, not as a public issue.
-
-### Layout
-
-```
-src/            React 19 + TypeScript + Tailwind v4
-  lib/schemas.ts    Zod wire format — one of two protocol owners
-src-tauri/      Rust: process ownership, credentials, event forwarding
-  src/study_db.rs   SQLite study journal — notes, sessions, case grades
-engine/         Python: NDJSON transport, agent, report compiler
-  anatria_engine/protocol.py   Pydantic wire format — the other owner
-public/anatomy/ Meshes and labels — two atlases, two licences (see NOTICE)
-tests/          Cross-language contract test
-tools/          Asset pipeline, and the MCP atlas server (own virtualenv)
-```
-
-### Protocol ownership
-
-The wire format is defined twice — Zod in `src/lib/schemas.ts` and Pydantic in
-`engine/anatria_engine/protocol.py` — and nothing in either type system connects
-them. `tests/protocol-contract.test.ts` is that connection: it derives a
-normalised surface from each and asserts they match. **Change one side, run the
-tests.** Rust deliberately models only the two fields it needs (`provider`,
-`request_id`) so the protocol has two owners, not three.
-
----
-
-## How the assistant drives the viewport
-
-Asking "how does the heart pump blood?" produces a guided tour, not a wall of
-text. The agent calls `focus_organ` on each structure as it reaches it, and the
-camera moves **while** the explanation is still streaming.
-
-That interleaving is structural, not a timing trick. A tool writes its scene
-command to stdout the instant the model calls it, inside the tool body — the
-commands are not collected and flushed at the end of the turn. Text deltas ride
-the same stream, so the two interleave naturally on the way to the viewport.
-
-### The tools
-
-| Tool | Effect |
-|---|---|
-| `focus_organ` | Move the camera to a structure and select it |
-| `isolate_structures` | Show only these, hide the rest |
-| `show_all_structures` | Clear isolation and section |
-| `set_layer_visibility` | Switch a whole system on or off |
-| `apply_pathology_overlay` | Tint a structure by severity (0–1) |
-| `clear_pathology_overlays` | Remove every overlay |
-| `set_cross_section` | Cut the model on a plane to reveal the inside |
-
-The chat panel carries conversation history across turns, so a follow-up like
-"and why?" reaches the model with the thread attached. Only *completed*
-non-empty turns are replayed — feeding back a failed or half-streamed answer
-would teach the model that broken turns are normal. Tool calls from earlier
-turns are not replayed either: the viewport has moved on, and stale scene
-context invites reasoning about a scene the user is no longer looking at.
-
-**Every tool validates against the structures actually loaded** and raises
-`ModelRetry` on a miss, naming close matches. A hallucinated `organ_id` never
-becomes a scene command — it is turned back at the tool boundary and the model
-tries again with the real inventory in hand. `test_scene_tools.py` asserts this
-directly; it is the property the whole design exists to guarantee.
-
-### Linking the answer to the model
-
-Where the assistant names a loaded structure it appends `[[organ_id]]`. The
-panel turns each marker into a numbered pin: hovering highlights that mesh,
-clicking flies the camera to it, and a legend under the answer lists every
-structure it pointed at. A long explanation stays anchored to what is on screen
-instead of asking the reader to find it themselves.
-
-Markers resolve against the structures actually loaded. Nothing validates ids
-the model merely *writes in prose* — only the ones it passes to tools — so an
-invented id is stripped rather than left as literal brackets mid-sentence. Copy
-strips the markers too, along with the space in front of them, so pasted text is
-clean.
-
-Pins write to the same `sceneStore` the assistant's tools do, so clicking a pin
-and the model calling `focus_organ` leave the viewport in identical states.
-
-### Choosing a model
-
-The settings drawer lists the models a stored key can actually reach, fetched
-from the provider. That call is also the key check: the request that fills the
-picker is the one that proves the credential works, so there is no separate
-"test key" button that could pass while real questions fail.
-
-This matters in practice because a busy model answers HTTP 503, which is not a
-broken key and not our bug. `service_unavailable` is its own error code for
-exactly that reason — the user's move is to retry or pick another model, and
-"internal error" would leave them with neither. Defaults avoid preview models
-for the same reason: those are the ones that saturate.
-
-### Instruction layers
-
-Composed in this order every turn, safety first so nothing later can argue past
-it:
-
-1. **Safety** — the MDR boundary. Not tunable, asserted by `test_prompts.py`
-   across all nine profile × language combinations.
-2. **Scene** — the assistant is expected to show, not only tell.
-3. **Case** — only in drill mode: present a scenario, withhold the answer, then
-   grade the attempt. Composed *below* safety, never in place of it.
-4. **Profile** — depth and register for layperson / student / clinician.
-5. **Language** — the output language, plus how to render Latin nomenclature
-   for this particular reader.
-6. **Inventory** — the structures currently loaded, in `organ_id — Latin (English)` form.
-
-### The study journal
-
-Notes, conversations and case grades are kept in a local SQLite file in the
-application's data directory. Nothing about it is remote and nothing about it is
-optional to the rest of the app.
-
-It lives in **Rust**, not in the Python sidecar, although Python has `sqlite3`
-built in. The sidecar is the process that holds API keys and talks to a model
-provider, and it is the one killed and respawned on a crash. A student's own
-notes want neither property. `rusqlite`'s `bundled` feature compiles SQLite into
-the binary, so there is no system library to locate on any of the three targets.
-
-Opening the journal cannot fail the application. A database that will not open
-is remembered as unavailable and reported per call, so the atlas, the viewport
-and the assistant all keep working — a locked file costs the student their
-history, never their lesson. `studyStore` swallows its own write failures for
-the same reason: saving runs from an engine-event handler, and a rejection
-escaping there would take the answer down with it.
-
-Conversations are filed as they happen, one row per finished turn, indexed by
-the structures that were selected when the question was asked. That index is
-what makes *"what have I already studied about the left ventricle?"* a lookup
-rather than a search.
-
-An answer that moved the model files **what it did**, beside what it said. A
-question can isolate a region, take the body to glass and light ten structures,
-and the paragraphs afterwards describe that arrangement — so a transcript
-keeping only the words was a description of something the reader could no longer
-see. The recording is read back through the same schema the live commands pass,
-and one this build cannot read is dropped whole rather than restored in part: a
-view rebuilt from half an answer would be read as the whole of it.
-
-**The journal travels.** It is the one thing in the app that cannot be
-recomputed — an answer can always be asked again, a year of somebody's own notes
-cannot — so it exports to a single JSON file and imports on another machine.
-
-JSON rather than a copy of the `.db`: a file copy cannot be merged into an
-existing journal, breaks the moment two machines are on different schema
-versions, and is opaque to anyone deciding whether to hand it to a class.
-
-Import **merges, never replaces**, and is idempotent — someone will double-click
-the file twice. Sessions key on their id, which was a UUID from the start; notes
-key on a `uuid` added in schema v2 and backfilled with SQLite's own `randomblob`,
-because a rowid is not an identity once it leaves the machine that issued it.
-Conflicts resolve to the later edit, and a transcript is only replaced by a
-longer one — a conversation only grows, which makes message count a better
-signal than a timestamp that also moves when a case is graded.
-
-**Rust opens the file dialog, not the webview.** A command taking a path would
-hand the renderer a general write-anywhere capability, which is the thing this
-design has avoided everywhere else.
-
-**Case drills** are ordinary sessions with `kind = 'case'` and a score. The
-score comes from a tool the agent can only call in drill mode — see
-`engine/anatria_engine/case_tools.py` — and is validated at that boundary
-(0–100, with a written justification long enough to still mean something weeks
-later). It is a number rather than prose because it is the part the journal can
-average and chart, and that cannot be recovered from a paragraph afterwards.
-
-### Why nomenclature is not localised
-
-The manifest carries Terminologia Anatomica Latin and clinical English only.
-Rendering *Ventriculus sinister* for a layperson, a student and a clinician
-needs three different explanations, in each of three languages — that is not a
-lookup, it is teaching. A frozen translation table would serve all three
-audiences the same words and leave a pile of unreviewed medical terms in the
-repo. The agent does it per turn with the profile in hand.
-
-### The vendored term list has defects, and they are corrected on the way in
-
-Both atlases take their Latin from one file, `tools/asset-pipeline/vendor/TA2.csv`,
-which ships with Z-Anatomy. It is not a clean copy of the standard. An audit of
-every label against Terminologia Anatomica found **61 terms** that were
-misspelled, truncated, or naming a different structure from the English beside
-them — 114 structures in the male atlas and 2 in the female. Four kinds:
-
-| Defect | Example | Correct |
-|---|---|---|
-| French diacritics from the neighbouring column | `Nodi sacrales latérales` | `Nodi sacrales laterales` |
-| The row's synonym run into the main term | `Arteria transversa colli arteria transversa cervicis` | `Arteria transversa colli` |
-| Letters dropped or misread | `Venae pudendales extemae` | `Venae pudendales externae` |
-| The identifying word lost | `Arteria pancreaticoduodenalis` | `Arteria pancreaticoduodenalis inferior` |
-
-The last kind is the dangerous one: what remains is a real term for something
-else, so it reads as correct. The worst single case had the articular capsules of
-the **metatarsophalangeal** joints carrying the **glenohumeral** capsule's Latin
-— a label in the foot naming a joint in the shoulder.
-
-**The vendored file is never edited.** It arrives from upstream, and editing a
-vendored standard makes every future update a merge conflict while hiding the
-defect from whoever inherits the repo. Corrections are applied on read, in
-`tools/asset-pipeline/ta2.mjs`, where each one carries its evidence. The bar is a
-defect provable *from the file's own neighbouring rows* rather than from an
-outside citation. Row 4420's `Ramus fontale` is settled by row 4433, which spells
-the frontal branch of the middle meningeal artery `Ramus frontalis`: that fixes
-both the dropped letter and the ending, since *ramus* is masculine. Evidence of
-that shape is checkable by the next reader without leaving the repository.
-
-Corrections to rows the vendored file **added past the end of the standard** are
-kept in a separate table. There is nothing to check those against, so the
-replacement is our own composition following the file's sound rows; merging the
-two lists would let a composition of ours be read as a citation of TA2. Defects
-in that block that would need a ruling on Latin grammar are recorded and left
-alone rather than guessed at.
-
-Two tests hold the line: no shipped Latin term may carry a diacritic, and none
-may repeat a word back to back. Those are the signatures every defect in this
-batch left behind — and the first three were found by reading a printed plate,
-not by any build.
-
----
-
-## Using the atlas from another agent
-
-The manifest is also served over the **Model Context Protocol**, so an agent
-that is not this application's — Claude Code, Codex, Gemini CLI — can look
-structures up directly. No running application, no API key, no network.
-
-| Tool | Answers |
-|---|---|
-| `search_structures` | "what is the id for the left atrium?" |
-| `describe_structure` | the record, plus the muscle's origin and insertion areas |
-| `list_systems` | each system's size and where in the tree it sits |
-| `browse_hierarchy` | one level of the atlas tree at a time, paged |
-| `atlas_info` | version, structure count, licence, credit |
-
-[`tools/anatria_mcp/README.md`](tools/anatria_mcp/README.md) has the setup for
-each client and the limits in full. Three of them decide whether an answer from
-this server is trustworthy: the index is **TA2 Latin, English and identifiers
-only**, so a query in any other language returns nothing and that is not
-evidence of absence; the manifest records **no relationships**, so nothing here
-says what supplies, innervates or borders a structure; and the two atlases are
-separate works under different licences, so `atlas_info` is the only correct
-place to read one from.
-
-**Why, when the application already has an assistant.** Because the atlas is
-reference data and useful with no viewport at all — and because a reader who
-pays for a coding subscription already has an agent. An API key bought to ask
-the same questions inside this application is a second purchase for the same
-model, which is a reason to reach for MCP that has nothing to do with the
-anatomy.
-
-**It can also drive the application, once you pair it.** Fifteen further tools
-appear — the same fifteen the built-in assistant has, isolating, illuminating,
-ghosting, sectioning and tracing — and they act on the window you have open.
-That is the point rather than a bonus: an agent reaching the atlas from outside
-should be able to do what the assistant inside can do.
-
-Setting it up is `"ANATRIA3D_BRIDGE": "1"` in the client's configuration and a
-switch in the settings drawer. Nothing is copied between the two: the pipe is
-named for the account that created it, and the server runs as that account, so
-it finds the window by itself. Without that variable the fifteen tools are
-**not registered at all**, so a client that was not asked to drive is never
-offered them.
-
-The switch is the consent, and it is where consent belongs — a thing the reader
-can see, with a `bridge` badge in the header for as long as it is on, and
-turning it off takes the pipe with it. The transport is a named pipe whose
-permissions admit your account and no other, and it carries scene commands and
-nothing else: the frame type is checked, so nothing arriving over it can
-impersonate part of a conversation.
-
-There is no token. There was, and it cost a copy-and-restart every session
-while buying nothing the pipe's own permissions did not already give — any
-program running as you could read the journal and the case files long before it
-could move a viewport.
-
-**It moves the model and records nothing.** This is the one thing to understand
-before choosing between the two paths, and it is a design decision rather than
-an omission. The bridge carries scene commands and nothing else, so a session
-driven over MCP leaves no trace here: no saved conversation, no note, no case,
-no coverage, no token accounting. The conversation lives in the other program's
-window and stays there.
-
-Everything that makes Anatria3D a study tool rather than a viewer — the journal,
-the case files, what you have covered and what you have not — is built by the
-assistant inside this window, on your own API key. **If you are here to study,
-use the key.** The bridge is for driving the atlas from an agent you already
-have, and it is worth exactly that.
-
-Neither half can read the study journal, the case files or the keys. There is
-no tool for any of them.
-
-The reason it is worth the two steps: a scene command from the bridge takes the
-**same path** as one from the built-in assistant — the same event, the same
-schema, the same store — so there is no second way of drawing the scene that
-could drift from what the window shows.
-
-### Its virtualenv is load-bearing
-
-Never install the MCP SDK into the repository's `.venv`.
-
-`engine/build_sidecar.py` freezes the engine with `--collect-all=pydantic_ai`,
-and `pydantic-ai-slim` declares an `mcp` extra whose module already sits inside
-that package. Install the SDK beside it and PyInstaller follows the import:
-**73 MB** of `cryptography`, `starlette`, `pywin32` and `opentelemetry` land in
-the shipped sidecar, for a feature the sidecar does not use. The same mechanism
-took the sidecar from 97 MB to 434 MB once already, in an experiment where the
-size was the finding. Isolation is the fix, and it only holds while nobody
-installs the SDK in the root.
-
-The seam between the two environments is
-[`engine/anatria_engine/atlas_search.py`](engine/anatria_engine/atlas_search.py),
-**standard library only** for that reason — a dependency there would have to be
-satisfied twice. It is also the reason the search ranking cannot drift between
-the two: `engine/tests/test_atlas_search.py` passes the engine's own structure
-type straight into the shared function and asserts the order.
-
----
-
-## Regulatory positioning
-
-Anatria3D is positioned as an educational tool and is built to stay outside the
-scope of EU MDR 2017/745. Under Rule 11, software intended to inform diagnostic
-or therapeutic decisions is a regulated medical device. Accordingly:
-
-- The AI is instructed, in every language and every user profile, to decline
-  advice about a specific person and to redirect to a healthcare professional.
-- There is no field for a real person anywhere in the application. A case drill
-  holds a sex, an age, a height and a weight, and every one of them is invented
-  by the reader for teaching — the composer says so where they are typed, and
-  says that the file is sent to the reader's own AI provider with each turn.
-- Generated documents are titled *Educational Summary*, never *Clinical Report*.
-- The disclaimer layer is not a preference and cannot be dismissed.
-- The first-run guide opens on what the tool is *not* for, before it explains a
-  single control. A reader who learns the boundary before they learn to rotate
-  the model never has to unlearn anything.
-
-The clinician profile still goes to full academic depth — pathophysiology,
-differentials as study material. It just never addresses a real patient.
-
-**A printed page says when a model wrote part of it, and where that knowledge
-stops.** A PDF containing assistant answers, or a case the assistant graded,
-carries a disclosure at the foot of every page. It appears only when something on
-the page was *recorded* as generated — a notebook of the reader's own notes
-carries nothing, because there is nothing to disclose.
-
-The notice has two halves and they print together. The second says Anatria3D does
-not record where a note's text came from, and it is what makes the first honest:
-alone, "parts of this were generated by AI" quietly certifies that the remainder
-was not, which is a claim the application cannot support. It knows a model wrote
-an answer because it recorded the model id at the time; about text typed into a
-note it knows nothing, and cannot — a paragraph pasted out of a chatbot and one
-copied from a textbook arrive through the same keystroke. For a supervisor
-relying on the footer, a certification we cannot back is worse than no footer.
-
-Two mechanisms that appear to close that gap are refused, and the reasons sit in
-the source beside the notice so nobody adds them later in good faith.
-Classifying prose as machine-written is unreliable in general and systematically
-wrong on writers working outside their first language, which is most of this
-atlas's readers; a study aid that accuses a student on a coin toss has no
-business doing so. Recording that a paragraph was pasted answers a different
-question — pasting is evidence of a textbook or a lecture slide, not of a model
-— and printing it would turn a notebook into surveillance.
-
-Under the EU AI Act this is not a deployer obligation: Article 50(4) reaches text
-published to inform the public on matters of public interest, which a student's
-own study record is not, and the machine-readable marking of Article 50(2) falls
-on the provider of the generative system. The disclosure is here because a page
-outlives the app that printed it, not because a regulator asked for it.
-
-**Exports carry the build that made them.** The version is on the footer of every
-printed page and every exported plate. Two plates of the same structure can
-legitimately disagree — this release corrected 61 Latin terms — and without the
-build on the image there is no way to tell a corrected plate from a stale one.
-
-**Case drills are the same boundary, not an exception to it.** A drill reasons
-about a patient, so it is the feature most easily mistaken for clinical use. The
-instructions therefore require the assistant to state in its opening line that
-the patient is invented for teaching, and to abandon the drill outright the
-moment the user describes a real person — themselves, a relative, someone in
-their care. `test_prompts.py` asserts that the safety block is composed into
-every drill, in every profile and language, and that it precedes the case rules
-rather than following them. The journal stores the student's own answers and the
-grades they earned; there is no field anywhere for a real person's data.
-
-These constraints are load-bearing. Removing them changes the product's
-regulatory classification.
-
----
-
-## Assets and licensing
-
-Geometry and nomenclature come from real anatomical atlases — no placeholder or
-synthesised shapes — and `public/anatomy/` holds two of them under **two
-different licences**:
-
-- `manifest.json` and `*_male.glb` are **CC BY-SA 4.0**, adapted from
-  [Z-Anatomy](https://www.z-anatomy.com/), which derives from BodyParts3D
-  (DBCLS, CC BY-SA 2.1 JP).
-- `manifest_female.json` and `*_female.glb` are **CC BY 4.0**, from the
-  [NIH Human Reference Atlas](https://humanatlas.io/), derived from the Visible
-  Human Female (NLM).
-
-Neither share-alike nor attribution extends to this application's source code,
-which aggregates rather than adapts them. The two must not be merged into one
-file — that would impose share-alike on material whose authors chose attribution
-alone. Full attribution in [`public/anatomy/NOTICE`](public/anatomy/NOTICE) and
-the file-by-file breakdown in
-[`public/anatomy/LICENSE`](public/anatomy/LICENSE).
-
-### There are two atlases, and the female one is a trunk
-
-The Body switch above the systems list changes over between them.
-
-| | Male | Female |
-|---|---|---|
-| Source | Z-Anatomy → BodyParts3D | NIH Human Reference Atlas → Visible Human Female |
-| Coverage | Whole body, every system | Spine, abdomen, pelvis and breast |
-| Structures | 3,478 | 264 |
-| Licence | CC BY-SA 4.0 | CC BY 4.0 |
-
-**The female atlas is not a female body, and the application says so where you
-choose it.** It holds the vertebral column from C1 to the coccyx, the pelvic
-girdle, the uterus with its cervix and walls, both uterine tubes down to the
-fimbriae, the ovaries, the vagina, sixteen ligaments and peritoneal folds, the
-bladder and ureters, both kidneys, the liver with its impressions and ligaments,
-the biliary tract, the pancreas, the spleen, the small and large intestine,
-sixty vessels — the pelvis, the coeliac trunk, the mesenteric tree and the whole
-portal system — and the breast, which exists nowhere on the male
-atlas, and is filed under the integumentary system where Terminologia Anatomica
-files it.
-
-**What it lacks, it lacks in the source:** no skull, no ribcage, no limbs, and
-no skeletal muscle or peripheral nerve at all. The HRA models organs, not a
-body.
-
-Where it is *better* than the male atlas is worth saying too, because the
-structure count invites the opposite assumption. Where the two overlap, the
-female viscera are modelled far more finely:
-
-| System | Male | Female |
-|---|---|---|
-| Renal | 8 | **58** |
-| Reproductive | 14 | **36** |
-| Digestive | 47 | **50** |
-| Cardiovascular (abdomen and pelvis) | — | **60** |
-| Integumentary (the breast) | 0 | **16** |
-
-A kidney there opens into capsule, hilum, cortex, columns and every pyramid
-with its papilla; on the male side a kidney is one mesh.
-
-**This atlas is one woman, not an average, and the interface says so.** The
-male atlas is an idealised composite; this is a 59-year-old subject, frozen and
-sectioned supine. Two differences from the textbook are measurable in the
-shipped geometry, and both are surfaced where the reader chooses the body and
-again in the assistant's instructions — which are told to give the classical
-teaching value first and describe this body second:
-
-- **Six lumbar vertebrae**, L1 to L6, where most people have five. A real
-  variant, in roughly one person in twenty.
-- **The kidneys span L1 to L5**, against the vertebrae shipped beside them,
-  where the classical description is T12 to L3 — and the left is 2.7 cm longer
-  than the right. Cadaveric position and the loss of muscle tone account for
-  much of the descent; renal ptosis is commoner in older women. The capsule was
-  checked against the outer cortex to rule out perirenal fat inflating the
-  measurement: they co-extend to within a millimetre.
-
-Neither is corrected. The geometry is the published NIH data, unaltered — a
-student who is not told, however, would measure the renal level here and be
-marked wrong for it.
-
-That is a real limit and it is stated rather than worked around, because the
-alternative is worse: a Male/Female toggle that promises a body and delivers a
-trunk reads as a failed download, and takes the credibility of everything else
-on screen with it.
-
-The two are separate atlases rather than one model with a switch, and that is
-not an implementation detail. They are **two different people** — a Japanese
-male MRI subject and the Visible Human Female — so no organ of one is positioned
-to sit inside the other. Switching reloads the scene because it genuinely is a
-different body.
-
-#### Why Z-Anatomy alone could not do it
-
-Z-Anatomy publishes exactly one body and
-[describes it](https://github.com/Z-Anatomy/Models-of-human-anatomy) as "Human
-male model". A request for a female model has been open upstream
-[since December 2023](https://github.com/moueza/Z-Anatomy/issues/20) with no
-reply. The `Female genital system'` collection exists in the source blend and is
-empty — as is `Male genital system'`; the male organs arrive through a different
-branch of the tree.
-
-The expensive part was never the geometry. The manifest is derived from
-Z-Anatomy's collection names crossed with `TA2.csv`, which is what produces
-`organ_id`, the TA2 Latin, the clinical English, the system and the anatomical
-hierarchy — everything the right-click menu, region isolation and the agent's
-scene tools depend on. A mesh dump without that labelling would give none of it.
-The HRA needed that labelling built by hand; see below.
-
-#### It is not fixable from upstream, and here is the check
-
-The obvious hope is that the geometry exists further up the chain — Z-Anatomy
-derives from BodyParts3D, which is indexed by FMA identifiers, so a script could
-map them across. That hope does not survive contact with the data.
-
-BodyParts3D publishes the index of every organ it holds a mesh for. Both trees
-together are **4,273 entries**, and they contain **no female reproductive
-structure at all** — no uterus, ovary, vagina, vulva, clitoris, uterine tube,
-endometrium, cervix or broad ligament. The male ones are there with their mesh
-ids, which is what proves the search rather than the spelling:
-
-```
-FMA7210   BP8579   testis
-FMA9600   BP8469   prostate
-FMA18247  BP8793   glans penis
-FMA18255  BP8142   epididymis
-FMA19386  BP8531   seminal vesicle
-```
-
-Checkable in a browser:
-[`isa_parts_list_e.txt`](https://dbarchive.biosciencedbc.jp/data/bodyparts3d/LATEST/isa_parts_list_e.txt)
-and
-[`partof_parts_list_e.txt`](https://dbarchive.biosciencedbc.jp/data/bodyparts3d/LATEST/partof_parts_list_e.txt).
-
-**The trap is that FMA is an ontology, not a mesh library.** It carries a
-concept id for the uterus whether or not anybody ever modelled one, so a
-documentation search finds the identifiers and reports success. Z-Anatomy fell
-into the same gap from the other side: its blend declares twelve female
-collections — `Uterus'`, `Ovary'`, `Vagina'`, `Vulva'`, `Clitoris'`,
-`Uterine tube'`, `Broad ligament of uterus`, `Uterovaginal plexus`,
-`Uterine artery'`, `Ovarian artery'`, `Vaginal artery'` — and every one of them
-holds zero objects. They built the taxonomy from the concepts and had nothing to
-put in it.
-
-So the limitation is not a gap in this pipeline. **BodyParts3D was built from a
-male body**, and everything downstream of it inherits that.
-
-#### What unblocked it
-
-A different source. The test was deliberately narrow, because it is the
-conjunction that matters and every near-miss passes one half of it: **a model
-must carry uterus, ovaries, uterine tubes and cervix as separate named meshes,
-*and* be available under CC0, CC BY or CC BY-SA** — no non-commercial clause, no
-agreement to sign, no fee.
-
-| Candidate | Has the organs | Licence | Verdict |
-|---|---|---|---|
-| [**Human Reference Atlas**, HuBMAP / NIH](https://humanatlas.io/3d-reference-library) | Yes — as separate named meshes, with UBERON/FMA ids | **CC BY 4.0** | **Passes.** This is what ships |
-| [**Ella**, IT'IS Virtual Population](https://itis.swiss/virtual-population/) | Yes — fully segmented | Signed agreement, non-commercial, paid commercial tiers | Fails on licence |
-| [**Maastricht pelvis**, AnatomyTOOL](https://anatomytool.org/) | Yes, but pelvis only | CC BY-NC-SA 4.0 | Fails on licence *and* scope |
-| [**Visible Human Female**, NLM](https://www.nlm.nih.gov/research/visible/getting_data.html) | No meshes — 40 GB of cryosections | Open terms | Research source, not integrable |
-| [**Denver lower extremity**](https://digitalcommons.du.edu/visiblehuman/1/) | Lower limb only, 129 GB | CC BY 4.0 | Wrong region |
-
-The misreading to head off, because it is the common one. *"Anatria3D is given
-away, so a non-commercial source is fine"* — it is not. **NC does not restrict
-what you charge; it restricts what you may grant onward.** The male atlas is
-published under CC BY-SA 4.0, which permits commercial use, and that permission
-cannot be granted over material that withholds it. The conflict is between the
-two licences, not between the licence and a price.
-
-Worth recording from the same search: IT'IS require the face and the genitals to
-be pixelated in published images of Ella. People who work with models derived
-from real individuals treat re-identification as binding, and anyone reaching
-for medical imaging as a shortcut — segmenting a CT and shipping the result —
-inherits that obligation along with the geometry.
-
-#### What the HRA cost to use
-
-Its meshes were ready; its **names were not**. The HRA is built for mapping cell
-types, so it labels structures with UBERON and FMA terms, and those labels are
-unusable as they stand for teaching:
-
-- **They are not unique.** 888 structures carry 508 distinct labels. Six pelvic
-  meshes are labelled `compact bone tissue` and six `trabecular bone tissue` —
-  the tissue, not the bone. Joining on the label would merge the ilium with the
-  ischium.
-- **They word structures differently from TA2.** `uterine cervix` is TA2's
-  *Cervix of uterus*; `trigone of urinary bladder` is *Trigone of bladder*;
-  every pelvic vessel TA2 calls *anorectal*, the HRA calls rectal. A naive match
-  resolved 32 of 70.
-- **A few are wrong.** One vein carries the label and ontology id of the
-  corresponding artery.
-
-So every structure was matched by hand to a TA2 term in
-[`hra-selection.mjs`](tools/asset-pipeline/hra-selection.mjs), and the build
-**fails** if any term is absent from `TA2.csv`. Eleven structures in the source are
-deliberately not shipped — the uterine horn, a cervicovaginal junction the
-source declines to label, the duodenal ampulla, an inferior pancreaticoduodenal
-vein, two segmental hepatic arteries and five placental structures — because
-TA2 does not list them,
-and coining plausible Latin for an anatomy atlas is worse than leaving a
-structure out. The reasons are recorded beside the table, and a test asserts
-every shipped term exists.
-
-Three more are left out by judgement rather than by the standard, and they are
-recorded in a separate list so a decision cannot borrow the standard's
-authority: TA2 names the umbilical artery and vein, but nothing else of the
-placenta — not the basal or chorionic plate, not the amnion, not the cord, all
-of which are Terminologia Embryologica terms. Three vessels floating where a
-placenta should be would teach nothing.
-
-One laterality was read off the geometry rather than guessed: the source ships a
-single unlateralised triangular ligament of the liver where TA2 has only a right
-and a left. It sits entirely at positive x, and the paired structures in this
-body put the left side at positive x, so it is the left one.
-
-Provenance for all 264 — original node name, UBERON or FMA id, source label,
-polygon count — is committed in `tools/asset-pipeline/vendor/reports-female/`.
-The extraction stays inside glTF rather than round-tripping through Blender, so
-the node names are byte-identical to the published digital object and any
-structure here can be checked against the HRA portal.
-
-#### The rule that shaped it
-
-**A female reproductive module is not a female model** — dropping a uterus into
-a male pelvis produces wrong relations, and spatial relations are what this
-application is for.
-
-That is why nothing was dropped into anything. The female atlas ships its own
-pelvic girdle, its own bladder, its own rectum and its own vessels, all from the
-same body, and the male atlas is untouched. What you are looking at when you
-switch is one person's pelvis, internally consistent, not a graft.
-
-The same rule applies to the licences. CC BY material may lawfully be folded
-into a CC BY-SA work, but the result must then be share-alike — imposing a
-condition the HRA's authors chose not to. So the two atlases are separate files,
-which keeps this a mere aggregation, and
-[a test asserts they never share a mesh file](tests/female-atlas.test.ts).
-
-### What else is missing, and what is complete
-
-Audited against the source blend, not from memory. Everything below is absent
-from Z-Anatomy itself — none of it was lost in our pipeline, and none of it can
-be recovered without different source data.
-
-**Gaps a student will notice**
-
-- **The gut has a hole in it.** Duodenum and jejunum are here, then it jumps
-  straight to the colon: no **ileum, caecum, rectum or anal canal**.
-- **No meninges** — no dura, arachnoid or pia.
-- **No skin.** There is no `Cutis` and no integument. What reads as a body
-  surface is the 256 named *regions* in the `regional` system — "mammary
-  region", "angle of mouth" — which are territories, not an organ.
-- **No thoracic duct, no vocal folds.**
-- **No bronchopulmonary lung segments**, although all twenty-seven segmental
-  bronchi are present with their BI–BX numbering.
-
-**Present only as their parts.** No single mesh exists for the skull, the
-larynx, the lung (lobes only), the small intestine, the peritoneum, the lumbar
-and sacral plexuses, or the semicircular canals. Z-Anatomy names each of these
-with a zero-geometry marker — the same reason there is no mesh called "Heart" —
-so the right-click ancestry menu reaches them wherever the atlas defines a
-collection, and nothing does where it does not.
-
-**Complete**, checked against a 130-structure list of what a general atlas owes:
-the arterial and venous trees to the periphery, the whole musculature, the
-urinary and endocrine organs, every bone individually, all twelve cranial
-nerves, the lymph nodes in unusual detail, and the eight hepatic segments of
-Couinaud.
-
-### Why the pipeline drops 1,616 objects, and why that is correct
-
-```
-5,520  geometry objects in the blend
-1,616  skipped: no evaluated geometry
-3,904  real meshes
-4,349  bucket placements (a structure can belong to two systems)
-3,478  unique manifest entries
-```
-
-The 1,616 are Z-Anatomy's `.j` and `.i` objects: **named markers carrying zero
-polygons**, used to place a label for a concept whose geometry lives in its
-parts — `Aorta.j`, `Colon.j`, `Digestive system.j`, `Ankle joint.j`. The split
-is unambiguous: `.l` and `.r` objects reach the manifest at 95%, `.j` and `.i`
-at 4%. That is a category, not attrition.
-
-`integumentary` used to be a dead branch here — a valid value in both protocol
-schemas, with a colour and a label in `palette.ts`, that no structure claimed.
-The female atlas fills it: the breast is filed under it, where Terminologia
-Anatomica files it, and it is the only system in either atlas that the male one
-does not populate.
-
-### Licensing
-
-The application source code is under the **Business Source License 1.1**
-([`LICENSE`](LICENSE), [`NOTICE`](NOTICE)), with Nurdzhan Kerimov (Digital
-Rose) as licensor. It is source-available rather than open source in the OSI
-sense, and it is time-limited: **each version converts to Apache-2.0 on its
-own Change Date, four years after that version's release**. The date is stated
-once, in the version's [`LICENSE`](LICENSE), and the Apache text is already in
-the repository at [`LICENSES/Apache-2.0.txt`](LICENSES/Apache-2.0.txt).
-
-| Use | Cost |
-|---|---|
-| Students, teachers, universities, schools, academic research | Free |
-| A healthcare professional evaluating it, non-commercially | Free |
-| Reading, modifying and redistributing the source, non-production | Free |
-| A clinic, a hospital or any revenue-generating setting | Commercial licence |
-| Re-branding, or shipping it inside a paid product or service | Commercial licence |
-
-Commercial licensing, pilots and institutional deployments:
-**anatria@digitalrose.org**.
-
-Versions up to and including v0.4.0 were published under Apache-2.0, and that
-grant is irrevocable: those releases stay Apache-2.0 forever. The BSL applies
-from v0.5.0 onwards.
-
-**The licences do not merge, and the code's licence does not reach the
-anatomy.** The meshes and nomenclature in `public/anatomy/` are third-party
-work under CC BY-SA 4.0 (male atlas) and CC BY 4.0 (female atlas). Those
-licences permit commercial use by anyone, and nothing here restricts them —
-doing so would breach them and end the right to ship the data at all.
-[`THIRD-PARTY-NOTICES.txt`](THIRD-PARTY-NOTICES.txt) is the reader-facing
-summary, and it is what the installer shows.
-
-### Building the installer
-
-```bash
-pnpm sidecar:build && pnpm tauri build --bundles nsis
-```
-
-Produces `src-tauri/target/release/bundle/nsis/Anatria3D_<version>_x64-setup.exe`
-(~54 MB). It installs **per user**, with no administrator rights — a student on
-a locked-down university laptop can run it. `pnpm sidecar:build` must come
-first: the Python engine is bundled as a resource from `engine/dist/`, and a
-stale build there ships a stale engine.
-
-### Regenerating the assets
-
-Two one-off downloads, neither committed:
-
-| Input | Where it goes |
-|---|---|
-| [Z-Anatomy.zip](https://github.com/Z-Anatomy/Models-of-human-anatomy) (87 MB) — extract `Startup.blend` | `tools/asset-pipeline/vendor/Z-Anatomy/` |
-| [TA2.csv](https://github.com/Z-Anatomy/Models-of-human-anatomy) (1.5 MB) | `tools/asset-pipeline/vendor/` |
-
-Plus Blender 4.2+ (the portable zip is enough — no installer).
-
-```bash
-blender --background tools/asset-pipeline/vendor/Z-Anatomy/Startup.blend \n  --python tools/asset-pipeline/blender_export.py -- \n  --collection "Bonus collection/Cardiovascular system/Heart" \n  --out public/anatomy/cardiovascular_male.glb \n  --report tools/asset-pipeline/vendor/export-report.json
-
-node tools/asset-pipeline/build-manifest.mjs
-```
-
-`blender_inspect.py` dumps the atlas's 1,944 collections and 4,569 objects to
-JSON if you need to find another collection path.
-
-**Install Blender at a short path.** Its glTF add-on fails to import with a
-misleading `cannot import name … (unknown location)` when its own files sit
-past Windows' 260-character `MAX_PATH` — the add-on looks broken when the path
-is the problem.
-
-### Why the pipeline looks the way it does
-
-**Selection is by collection, not by object name.** Z-Anatomy's hierarchy *is*
-the anatomical hierarchy; a hand-written list of object names would duplicate it
-and then drift from it.
-
-**The manifest join is automatic.** Z-Anatomy names its objects with the exact
-English term from Terminologia Anatomica, which is also the `English` column of
-TA2.csv — so the glTF node name pulls in Latin and Spanish with no mapping table
-to maintain.
-
-**Curves are geometry.** Z-Anatomy models the whole vascular tree — aorta, venae
-cavae, coronary arteries — as bevelled *curves*, not meshes. Gathering only
-`type == "MESH"` silently drops every blood vessel and leaves the heart chambers
-floating alone.
-
-**Export runs through a clean staging scene.** Exporting straight out of the
-Z-Anatomy scene dies with an `IndexError` inside the glTF gatherer: that scene
-carries driver networks, a dependency cycle, and elaborate material trees the
-exporter has to walk. Baking each object to a plain evaluated mesh in an empty
-scene removes all of it, and drops materials — which is what we want anyway,
-since the viewer shades organs itself.
-
-**Node names are sanitised on load.** three's `GLTFLoader` runs every name
-through `PropertyBinding.sanitizeNodeName`, turning `Right atrium` into
-`Right_atrium`. The viewer looks up both forms; a raw lookup misses every organ.
-
-**Draco is self-hosted** in `public/draco/`, copied from `three/examples`. drei
-defaults to a Google CDN, which a local-first app must not depend on and which
-the CSP blocks.
-
-### Scale, and what it costs
-
-The male atlas ships as thirteen per-system `.glb` files — **3,478 structures,
-8.6M polygons, 37 MB**; the female trunk adds seven more at **264 structures,
-5.3 MB**. Only `cardiovascular` loads at startup; the rest download when their
-system is switched on, so opening the heart never pulls the skeleton, and
-switching sex loads only the other atlas's files.
-
-Two things had to change to make that survivable:
-
-**The prompt cannot carry the atlas.** Listing every structure is ~53,000 tokens
-on *every* turn — roughly $0.16 a question on a mid-tier model, and past the
-context window of the cheaper ones. Above `INLINE_INVENTORY_LIMIT` (120) the
-prompt switches to a per-system summary and the agent uses `find_structures` to
-look up ids on demand. The frontend also sends only the *loaded* systems'
-structures, not the whole manifest.
-
-**The tree cannot render the atlas.** A system with 800+ structures freezes the
-panel on mount, so systems above 60 structures start collapsed.
-
-Roughly 9% of exported objects (404 of 4,349) carry names Terminologia Anatomica
-does not list — parenthesised anatomical variants, plus a little scratch
-geometry. They are excluded rather than shipped without nomenclature; the build
-prints the count and the first of them on every run, so the number is checkable
-rather than quoted. Getting the match rate up from 72% came down to Z-Anatomy's
-dotted suffixes: `.l`/`.r` are sides, but `.t`, `.s`, `.g`, `.st` and `.j` are
-its own structural markers and they stack.
-
-Some structures genuinely belong to two systems — a tooth is both digestive and
-skeletal, and Blender puts one mesh in both collections. The manifest lists such
-a structure once, under the first system that claims it.
-
-### Two constraints worth knowing
-
-- **Z-Anatomy ships a male model only**, so everything in this section describes
-  the male atlas alone. The female one comes from a different source, is built
-  by a different pipeline, and is documented in
-  [There are two atlases](#there-are-two-atlases-and-the-female-one-is-a-trunk).
-- **TA2.csv has no Bulgarian.** It carries English, Latin, French, Spanish,
-  Portuguese, Italian and Parsi. Bulgarian lives in
-  `tools/asset-pipeline/translations/bg.json`, written by hand, with a per-term
-  `reviewed` flag that starts false. Unreviewed labels are marked in the
-  interface — machine-adjacent medical terminology must not be presented as
-  authoritative. Terms with no Bulgarian at all fall back to Latin.
+**English:** Homman is a bilingual educational 3D anatomy application built on Anatria3D. It includes anatomy exploration, an educational disease catalogue and a limited practice/review workflow. The female atlas, translations, disease mappings and educational content remain incomplete. It is not a medical device. See [LICENSE](LICENSE), [anatomy notices](public/anatomy/NOTICE) and [disease data notices](public/diseases/NOTICE.txt) before use or redistribution.
