@@ -21,6 +21,7 @@ export function StructureEducation() {
     {!organ ? <p className="mt-2 text-xs leading-6 text-slate-300">{fa ? "یک ساختار را روی بدن یا از فهرست انتخاب کنید تا اطلاعات آن را ببینید." : "Select a structure on the body or in the list to explore it."}</p> : <>
       <h3 className="mt-2 text-sm font-semibold text-white">{fa && concept ? concept.name.fa : organ.name_en}</h3>
       <p dir="ltr" className="mt-1 text-left text-xs text-slate-400">{organ.name_en} · {organ.ta2_latin}</p>
+      <p dir="ltr" className="mt-1 break-all text-left text-[10px] text-slate-400">{`atlas:${model}:${organ.organ_id}`}</p>
       <p className="mt-2 text-xs leading-6 text-slate-300">{concept ? (fa ? concept.description.fa : concept.description.en) : (fa ? "توضیح آموزشی برای این ساختار هنوز ثبت نشده است." : "No educational description has been added for this structure yet.")}</p>
       {concept && <>
         <p className="mt-2 text-[10px] text-slate-400" dir="ltr">{concept.id}</p>

@@ -7,7 +7,6 @@ import { exportViewImage } from "@/features/viewer/exportView";
 import { explodeScope, MAX_EXPLODE } from "@/features/viewer/explode";
 import { SYSTEM_COLOURS, SYSTEM_LABELS } from "@/features/viewer/palette";
 
-import { BodySwitch } from "./BodySwitch";
 import { StructureSearch } from "./StructureSearch";
 import {
   isOrganVisible,
@@ -17,8 +16,6 @@ import {
 } from "@/stores/sceneStore";
 import { useStudyStore } from "@/stores/studyStore";
 import { useInterfaceLanguage } from "@/stores/interfaceLanguage";
-import { AnatomyCoverage, StructureEducation } from "@/features/anatomy/StructureEducation";
-import { AnatomyQuiz } from "@/features/anatomy/AnatomyQuiz";
 
 const SYSTEMS_FA: Record<string, string> = { articular: 'مفاصل', cardiovascular: 'قلب و عروق', digestive: 'گوارش', endocrine: 'غدد', lymphatic: 'لنفاوی', muscular: 'عضلات', nervous: 'عصبی', regional: 'سطح بدن', renal: 'ادراری', reproductive: 'تولیدمثل', respiratory: 'تنفسی', skeletal: 'اسکلت', integumentary: 'پوست', visceral: 'احشا' };
 
@@ -240,7 +237,6 @@ export function AnatomyTree() {
   const crossSection = useSceneStore((s) => s.crossSection);
 
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
-  const [quizActive, setQuizActive] = useState(false);
   const selectOrgan = useSceneStore((s) => s.selectOrgan);
   const setHovered = useSceneStore((s) => s.setHovered);
   const toggleSystem = useSceneStore((s) => s.toggleSystem);
@@ -286,11 +282,6 @@ export function AnatomyTree() {
       <StructureSearch />
 
       <div className="flex flex-1 flex-col gap-4 overflow-y-auto p-4">
-      {/* Above the systems, because it decides what the systems are. */}
-      <BodySwitch />
-      <AnatomyQuiz onActiveChange={setQuizActive} />
-      {!quizActive && <StructureEducation />}
-      <AnatomyCoverage />
       <section>
         <div className="mb-2 flex items-center gap-2">
           <h2 className="text-xs font-semibold uppercase tracking-wider text-slate-500">

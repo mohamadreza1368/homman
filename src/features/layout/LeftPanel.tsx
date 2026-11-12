@@ -11,8 +11,11 @@ import { useStudyStore } from "@/stores/studyStore";
 import { useInterfaceLanguage } from "@/stores/interfaceLanguage";
 import { DiseasePanel } from "@/features/diseases/DiseasePanel";
 import { BrandLogo } from "@/components/BrandLogo";
+import { AnatomyQuiz } from "@/features/anatomy/AnatomyQuiz";
+import { HeartLearningPath } from "@/features/anatomy/HeartLearningPath";
+import { StructureEducation } from "@/features/anatomy/StructureEducation";
 
-type Tab = "atlas" | "diseases" | "study" | "usage";
+type Tab = "atlas" | "diseases" | "education" | "study" | "usage";
 
 /**
  * The left column: the atlas, the student's own journal, and what the
@@ -31,6 +34,7 @@ type Tab = "atlas" | "diseases" | "study" | "usage";
  */
 export function LeftPanel() {
   const [tab, setTab] = useState<Tab>("atlas");
+  const [quizActive, setQuizActive] = useState(false);
   const [status, setStatus] = useState(false);
   const noteCount = useStudyStore((s) => s.stats?.notes ?? 0);
   const language = useInterfaceLanguage((s) => s.language);
@@ -49,6 +53,9 @@ export function LeftPanel() {
         </TabButton>
         <TabButton active={tab === "diseases"} onClick={() => setTab("diseases")}>
           {fa ? 'بیماری‌ها' : 'Diseases'}
+        </TabButton>
+        <TabButton active={tab === "education"} onClick={() => setTab("education")}>
+          {fa ? 'آموزش' : 'Learn'}
         </TabButton>
         <TabButton active={tab === "study"} onClick={() => setTab("study")}>
           {fa ? 'مطالعه' : 'Study'}
@@ -92,6 +99,13 @@ export function LeftPanel() {
       </div>
       <div className={`min-h-0 flex-1 ${tab === "diseases" ? "" : "hidden"}`}>
         <DiseasePanel />
+      </div>
+      <div className={`min-h-0 flex-1 overflow-y-auto ${tab === "education" ? "" : "hidden"}`}>
+        <div className="space-y-4 p-4">
+          {!quizActive && <StructureEducation />}
+          <HeartLearningPath />
+          <AnatomyQuiz onActiveChange={setQuizActive} />
+        </div>
       </div>
       <div className={`min-h-0 flex-1 ${tab === "study" ? "" : "hidden"}`}>
         <StudyPanel />
