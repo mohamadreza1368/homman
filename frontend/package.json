@@ -25,7 +25,7 @@
     "three-mesh-bvh": "^0.8.2"
   },
   "devDependencies": {
-    "@types/node": "^22.13.4",
+    "@types/node": "^26.6.6",
     "@types/react": "^19.0.10",
     "@types/react-dom": "^19.0.4",
     "@types/three": "^0.174.0",
