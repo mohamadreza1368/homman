@@ -8,6 +8,8 @@ import { useStudyStore } from "@/stores/studyStore";
 import { useUsageStore } from "@/stores/usageStore";
 import { useCaseStore } from "@/stores/caseStore";
 import { useBridgeStore } from "@/stores/bridgeStore";
+import { useInterfaceLanguage } from "@/stores/interfaceLanguage";
+import { useCustomApiConfig } from "@/stores/customApiConfig";
 
 const ipc = vi.hoisted(() => ({
   ask: vi.fn(), cancel: vi.fn(), detach: vi.fn(), subscribe: vi.fn(), patient: vi.fn(),
@@ -35,6 +37,8 @@ import { ChatPanel } from "./ChatPanel";
 beforeEach(() => {
   vi.clearAllMocks();
   localStorage.clear();
+  useInterfaceLanguage.setState({ language: "en" });
+  useCustomApiConfig.setState({ baseUrl: "", apiKey: "", model: "", models: [] });
   ipc.ask.mockResolvedValue(undefined);
   ipc.cancel.mockResolvedValue(undefined);
   ipc.patient.mockResolvedValue({});

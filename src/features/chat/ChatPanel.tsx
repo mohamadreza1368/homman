@@ -14,7 +14,7 @@ import {
   cancelRequest,
   engineStatus,
   newRequestId,
-  restartEngine,
+
 } from "@/lib/ipc";
 import { AgentRequestSchema, PROTOCOL_VERSION } from "@/lib/schemas";
 import { sameTurnScope, TurnRegistry, type SpendContext, type TurnContext, type TurnScope } from "./turnRegistry";
@@ -44,6 +44,7 @@ import { groupNames, organLabel, useSceneStore } from "@/stores/sceneStore";
 import { useStudyStore } from "@/stores/studyStore";
 import { useUsageStore } from "@/stores/usageStore";
 
+import { BrandLogo } from "@/components/BrandLogo";
 import { GrowingTextarea } from "@/components/GrowingTextarea";
 import { shouldShowAimHint, useAimHint } from "./aimHint";
 import { breathAim } from "./breathContext";
@@ -51,9 +52,9 @@ import { heartAim } from "./heartContext";
 import { scannerAim } from "./scannerContext";
 import { AimHint, AskingGuide } from "./AskingGuide";
 import { CaseBar } from "./CaseBar";
-import { LocalChatPanel } from "@/features/local/LocalChatPanel";
 import { useInterfaceLanguage } from "@/stores/interfaceLanguage";
-import { useLocalChatStore } from "@/stores/localChatStore";
+import { isCustomApiConfigured, useCustomApiConfig } from "@/stores/customApiConfig";
+import { buildCustomSystemPrompt, streamCustomChat } from "./customApiClient";
 
 import { Markdown } from "./Markdown";
 import { collectOrganRefs, stripOrganRefs } from "./organRefs";
@@ -92,26 +93,40 @@ const TOOL_LABELS: Record<string, string> = {
  * A drill whose organs are switched off can only describe them, and describing
  * is what the drill exists to replace.
  */
-const CASE_STARTERS: { label: string; system: AnatomicalSystem; prompt: string }[] = [
+const CASE_STARTERS: {
+  label: string;
+  labelFa: string;
+  system: AnatomicalSystem;
+  prompt: string;
+  promptFa: string;
+}[] = [
   {
     label: "Cardiac emergency",
+    labelFa: "اورژانس قلبی",
     system: "cardiovascular",
     prompt: "Start a case drill: an acute cardiovascular emergency.",
+    promptFa: "یک تمرین بالینی شروع کن: اورژانس حاد قلبی-عروقی.",
   },
   {
     label: "Respiratory",
+    labelFa: "تنفسی",
     system: "respiratory",
     prompt: "Start a case drill: a patient in respiratory distress.",
+    promptFa: "یک تمرین بالینی شروع کن: بیمار با دیسترس تنفسی.",
   },
   {
     label: "Neurological",
+    labelFa: "عصبی",
     system: "nervous",
     prompt: "Start a case drill: an acute neurological deficit.",
+    promptFa: "یک تمرین بالینی شروع کن: نقص عصبی حاد.",
   },
   {
     label: "Abdominal",
+    labelFa: "شکمی",
     system: "digestive",
     prompt: "Start a case drill: acute abdominal pain.",
+    promptFa: "یک تمرین بالینی شروع کن: درد حاد شکم.",
   },
 ];
 
@@ -150,15 +165,17 @@ function CostNotice({ messages, mode }: { messages: ChatMessage[]; mode: Session
   );
 }
 
-function CopyButton({ text, label = "Copy" }: { text: string; label?: string }) {
+function CopyButton({ text, label }: { text: string; label?: string }) {
+  const fa = useInterfaceLanguage((s) => s.language === "fa");
   const { copied, copy } = useCopy();
+  const restLabel = label ?? (fa ? "کپی" : "Copy");
   return (
     <button
       type="button"
       onClick={() => void copy(text)}
       className="rounded border border-slate-700 px-1.5 py-0.5 text-[10px] text-slate-400 transition hover:border-slate-600 hover:text-slate-200"
     >
-      {copied ? "Copied" : label}
+      {copied ? (fa ? "کپی شد" : "Copied") : restLabel}
     </button>
   );
 }
@@ -209,6 +226,7 @@ function ToolTrail({ tools }: { tools: string[] }) {
  * is no second code path to keep in step.
  */
 function RestoreViewButton({ commands }: { commands: SceneCommand[] }) {
+  const fa = useInterfaceLanguage((s) => s.language === "fa");
   const applyCommand = useSceneStore((s) => s.applyCommand);
   if (commands.length === 0) return null;
 
@@ -218,10 +236,10 @@ function RestoreViewButton({ commands }: { commands: SceneCommand[] }) {
       onClick={() => {
         for (const command of commands) applyCommand(command);
       }}
-      title="Put the model back the way this answer left it"
+      title={fa ? "برگرداندن مدل به نمای زمان این پاسخ" : "Put the model back the way this answer left it"}
       className="rounded border border-slate-700 px-1.5 py-0.5 text-[10px] text-slate-400 transition hover:border-sky-600 hover:text-sky-200"
     >
-      Restore this view
+      {fa ? "بازیابی این نما" : "Restore this view"}
     </button>
   );
 }
@@ -267,6 +285,7 @@ function ReferenceLegend({ content }: { content: string }) {
 }
 
 function MessageBubble({ message }: { message: ChatMessage }) {
+  const fa = useInterfaceLanguage((s) => s.language === "fa");
   if (message.role === "user") {
     return (
       <div className="group flex flex-col items-end gap-1">
@@ -309,7 +328,7 @@ function MessageBubble({ message }: { message: ChatMessage }) {
           </p>
         )}
         {message.status === "cancelled" && (
-          <p className="mt-2 text-[11px] italic text-slate-500">Stopped.</p>
+          <p className="mt-2 text-[11px] italic text-slate-500">{fa ? "متوقف شد." : "Stopped."}</p>
         )}
       </div>
 
@@ -320,7 +339,7 @@ function MessageBubble({ message }: { message: ChatMessage }) {
               transcript and compare two answers without pointing at each. */}
           <div className="flex items-center gap-2 opacity-0 transition group-focus-within:opacity-100 group-hover:opacity-100">
             {/* Copy the prose the reader sees, not the [[organ_id]] plumbing. */}
-            <CopyButton text={stripOrganRefs(message.content)} label="Copy answer" />
+            <CopyButton text={stripOrganRefs(message.content)} label={fa ? "کپی پاسخ" : "Copy answer"} />
             <SaveAsNoteButton content={message.content} />
             {/* Absent rather than disabled on an answer that moved nothing —
                 a control that never does anything is worse than no control. */}
@@ -479,6 +498,7 @@ function ScoreBadge({ score }: { score: number }) {
  * are stripped first — a note is prose the student reads, not wire format.
  */
 function SaveAsNoteButton({ content }: { content: string }) {
+  const fa = useInterfaceLanguage((s) => s.language === "fa");
   const organs = useSceneStore((s) => s.organs);
   const selectedOrganIds = useSceneStore((s) => s.selectedOrganIds);
   const sessionId = useChatStore((s) => s.sessionId);
@@ -502,7 +522,7 @@ function SaveAsNoteButton({ content }: { content: string }) {
       title={subject ? `Save as a note on ${organLabel(subject)}` : "Save as a note"}
       className="rounded border border-slate-700 px-1.5 py-0.5 text-[10px] text-slate-400 transition hover:border-slate-600 hover:text-slate-200"
     >
-      {saved ? "Saved" : "Save as note"}
+      {saved ? (fa ? "ذخیره شد" : "Saved") : fa ? "ذخیره در یادداشت" : "Save as note"}
     </button>
   );
 }
@@ -628,9 +648,11 @@ export function ChatPanel() {
   const isolatedOrganIds = useSceneStore((s) => s.isolatedOrganIds);
   const hiddenSystems = useSceneStore((s) => s.hiddenSystems);
   const genderModel = useSceneStore((s) => s.genderModel);
-  // The local chat's screen, over this panel; see `LocalChatPanel`.
-  const localOpen = useLocalChatStore((s) => s.open);
-  const setLocalOpen = useLocalChatStore((s) => s.setOpen);
+  const customBaseUrl = useCustomApiConfig((s) => s.baseUrl);
+  const customApiKey = useCustomApiConfig((s) => s.apiKey);
+  const customModel = useCustomApiConfig((s) => s.model);
+  const customReady = isCustomApiConfigured({ baseUrl: customBaseUrl, model: customModel });
+  const customAbortRef = useRef<AbortController | null>(null);
   // Subscribed so the note above the composer appears and goes with the switch
   // and the pin. The level and the crossing are read when it renders.
   const scanEnabled = useScanStore((s) => s.enabled);
@@ -678,7 +700,9 @@ export function ChatPanel() {
   const [turns] = useState(() => new TurnRegistry(currentTurnScope, (id, sent) => {
     useChatStore.getState().markCancelled(id);
     verdictRef.current.delete(id);
-    if (sent) void cancelRequest(id).catch((error: unknown) => {
+    customAbortRef.current?.abort();
+    customAbortRef.current = null;
+    if (sent && engineReady) void cancelRequest(id).catch((error: unknown) => {
       setTransportError(`The previous request was detached, but the engine could not confirm cancellation: ${String(error)}`);
     });
   }));
@@ -961,7 +985,8 @@ export function ChatPanel() {
   // groups have no mesh of their own — see `isolate_group`.
   const groups = useMemo(() => groupNames(structures), [structures]);
   const contextTrimmed = useMemo(() => completeHistory(messages).length > 100, [messages]);
-  const canSend = engineReady && draft.trim().length > 0 && !pendingRequestId && !preparing;
+  const chatReady = customReady || engineReady;
+  const canSend = chatReady && draft.trim().length > 0 && !pendingRequestId && !preparing;
 
   /** What the assistant is told about the scanner right now. See `scannerAim`. */
   const currentScannerAim = () =>
@@ -995,7 +1020,7 @@ export function ChatPanel() {
 
   async function send(text?: string) {
     const prompt = (text ?? draft).trim();
-    if (!prompt || !engineReady || useChatStore.getState().pendingRequestId || preparingRef.current) return;
+    if (!prompt || !chatReady || useChatStore.getState().pendingRequestId || preparingRef.current) return;
     const requestId = newRequestId();
     const chat = useChatStore.getState();
     const selection = selectedOrganIds.map((id) => organs[id]).filter((organ) => !!organ)
@@ -1039,7 +1064,38 @@ export function ChatPanel() {
       startTurn(requestId, prompt);
       setTransportError(null);
       dispatched = true;
-      await askAgent(request);
+      if (customReady) {
+        const controller = new AbortController();
+        customAbortRef.current = controller;
+        const result = await streamCustomChat({
+          baseUrl: customBaseUrl,
+          apiKey: customApiKey,
+          model: customModel,
+          systemPrompt: buildCustomSystemPrompt({
+            fa,
+            profile,
+            genderModel,
+            mode,
+            selection,
+            organCount: structures.length,
+          }),
+          history: chat.history(),
+          query: prompt,
+          signal: controller.signal,
+          onDelta: (chunk) => {
+            if (turns.accepts(requestId)) appendDelta(requestId, chunk);
+          },
+        });
+        customAbortRef.current = null;
+        const entry = turns.take(requestId);
+        if (entry && entry.active) {
+          finishTurn(requestId, result.usage ?? undefined, result.model);
+          persistTurn(requestId, entry.context);
+          recordSpend(entry.context, result.usage, result.model);
+        }
+      } else {
+        await askAgent(request);
+      }
       // Preserve edits made while the IPC acknowledgement was pending.
       if (text === undefined && sameTurnScope(context, currentTurnScope())) {
         setDraft((current) => current.trim() === prompt ? "" : current);
@@ -1058,60 +1114,32 @@ export function ChatPanel() {
   }
 
   function stop() {
+    customAbortRef.current?.abort();
+    customAbortRef.current = null;
     turns.invalidate(useChatStore.getState().pendingRequestId);
   }
 
   return (
-    <div className="relative flex h-full min-h-0 flex-col">
-      <LocalChatPanel
-        open={localOpen}
-        engineReady={engineReady}
-        profile={profile}
-        genderModel={genderModel}
-      />
+    <div dir={fa ? "rtl" : "ltr"} className="relative flex h-full min-h-0 flex-col">
       <header className="flex items-center gap-2 border-b border-slate-800 px-3 py-2">
-        <h1 className="text-sm font-semibold tracking-tight">
-          Anatria<span className="text-sky-400">3D</span>
-        </h1>
+        <h1 className="flex items-center gap-1.5" aria-label="HOOMAAN"><BrandLogo variant="mark-dark" className="h-6 w-auto shrink-0" decorative /><BrandLogo variant="wordmark" className="h-4 w-auto shrink-0" alt="HOOMAAN — هومان" /></h1>
         <span
           className={`rounded-full px-1.5 py-0.5 text-[9px] font-medium uppercase ${
-            engineReady
+            chatReady
               ? "bg-emerald-500/15 text-emerald-300"
               : "bg-amber-500/15 text-amber-300"
           }`}
         >
-          {engineReady ? (fa ? 'آماده' : 'ready') : (fa ? 'آفلاین' : 'offline')}
+          {chatReady ? (fa ? "آماده" : "ready") : fa ? "نیازمند API" : "API needed"}
         </span>
         <BridgeIndicator />
-        {!engineReady && (
-          <button
-            type="button"
-            onClick={() => {
-              setTransportError(null);
-              void restartEngine().catch((err: unknown) =>
-                setTransportError(`Could not restart the engine: ${String(err)}`),
-              );
-            }}
-            className="ml-auto rounded border border-amber-700/60 bg-amber-500/10 px-1.5 py-0.5 text-[10px] text-amber-300"
-          >
-            {fa ? 'راه‌اندازی دوباره' : 'Restart engine'}
-          </button>
-        )}
-        <div className={`flex items-center gap-1.5 ${engineReady ? "ml-auto" : ""}`}>
+        <div className="ms-auto flex items-center gap-1.5">
           <NewSessionButton
             mode={mode}
             onStart={beginSession}
             disabled={messages.length === 0}
           />
           <ModeSwitch mode={mode} onChange={beginSession} />
-          <button
-            type="button"
-            onClick={() => setLocalOpen(true)}
-            className="rounded border border-violet-800/70 px-2 py-0.5 text-[10px] text-violet-300 transition hover:border-violet-500 hover:text-violet-200"
-            title="Chat with a model in Ollama on this computer — words only, it cannot move the atlas"
-          >
-            {fa ? 'محلی' : 'Local'}
-          </button>
         </div>
       </header>
 
@@ -1139,7 +1167,14 @@ export function ChatPanel() {
       <div ref={scrollRef} className="min-h-0 flex-1 space-y-4 overflow-y-auto px-3 py-3">
         {messages.length === 0 && mode === "tutor" && (
           <div className="space-y-2 pt-6 text-center text-xs text-slate-500">
-            <p>{fa ? 'دربارهٔ هر ساختاری در نمای سه‌بعدی سؤال کنید.' : 'Ask about any structure in the viewport.'}</p>
+            <p>{fa ? "دربارهٔ هر ساختاری در نمای سه‌بعدی سؤال کنید." : "Ask about any structure in the viewport."}</p>
+            {!chatReady && (
+              <p className="text-[11px] text-amber-300/90">
+                {fa
+                  ? "برای شروع گفتگو، آدرس Custom API و نام مدل را در بخش تنظیمات بالا وارد کنید."
+                  : "Enter your Custom API Base URL and model in Settings above to start chatting."}
+              </p>
+            )}
             <p className="text-slate-600">
               {fa ? 'دستیار هنگام توضیح، دوربین را حرکت می‌دهد.' : 'The assistant moves the camera as it explains.'}
             </p>
@@ -1152,50 +1187,51 @@ export function ChatPanel() {
 
         {messages.length === 0 && mode === "case" && (
           <div className="space-y-3 pt-6 text-center text-xs text-slate-500">
-            <p>Pick a scenario, or describe one yourself.</p>
+            <p>{fa ? "یک سناریوی تمرینی انتخاب کنید یا خودتان بنویسید." : "Pick a scenario, or describe one yourself."}</p>
             <p className="text-slate-600">
-              You will get an invented patient, the anatomy marked on the model, and a
-              question to answer. Your answer gets a score for your own study — not a
-              formal assessment — and is kept.
+              {fa
+                ? "یک بیمار شبیه‌سازی‌شده و سؤال تمرینی دریافت می‌کنید و پاسخ شما برای مطالعهٔ شخصی نمره‌گذاری و ذخیره می‌شود."
+                : "You will get an invented patient, the anatomy marked on the model, and a question to answer. Your answer gets a score for your own study — not a formal assessment — and is kept."}
             </p>
-            <p className="text-[10px] text-slate-600">{AI_NOTICE}</p>
+            <p className="text-[10px] text-slate-600">{fa ? "با یک مدل هوش مصنوعی گفتگو می‌کنید؛ پاسخ‌ها ممکن است خطا داشته باشند." : AI_NOTICE}</p>
             <div className="flex flex-wrap justify-center gap-1.5 pt-1">
               {CASE_STARTERS.filter((starter) => loadedSystems.has(starter.system)).map(
                 (starter) => (
                   <button
                     key={starter.label}
                     type="button"
-                    disabled={!engineReady}
-                    onClick={() => void send(starter.prompt)}
+                    disabled={!chatReady}
+                    onClick={() => void send(fa ? starter.promptFa : starter.prompt)}
                     className="rounded-full border border-slate-700 px-2.5 py-1 text-[11px] text-slate-300 transition hover:border-amber-600 hover:text-amber-200 disabled:opacity-30"
                   >
-                    {starter.label}
+                    {fa ? starter.labelFa : starter.label}
                   </button>
                 ),
               )}
               <button
                 type="button"
-                disabled={!engineReady}
+                disabled={!chatReady}
                 onClick={() =>
                   void send(
-                    "Start a case drill on any system currently loaded. " +
-                      "Pick something I am unlikely to have practised.",
+                    fa
+                      ? "یک تمرین بالینی غیرمنتظره روی دستگاه‌های بارگذاری‌شده شروع کن."
+                      : "Start a case drill on any system currently loaded. Pick something I am unlikely to have practised.",
                   )
                 }
                 className="rounded-full border border-slate-700 px-2.5 py-1 text-[11px] text-slate-300 transition hover:border-amber-600 hover:text-amber-200 disabled:opacity-30"
               >
-                Surprise me
+                {fa ? "سناریوی تصادفی" : "Surprise me"}
               </button>
             </div>
             <p className="text-[10px] text-slate-700">
-              Simulated patients, invented for practice.
+              {fa ? "بیماران شبیه‌سازی‌شده؛ صرفاً جهت تمرین آموزشی." : "Simulated patients, invented for practice."}
             </p>
           </div>
         )}
 
         {messages.length === 0 && mode === "review" && (
           <ReviewIntro
-            disabled={!engineReady}
+            disabled={!chatReady}
             onAsk={() =>
               void send(
                 "Summarise this case: what was presented, what has been reasoned " +
@@ -1278,15 +1314,15 @@ export function ChatPanel() {
             }}
             rows={3}
             placeholder={
-              !engineReady
-                ? (fa ? 'در انتظار راه‌اندازی موتور…' : 'Waiting for the engine…')
+              !chatReady
+                ? (fa ? "ابتدا آدرس و مدل Custom API را در تنظیمات وارد کنید…" : "Configure Custom API Base URL and model first…")
                 : mode === "review"
-                  ? (fa ? 'دربارهٔ پرونده سؤال کنید…' : 'Ask for the summary, or about anything in the file…')
+                  ? (fa ? "دربارهٔ پرونده سؤال کنید…" : "Ask for the summary, or about anything in the file…")
                   : mode === "case"
-                    ? (fa ? 'به تمرین پاسخ دهید یا تمرین جدید بخواهید…' : 'Answer the case, or ask for a new one…')
-                  : (fa ? 'دربارهٔ آناتومی سؤال کنید…' : 'Ask about the anatomy…')
+                    ? (fa ? "به تمرین پاسخ دهید یا تمرین جدید بخواهید…" : "Answer the case, or ask for a new one…")
+                  : (fa ? "دربارهٔ آناتومی سؤال کنید…" : "Ask about the anatomy…")
             }
-            disabled={!engineReady}
+            disabled={!chatReady}
             className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 pr-16 text-[13px] outline-none placeholder:text-slate-600 focus:border-sky-600 disabled:opacity-50"
           />
           {pendingRequestId ? (

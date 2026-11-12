@@ -57,7 +57,7 @@ export function ViewControls() {
           onClick={clearIsolation}
           className="rounded border border-amber-600/60 bg-amber-500/10 px-2 py-1 text-xs text-amber-300"
         >
-          Showing {isolatedOrganIds.length} isolated — clear
+          {fa ? `نمایش ${isolatedOrganIds.length} مورد ایزوله — پاک کردن` : `Showing ${isolatedOrganIds.length} isolated — clear`}
         </button>
       )}
       <button

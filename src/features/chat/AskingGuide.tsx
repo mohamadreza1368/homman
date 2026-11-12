@@ -1,72 +1,59 @@
 import { useEffect, useRef, useState } from "react";
 
-/**
- * How to get a good answer, and why pointing first is most of it.
- *
- * Sits beside the composer rather than in the main guide, because it is advice
- * about the thing the reader is doing at the moment they are doing it. The full
- * guide is where you go to learn the application; this is where you find out,
- * mid-sentence, that the question you are typing will work better if you click
- * something first.
- *
- * Deliberately not a modal. A dialog over the transcript would interrupt the
- * task it is trying to improve.
- */
+import { useInterfaceLanguage } from "@/stores/interfaceLanguage";
 
-const POINTS: { title: string; body: string }[] = [
+interface Point {
+  title: string;
+  body: string;
+  titleFa: string;
+  bodyFa: string;
+}
+
+const POINTS: Point[] = [
   {
     title: "Point first",
+    titleFa: "ابتدا ساختار را انتخاب کنید",
     body:
       "Click a structure, then ask. The assistant is told exactly what you " +
       "selected and treats it as the subject of your question, so it answers " +
       "instead of searching for what you meant.",
+    bodyFa:
+      "روی یک عضو یا ساختار کلیک کنید و سپس سؤال بپرسید تا دستیار دقیقاً دربارهٔ همان بخش توضیح دهد.",
   },
   {
     title: "Two or more means compare",
+    titleFa: "انتخاب چند ساختار برای مقایسه",
     body:
       "Ctrl-click several and the assistant is told to address the set. " +
       "Select the thalamus and the hypothalamus and ask how they differ.",
+    bodyFa:
+      "با نگه داشتن Ctrl چند ساختار را انتخاب کنید و تفاوت یا ارتباط بین آن‌ها را بپرسید.",
   },
   {
     title: "A region sets the scope",
+    titleFa: "محدودکردن ناحیه",
     body:
       "Isolate a group — the brainstem, the kidney, a body region — and the " +
       "question is understood to be about that, not about the whole body.",
-  },
-  {
-    title: "The scanner says where",
-    body:
-      "Leave the light held at a level — pin it, or step it with the wheel — " +
-      "and with nothing selected the assistant is told where the plane is and " +
-      "the largest structures it crosses, so “what is in this part?” is a " +
-      "question about that level. A selection still comes first, and naming " +
-      "somewhere else wins over both. Ask for a frontal section of something " +
-      "and it moves the scanner there itself.",
-  },
-  {
-    title: "The heartbeat says which rhythm",
-    body:
-      "While the heart is beating, the assistant is told the pattern chosen under " +
-      "Rhythms and murmurs, so “what is this and how does it happen?” is about " +
-      "that rhythm: where it starts, why, and how it shows in what you see and " +
-      "hear. Ask it to explain or compare rhythms and murmurs and it plays each " +
-      "one itself. They are textbook patterns, never a reading of anyone's heart.",
+    bodyFa:
+      "با ایزوله‌کردن یک گروه یا ناحیه، پرسش‌های شما روی همان محدوده متمرکز می‌شوند.",
   },
   {
     title: "Specific beats broad",
+    titleFa: "سؤال دقیق‌تر، پاسخ بهتر",
     body:
       "“What does this do?” with something selected gets a better answer than " +
-      "“explain the brain” with nothing, and costs less: thousands of " +
-      "structures are loaded, and with no subject the assistant has to search " +
-      "the atlas before it can start.",
+      "“explain the brain” with nothing, and costs less.",
+    bodyFa:
+      "پرسیدن دربارهٔ یک ساختار انتخاب‌شده دقیق‌تر، سریع‌تر و کم‌مصرف‌تر از سؤالات کلی است.",
   },
 ];
 
 export function AskingGuide() {
+  const fa = useInterfaceLanguage((s) => s.language === "fa");
   const [open, setOpen] = useState(false);
   const box = useRef<HTMLDivElement>(null);
 
-  // Click-away and Escape, so the panel never has to be hunted closed.
   useEffect(() => {
     if (!open) return;
     const onDown = (event: MouseEvent) => {
@@ -91,58 +78,59 @@ export function AskingGuide() {
         aria-expanded={open}
         className="rounded border border-slate-700/70 px-1.5 py-0.5 text-[10px] text-slate-500 transition hover:border-slate-600 hover:text-slate-300"
       >
-        How to ask
+        {fa ? "راهنمای پرسش" : "How to ask"}
       </button>
 
       {open && (
         <div
+          dir={fa ? "rtl" : "ltr"}
           role="dialog"
-          aria-label="How to ask"
-          /*
-            17rem, not a comfortable 20. The assistant panel is resizable down
-            to 300px and its container clips overflow, so anything wider than
-            the panel's inner width has its left edge cut off at the narrowest
-            setting — which is exactly the setting where a reader most needs the
-            help to be readable.
-          */
+          aria-label={fa ? "راهنمای پرسش" : "How to ask"}
           className="absolute bottom-full right-0 z-20 mb-1.5 w-[17rem] rounded-lg border border-slate-700 bg-slate-900 p-3 shadow-xl"
         >
           <p className="mb-2 text-[11px] font-semibold text-slate-200">
-            Getting a good answer
+            {fa ? "نکات دریافت پاسخ بهتر" : "Getting a good answer"}
           </p>
           <ul className="space-y-2">
             {POINTS.map((point) => (
               <li key={point.title} className="text-[11px] leading-snug text-slate-400">
-                <span className="font-medium text-slate-300">{point.title}.</span>{" "}
-                {point.body}
+                <span className="font-medium text-slate-300">
+                  {fa ? point.titleFa : point.title}.
+                </span>{" "}
+                {fa ? point.bodyFa : point.body}
               </li>
             ))}
           </ul>
+          <p className="mt-2.5 border-t border-slate-800 pt-2 text-[10px] leading-snug text-slate-500">
+            {fa
+              ? "حداکثر ۸۰۰۰ کاراکتر در هر سؤال و ۶۴ ساختار انتخابی."
+              : "Up to 8,000 characters per question and 64 selected structures."}
+          </p>
         </div>
       )}
     </div>
   );
 }
 
-/**
- * The reminder, shown while a question is being typed at nothing in particular.
- *
- * One line, in the same muted register as the cost notice above it, with the
- * way to stop seeing it on the same row. It never appears to a reader who
- * already selects before asking — see `shouldShowAimHint`.
- */
 export function AimHint({ onDismiss }: { onDismiss: () => void }) {
+  const fa = useInterfaceLanguage((s) => s.language === "fa");
   return (
-    <p className="mx-3 mb-2 flex items-start gap-2 rounded border border-sky-800/50 bg-sky-900/15 px-2 py-1 text-[10px] leading-snug text-slate-400">
+    <p
+      dir={fa ? "rtl" : "ltr"}
+      className="mx-3 mb-2 flex items-start gap-2 rounded border border-sky-800/50 bg-sky-900/15 px-2 py-1 text-[10px] leading-snug text-slate-400"
+    >
       <span className="flex-1">
-        <span className="font-medium text-sky-300">Nothing is selected.</span> Click a
-        structure in the viewport first and the assistant is told what you mean — it
-        answers that, instead of searching the atlas for it.
+        <span className="font-medium text-sky-300">
+          {fa ? "ساختاری انتخاب نشده است." : "Nothing is selected."}
+        </span>{" "}
+        {fa
+          ? "ابتدا روی یک ساختار در نمای سه‌بعدی کلیک کنید تا دستیار دقیقاً دربارهٔ همان بخش پاسخ دهد."
+          : "Click a structure in the viewport first and the assistant is told what you mean — it answers that, instead of searching the atlas for it."}
       </span>
       <button
         type="button"
         onClick={onDismiss}
-        aria-label="Do not show this again"
+        aria-label={fa ? "دیگر نمایش نده" : "Do not show this again"}
         className="shrink-0 rounded px-1 text-slate-500 transition hover:text-slate-200"
       >
         ×

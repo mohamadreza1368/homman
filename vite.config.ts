@@ -48,6 +48,7 @@ export default defineConfig({
   // output visible alongside Vite's.
   clearScreen: false,
   server: {
+    host: "127.0.0.1",
     port: DEV_PORT,
     strictPort: true,
     watch: {

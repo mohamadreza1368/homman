@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
+import { BrandLogo } from "@/components/BrandLogo";
 import { repairGluedHeadings } from "@/features/chat/repairMarkdown";
 import { APP_VERSION_LABEL } from "@/lib/appVersion";
 import { usePrintStore } from "@/stores/printStore";
@@ -177,7 +178,8 @@ function Heading({ document }: { document: PrintDocument }) {
   return (
     <header className="border-b border-slate-300 pb-4">
       <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-500">
-        Anatria3D · Study journal
+        <BrandLogo variant="full-light" className="mb-2 h-11 w-auto" />
+        HOOMAAN · Study journal
       </p>
       <h1 className="mt-1 text-2xl font-semibold leading-tight">{document.heading}</h1>
       <dl className="mt-3 flex flex-wrap gap-x-6 gap-y-1 text-[11px] text-slate-600">
@@ -545,7 +547,7 @@ function Footer({ document }: { document: PrintDocument }) {
         </p>
       ))}
       <p className="mt-1">
-        Anatria3D {APP_VERSION_LABEL} · printed {moment(document.producedAt)}
+        HOOMAAN {APP_VERSION_LABEL} · printed {moment(document.producedAt)}
       </p>
     </footer>
   );

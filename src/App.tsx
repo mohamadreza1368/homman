@@ -1,5 +1,7 @@
 import { lazy, Suspense, useEffect, useState } from "react";
 
+import { BrandLogo } from "@/components/BrandLogo";
+import { LoginScreen } from "@/features/auth/LoginScreen";
 import { ChatPanel } from "@/features/chat/ChatPanel";
 import { GuideOverlay } from "@/features/help/GuideOverlay";
 import { useFirstRun } from "@/features/help/useFirstRun";
@@ -18,6 +20,7 @@ import { checkStorage, confirmStoragePersists } from "@/lib/localStore";
 import { useStudyStore } from "@/stores/studyStore";
 import { startViewPersistence } from "@/stores/persistView";
 import { useInterfaceLanguage } from "@/stores/interfaceLanguage";
+import { useSessionAuth } from "@/stores/sessionAuth";
 
 /**
  * Loaded only when opened: the Memory Lab brings its own renderer and brain, and
@@ -50,6 +53,10 @@ export default function App() {
   const atlasReady = useSceneStore((s) => s.manifest !== null);
   const splash = useSplash(atlasReady);
 
+  const authenticated = useSessionAuth((s) => s.authenticated);
+  const userName = useSessionAuth((s) => s.userName);
+  const signOut = useSessionAuth((s) => s.signOut);
+
   // Remember how the reader left the view, so the next launch opens on it.
   useEffect(startViewPersistence, []);
   // Proved rather than assumed, once, at launch. An empty store and a refused
@@ -74,7 +81,9 @@ export default function App() {
    * mid-answer comes back to the answer.
    */
   const answering = useChatStore((s) => s.pendingRequestId !== null);
-  const idle = useIdleScreen({ armed: atlasReady && !splash.visible && !answering && !memoryOpen });
+  const idle = useIdleScreen({
+    armed: atlasReady && !splash.visible && authenticated && !answering && !memoryOpen,
+  });
 
   const closeGuide = () => {
     setGuideOpen(false);
@@ -84,6 +93,7 @@ export default function App() {
   return (
     <div className="flex h-full bg-slate-950 text-slate-200">
       {splash.visible && <SplashScreen leaving={splash.leaving} />}
+      {!splash.visible && !authenticated && <LoginScreen />}
       {idle.showing && <IdleScreen onDismiss={idle.dismiss} />}
       {memoryOpen && (
         <Suspense fallback={<div className="fixed inset-0 z-[60] bg-[#010408]" />}>
@@ -122,14 +132,16 @@ export default function App() {
         <TopBar
           treeCollapsed={layout.treeCollapsed}
           chatCollapsed={layout.chatCollapsed}
+          userName={userName}
           onToggleTree={toggleTree}
           onToggleChat={toggleChat}
           onOpenGuide={() => setGuideOpen(true)}
           onOpenMemory={() => setMemoryOpen(true)}
+          onSignOut={signOut}
         />
         {/* Scoped to the viewport rather than the window: the panels stay
             reachable, so the guide can be read next to the thing it describes. */}
-        {guideOpen && <GuideOverlay onClose={closeGuide} />}
+        {guideOpen && authenticated && <GuideOverlay onClose={closeGuide} />}
       </main>
 
         <>
@@ -166,17 +178,21 @@ export default function App() {
 function TopBar({
   treeCollapsed,
   chatCollapsed,
+  userName,
   onToggleTree,
   onToggleChat,
   onOpenGuide,
   onOpenMemory,
+  onSignOut,
 }: {
   treeCollapsed: boolean;
   chatCollapsed: boolean;
+  userName: string;
   onToggleTree: () => void;
   onToggleChat: () => void;
   onOpenGuide: () => void;
   onOpenMemory: () => void;
+  onSignOut: () => void;
 }) {
   const fa = useInterfaceLanguage((s) => s.language === 'fa');
   return (
@@ -188,6 +204,8 @@ function TopBar({
       >
         ▌▍
       </PanelToggle>
+
+      <BrandLogo variant="mark-dark" className="h-5 w-auto shrink-0" decorative />
 
       <p className="flex-1 text-center text-[11px] text-slate-400">
         {fa ? 'صرفاً برای آموزش؛ ابزار پزشکی یا وسیلهٔ تشخیص و درمان نیست.' : 'Educational use only — not a medical device, and not for diagnosis or treatment.'}
@@ -205,11 +223,20 @@ function TopBar({
       <button
         type="button"
         onClick={onOpenGuide}
-        title="How Anatria3D works"
-        aria-label="How Anatria3D works"
+        title="How HOOMAAN works"
+        aria-label="How HOOMAAN works"
         className="rounded-full border border-slate-700 px-[7px] text-[11px] leading-[17px] text-slate-500 transition hover:border-sky-600 hover:text-sky-300"
       >
         ?
+      </button>
+
+      <button
+        type="button"
+        onClick={onSignOut}
+        title={userName ? `${userName} — ${fa ? 'خروج از حساب' : 'Sign out'}` : fa ? 'خروج' : 'Sign out'}
+        className="rounded border border-slate-700 px-1.5 text-[10px] leading-[17px] text-slate-400 transition hover:border-amber-500/60 hover:text-amber-300"
+      >
+        {fa ? 'خروج' : 'Sign out'}
       </button>
 
       <PanelToggle

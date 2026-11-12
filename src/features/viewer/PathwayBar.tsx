@@ -1,3 +1,4 @@
+import { useInterfaceLanguage } from "@/stores/interfaceLanguage";
 import type { AnatomicalSystem } from "@/lib/schemas";
 import { organLabel, useSceneStore } from "@/stores/sceneStore";
 
@@ -36,6 +37,7 @@ export function unloadedSystems(
  * position. That is why this lists the stops rather than only counting them.
  */
 export function PathwayBar() {
+  const fa = useInterfaceLanguage((s) => s.language === "fa");
   const pathway = useSceneStore((s) => s.pathway);
   const organs = useSceneStore((s) => s.organs);
   const hiddenSystems = useSceneStore((s) => s.hiddenSystems);
@@ -82,7 +84,7 @@ export function PathwayBar() {
           ⠿
         </span>
         <span className="shrink-0 rounded-full bg-fuchsia-500/20 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-fuchsia-300">
-          Pathway
+          {fa ? "مسیر" : "Pathway"}
         </span>
         {moved && (
           <button

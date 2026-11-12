@@ -104,7 +104,7 @@ export function StatusWindow({ onClose }: { onClose: () => void }) {
   /** The whole report as text, which is what a reader actually sends. */
   const asText = useCallback(() => {
     const facts = [
-      `Anatria3D ${APP_VERSION_LABEL}`,
+      `HOOMAAN ${APP_VERSION_LABEL}`,
       `settings storage: ${storage ?? "working"}`,
       `journal: ${stats ? `${stats.sessions} sessions, ${stats.cases} cases, ${stats.notes} notes` : "not read"}`,
       `atlas: ${manifest ? `${Object.keys(organs).length} structures loaded` : "not loaded"}`,

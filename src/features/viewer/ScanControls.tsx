@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useRef } from "react";
 
+import { useInterfaceLanguage } from "@/stores/interfaceLanguage";
 import { useSceneStore } from "@/stores/sceneStore";
 import { useScanStore } from "@/stores/scanStore";
 
@@ -42,6 +43,7 @@ function show(input: HTMLInputElement, progress: number): void {
 }
 
 export function ScanControls() {
+  const fa = useInterfaceLanguage((s) => s.language === "fa");
   const enabled = useScanStore((s) => s.enabled);
   const held = useScanStore((s) => s.held);
   const pinned = useScanStore((s) => s.pinned);
@@ -117,7 +119,7 @@ export function ScanControls() {
           enabled ? OVERLAY_SWITCH_ON.cyan : OVERLAY_SWITCH_OFF
         }`}
       >
-        Scanner
+        {fa ? "اسکنر" : "Scanner"}
       </button>
 
       {/*

@@ -14,6 +14,10 @@ vi.mock("@/features/help/GuideOverlay", () => ({ GuideOverlay: () => null }));
 vi.mock("@/features/help/useFirstRun", () => ({ useFirstRun: () => ({ firstRun: false, markSeen: vi.fn() }) }));
 vi.mock("@/features/idle/useIdleScreen", () => ({ useIdleScreen: () => ({ showing: false }) }));
 vi.mock("@/features/splash/useSplash", () => ({ useSplash: () => ({ visible: false }) }));
+vi.mock("@/stores/sessionAuth", () => ({
+  useSessionAuth: (selector: (s: { authenticated: boolean; userName: string; signOut: () => void }) => unknown) =>
+    selector({ authenticated: true, userName: "Tester", signOut: vi.fn() }),
+}));
 vi.mock("@/stores/persistView", () => ({ startViewPersistence: vi.fn() }));
 vi.mock("@/lib/localStore", () => ({ checkStorage: vi.fn(), confirmStoragePersists: vi.fn(), readLocal: () => null, writeLocal: vi.fn() }));
 import App from "./App";

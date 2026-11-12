@@ -1,42 +1,25 @@
 import { useMemo } from "react";
 
+import { useInterfaceLanguage } from "@/stores/interfaceLanguage";
 import { useSceneStore } from "@/stores/sceneStore";
 
 import { tissueFamily, type TissueFamily } from "./palette";
 import { useDraggablePanel, useRememberedFlag } from "./useDraggablePanel";
 
-/** Where the legend sits, remembered between sessions. */
 const POSITION_KEY = "anatria3d.legend.v1";
-
-/** And whether it is open. */
 const COLLAPSED_KEY = "anatria3d.legend.collapsed.v1";
 
-/**
- * What each colour means, for the view that is actually on screen.
- *
- * A fixed key listing every tissue the app knows about would be mostly noise:
- * looking at a bare skeleton, twenty entries about bile and grey matter explain
- * nothing. This is derived from the structures currently visible, so it answers
- * the question a reader actually has — *what is the blue one?* — and nothing
- * else. Switch a system on and its colours appear; isolate the heart and the
- * list shrinks to what the heart is made of.
- */
 export function ColourLegend() {
+  const fa = useInterfaceLanguage((s) => s.language === "fa");
   const organs = useSceneStore((s) => s.organs);
   const hiddenSystems = useSceneStore((s) => s.hiddenSystems);
   const isolatedOrganIds = useSceneStore((s) => s.isolatedOrganIds);
   const hiddenOrganIds = useSceneStore((s) => s.hiddenOrganIds);
 
-  // Shut on a first launch. Expanded, it covers the structure list underneath
-  // it, and a key is something you consult once and then want out of the way —
-  // so the daily cost of opening it is far smaller than the daily cost of
-  // closing it. After that it is the reader's decision and it is remembered.
   const [collapsed, setCollapsed] = useRememberedFlag(COLLAPSED_KEY, true);
   const { ref, position, moved, reset, handleProps } = useDraggablePanel(POSITION_KEY);
 
   const families = useMemo(() => {
-    // Sets rather than the arrays `isOrganVisible` takes: this runs over every
-    // structure in the atlas, and an isolation can hold hundreds of ids.
     const hiddenSystemSet = new Set(hiddenSystems);
     const hiddenOrganSet = new Set(hiddenOrganIds);
     const isolatedSet = isolatedOrganIds === null ? null : new Set(isolatedOrganIds);
@@ -53,8 +36,6 @@ export function ColourLegend() {
       else counted.set(family.id, { ...family, count: 1 });
     }
 
-    // Commonest first: the colour covering most of the screen is the one a
-    // reader is most likely to be asking about.
     return [...counted.values()].sort(
       (a, b) => b.count - a.count || a.label.localeCompare(b.label),
     );
@@ -65,6 +46,7 @@ export function ColourLegend() {
   return (
     <div className="pointer-events-none absolute inset-0 overflow-hidden">
       <div
+        dir={fa ? "rtl" : "ltr"}
         ref={ref}
         style={position ? { left: position.x, top: position.y } : { left: 12, top: 44 }}
         className="pointer-events-auto absolute w-52 overflow-hidden rounded-lg border border-slate-700/80 bg-slate-900/90 shadow-lg backdrop-blur"
@@ -72,14 +54,14 @@ export function ColourLegend() {
         <div
           {...handleProps}
           onDoubleClick={reset}
-          title="Drag to move · double-click to put it back"
+          title={fa ? "برای جابه‌جایی بکشید · دابل‌کلیک برای بازگرداندن" : "Drag to move · double-click to put it back"}
           className="flex cursor-grab items-center gap-1.5 px-2 py-1 active:cursor-grabbing"
         >
           <span aria-hidden className="select-none text-[10px] leading-none text-slate-600">
             ⠿
           </span>
           <span className="text-[9px] font-semibold uppercase tracking-wider text-slate-500">
-            Colour key
+            {fa ? "راهنمای رنگ" : "Colour key"}
           </span>
           <span className="text-[9px] text-slate-600">{families.length}</span>
 
@@ -87,19 +69,19 @@ export function ColourLegend() {
             <button
               type="button"
               onClick={reset}
-              title="Put the legend back where it started"
-              className="ml-auto rounded px-1 text-[9px] text-slate-600 transition hover:text-slate-300"
+              title={fa ? "بازگردانی به جای اولیه" : "Put the legend back where it started"}
+              className="ms-auto rounded px-1 text-[9px] text-slate-600 transition hover:text-slate-300"
             >
-              reset
+              {fa ? "بازنشانی" : "reset"}
             </button>
           )}
           <button
             type="button"
             onClick={() => setCollapsed(!collapsed)}
             aria-expanded={!collapsed}
-            title={collapsed ? "Show the colour key" : "Collapse the colour key"}
+            title={fa ? (collapsed ? "نمایش راهنمای رنگ" : "جمع‌کردن راهنمای رنگ") : collapsed ? "Show the colour key" : "Collapse the colour key"}
             className={`rounded px-1 text-[10px] text-slate-500 transition hover:text-slate-200 ${
-              moved ? "" : "ml-auto"
+              moved ? "" : "ms-auto"
             }`}
           >
             {collapsed ? "▾" : "▴"}

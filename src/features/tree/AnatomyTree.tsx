@@ -55,6 +55,7 @@ export function systemIsOpen(
  * somewhere to be said.
  */
 function SaveImageButton() {
+  const fa = useInterfaceLanguage((s) => s.language === "fa");
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<string | null>(null);
 
@@ -76,7 +77,7 @@ function SaveImageButton() {
         title="Save the viewport, with its labels and its attribution, as a PNG"
         className="w-full rounded border border-slate-700 py-1 text-[11px] text-slate-300 transition hover:border-sky-600 hover:text-sky-200 disabled:opacity-40"
       >
-        {busy ? "Saving…" : "Save this view as an image"}
+        {busy ? (fa ? "در حال ذخیره…" : "Saving…") : fa ? "ذخیرهٔ نمای فعلی به‌عنوان تصویر" : "Save this view as an image"}
       </button>
       {result && (
         <button
@@ -105,6 +106,7 @@ function SaveImageButton() {
  * which the reader has to be told.
  */
 function CoverageToggle() {
+  const fa = useInterfaceLanguage((s) => s.language === "fa");
   const visible = useStudyStore((s) => s.coverageVisible);
   const setVisible = useStudyStore((s) => s.setCoverageVisible);
   const coverage = useStudyStore((s) => s.coverage);
@@ -121,7 +123,7 @@ function CoverageToggle() {
           onChange={(event) => void setVisible(event.target.checked)}
           className="accent-teal-400"
         />
-        <span>Show what I have studied</span>
+        <span>{fa ? "نمایش بخش‌های مطالعه‌شده" : "Show what I have studied"}</span>
       </label>
 
       {!visible && (
@@ -370,7 +372,7 @@ export function AnatomyTree() {
                 title={`Keep ${system} solid and ghost everything else`}
                 className="shrink-0 rounded border border-slate-700 px-1 py-0.5 text-[9px] uppercase tracking-wide text-slate-500 hover:border-sky-600 hover:text-sky-300"
               >
-                X-ray
+                {fa ? "شفاف‌سازی" : "X-ray"}
               </button>
               <button
                 type="button"
@@ -378,7 +380,7 @@ export function AnatomyTree() {
                 title={`Study ${system} on its own`}
                 className="shrink-0 rounded border border-slate-700 px-1 py-0.5 text-[9px] uppercase tracking-wide text-slate-500 hover:border-sky-600 hover:text-sky-300"
               >
-                Solo
+                {fa ? "تکی" : "Solo"}
               </button>
             </div>
 

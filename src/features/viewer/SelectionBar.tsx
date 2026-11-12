@@ -1,24 +1,12 @@
 import { useEffect } from "react";
 
+import { useInterfaceLanguage } from "@/stores/interfaceLanguage";
 import { organLabel, organSubtitle, useSceneStore } from "@/stores/sceneStore";
 
 import { viewportKey } from "./viewportKeys";
 
-/**
- * Actions on the working selection, plus the keyboard shortcuts that drive them.
- *
- * Building a set is only half the workflow — the other half is doing something
- * with it. Two verbs cover almost all of anatomy study:
- *
- *   **Isolate** — show only these. "What do the rotator cuff muscles look like
- *   on their own?"
- *   **Hide** — take these out of the way. The dissection move: peel off what
- *   covers the thing you actually want to see.
- *
- * They compose, which is the point: hide the deltoid, then isolate what was
- * underneath.
- */
 export function SelectionBar() {
+  const fa = useInterfaceLanguage((s) => s.language === "fa");
   const selectedOrganIds = useSceneStore((s) => s.selectedOrganIds);
   const hiddenOrganIds = useSceneStore((s) => s.hiddenOrganIds);
   const organs = useSceneStore((s) => s.organs);
@@ -30,15 +18,11 @@ export function SelectionBar() {
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      // One place decides whether a keystroke is the viewport's — see
-      // `viewportKeys`. These letters are also letters people type.
       const key = viewportKey(event);
       if (key === null) return;
       if (key === "i") isolateSelection();
       else if (key === "h") hideSelection();
       else if (key === "u") unhideAll();
-      // The bar offered three keys and four buttons. Letting go of a selection
-      // is the move you make most often and the only one that needed the mouse.
       else if (key === "c") clearSelection();
       else return;
       event.preventDefault();
@@ -56,7 +40,7 @@ export function SelectionBar() {
         {chosen.length > 0 && (
           <>
             <span className="shrink-0 rounded-full bg-slate-700/60 px-2 py-0.5 text-[10px] font-semibold text-slate-200">
-              {chosen.length} selected
+              {fa ? `${chosen.length} انتخاب‌شده` : `${chosen.length} selected`}
             </span>
 
             <div className="flex min-w-0 items-center gap-1">
@@ -74,20 +58,20 @@ export function SelectionBar() {
             </div>
 
             <Action onClick={isolateSelection} hint="I">
-              Isolate
+              {fa ? "ایزوله" : "Isolate"}
             </Action>
             <Action onClick={hideSelection} hint="H">
-              Hide
+              {fa ? "پنهان" : "Hide"}
             </Action>
             <Action onClick={clearSelection} hint="C">
-              Clear
+              {fa ? "پاک کردن" : "Clear"}
             </Action>
           </>
         )}
 
         {hiddenOrganIds.length > 0 && (
           <Action onClick={unhideAll} hint="U" tone="amber">
-            Restore {hiddenOrganIds.length} hidden
+            {fa ? `بازگردانی ${hiddenOrganIds.length} پنهان` : `Restore ${hiddenOrganIds.length} hidden`}
           </Action>
         )}
       </div>

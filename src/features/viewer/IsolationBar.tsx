@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 
+import { useInterfaceLanguage } from "@/stores/interfaceLanguage";
 import { organLabel, organSubtitle, useSceneStore } from "@/stores/sceneStore";
 
 import { SUPPLY_LABEL, type SupplyKind } from "./supply";
@@ -23,6 +24,7 @@ const POSITION_KEY = "anatria3d.studyPanel.v1";
  * flown to, highlighted, or dropped from the set.
  */
 export function IsolationBar() {
+  const fa = useInterfaceLanguage((s) => s.language === "fa");
   const isolatedOrganIds = useSceneStore((s) => s.isolatedOrganIds);
   const organs = useSceneStore((s) => s.organs);
   const overlays = useSceneStore((s) => s.pathologyOverlays);
@@ -75,7 +77,7 @@ export function IsolationBar() {
             ⠿
           </span>
           <span className="shrink-0 rounded-full bg-sky-500/20 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-sky-300">
-            Studying · {studied.length}
+            {fa ? `در حال مطالعه · ${studied.length}` : `Studying · ${studied.length}`}
           </span>
 
           {collapsed && (

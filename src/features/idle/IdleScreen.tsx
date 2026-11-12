@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 
+import { BrandLogo } from "@/components/BrandLogo";
 import { meshUrl } from "@/lib/manifest";
 import { useSceneStore } from "@/stores/sceneStore";
 
@@ -310,7 +311,7 @@ function wordmarkTexture(): THREE.CanvasTexture {
     // brightness the letters are read by their gaps as much as their strokes.
     paint.letterSpacing = "13px";
     paint.font = "600 58px ui-sans-serif, system-ui, -apple-system, sans-serif";
-    paint.fillText("ANATRIA3D", canvas.width / 2, canvas.height / 2);
+    paint.fillText("HOOMAAN", canvas.width / 2, canvas.height / 2);
   }
   const texture = new THREE.CanvasTexture(canvas);
   texture.colorSpace = THREE.NoColorSpace;
@@ -587,9 +588,9 @@ export function IdleScreen({ onDismiss }: { onDismiss: () => void }) {
       >
         <Brain organIds={organIds} still={still} />
       </Canvas>
-      <p className="pointer-events-none absolute bottom-6 left-8 text-[11px] tracking-[0.3em] text-slate-700">
-        ANATRIA<span className="text-sky-900">3D</span>
-      </p>
+      <BrandLogo variant="mono-white" className="pointer-events-none absolute bottom-6 left-8 h-9 w-auto opacity-35" decorative />
+
+
     </div>
   );
 }

@@ -1,5 +1,6 @@
 import { useEffect } from "react";
 
+import { useInterfaceLanguage } from "@/stores/interfaceLanguage";
 import { useSceneStore } from "@/stores/sceneStore";
 
 import {
@@ -11,34 +12,28 @@ import {
   VIEW_LABEL,
   VIEW_ORDER,
   zoomKeyFor,
+  type AnatomicalView,
 } from "./cameraViews";
 import { viewportKey } from "./viewportKeys";
 
-/**
- * Getting back to a known view, in one click.
- *
- * Orbiting a body freehand is how you end up upside down behind its left
- * shoulder with no idea how you got there, and the way out — drag until it
- * looks right again — is guesswork. These are the fixed points: five standard
- * anatomical viewpoints, a frame command, and a zoom that does not depend on
- * having a scroll wheel.
- *
- * # Why the anatomical names
- *
- * *Anterior*, *posterior*, *lateral* and *superior* are the vocabulary the
- * reader is here to learn, and the words on every radiology report they will
- * ever read. Labelling these "front" and "back" would teach the wrong term at
- * the exact moment the reader is looking at the thing it names — so the button
- * carries the letter and the tooltip carries the plain-English gloss.
- *
- * # Why fit and orient are separate
- *
- * `Fit` reframes; the viewpoints only turn, keeping whatever distance you had.
- * Turning to look at a structure from behind must not also throw away the zoom
- * you set to see it, and conflating the two would make every viewpoint button
- * an undo of your own work.
- */
+const VIEW_LABEL_FA: Record<AnatomicalView, string> = {
+  anterior: "قدامی",
+  posterior: "خلفی",
+  left: "چپ",
+  right: "راست",
+  superior: "فوقانی",
+};
+
+const VIEW_HINT_FA: Record<AnatomicalView, string> = {
+  anterior: "نمای قدامی (رو به رو) — کلید A",
+  posterior: "نمای خلفی (پشت) — کلید P",
+  left: "نمای پهلوی چپ — کلید L",
+  right: "نمای پهلوی راست — کلید R",
+  superior: "نمای فوقانی (از بالا) — کلید S",
+};
+
 export function ViewpointBar() {
+  const fa = useInterfaceLanguage((s) => s.language === "fa");
   const fitView = useSceneStore((s) => s.fitView);
   const orientView = useSceneStore((s) => s.orientView);
   const dollyView = useSceneStore((s) => s.dollyView);
@@ -48,15 +43,9 @@ export function ViewpointBar() {
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      // One place decides whether a keystroke is the viewport's, and it is the
-      // same one the selection and explode bars ask — see `viewportKeys`.
-      // Shift survives it, which the zoom needs: there is no `+` without it on
-      // a US keyboard.
       const key = viewportKey(event);
       if (key === null) return;
 
-      // Zoom first, because it reads `code` as well and a numeric-pad press
-      // reports a `key` of its own that no letter should be asked about.
       const direction = zoomKeyFor(event);
       if (direction !== null) {
         dollyView(direction === "in" ? DOLLY_IN : DOLLY_OUT);
@@ -84,16 +73,18 @@ export function ViewpointBar() {
       <div className="pointer-events-auto flex items-center gap-1 rounded-full border border-slate-700 bg-slate-900/95 px-2 py-1 shadow-lg backdrop-blur">
         <Key
           onClick={fitView}
-          // The same scope rule the exploded view uses, said out loud: after
-          // isolating a heart, "frame this" means the heart.
           title={
-            studying
-              ? `Frame the ${isolatedOrganIds.length} structures you are studying — key F`
-              : "Frame the whole body — key F"
+            fa
+              ? studying
+                ? `تنظیم کادر روی ${isolatedOrganIds.length} ساختار — کلید F`
+                : "تنظیم کادر روی کل بدن — کلید F"
+              : studying
+                ? `Frame the ${isolatedOrganIds.length} structures you are studying — key F`
+                : "Frame the whole body — key F"
           }
           wide
         >
-          Fit
+          {fa ? "تنظیم کادر" : "Fit"}
         </Key>
 
         <span aria-hidden className="mx-0.5 h-4 w-px bg-slate-700" />
@@ -102,18 +93,19 @@ export function ViewpointBar() {
           <Key
             key={view}
             onClick={() => orientView(view)}
-            title={`${VIEW_HINT[view]} — key ${VIEW_LABEL[view]}`}
+            title={fa ? VIEW_HINT_FA[view] : `${VIEW_HINT[view]} — key ${VIEW_LABEL[view]}`}
+            wide={fa}
           >
-            {VIEW_LABEL[view]}
+            {fa ? VIEW_LABEL_FA[view] : VIEW_LABEL[view]}
           </Key>
         ))}
 
         <span aria-hidden className="mx-0.5 h-4 w-px bg-slate-700" />
 
-        <Key onClick={() => dollyView(DOLLY_OUT)} title="Move further away — key −">
+        <Key onClick={() => dollyView(DOLLY_OUT)} title={fa ? "دور شدن — کلید −" : "Move further away — key −"}>
           −
         </Key>
-        <Key onClick={() => dollyView(DOLLY_IN)} title="Move closer in — key +">
+        <Key onClick={() => dollyView(DOLLY_IN)} title={fa ? "نزدیک شدن — کلید +" : "Move closer in — key +"}>
           +
         </Key>
       </div>
@@ -137,8 +129,7 @@ function Key({
       type="button"
       onClick={onClick}
       title={title}
-      aria-label={title}
-      className={`flex h-6 items-center justify-center rounded text-[11px] font-medium text-slate-400 transition hover:bg-slate-700/60 hover:text-sky-200 ${
+      className={`h-6 rounded-full text-[11px] font-medium text-slate-300 transition hover:bg-slate-800 hover:text-sky-300 ${
         wide ? "px-2" : "w-6"
       }`}
     >

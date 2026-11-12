@@ -1,3 +1,6 @@
+import { BrandLogo } from "@/components/BrandLogo";
+import { useInterfaceLanguage } from "@/stores/interfaceLanguage";
+
 /**
  * The opening screen.
  *
@@ -7,10 +10,11 @@
  *
  * The trace is a cardiac rhythm because it is the one motif that is both alive
  * and unmistakably anatomical: a bright segment sweeping a dim line, the way a
- * monitor draws it. Pure SVG and CSS — no image to load, which matters for a
- * screen whose entire job is to be there before anything has loaded.
+ * monitor draws it.
  */
 export function SplashScreen({ leaving }: { leaving: boolean }) {
+  const fa = useInterfaceLanguage((s) => s.language === "fa");
+
   return (
     <div
       // `fixed`, not absolute: it covers the whole window including the panels,
@@ -21,15 +25,16 @@ export function SplashScreen({ leaving }: { leaving: boolean }) {
       }`}
       role="status"
       aria-live="polite"
-      aria-label="Homman is starting"
+      aria-label="HOOMAAN is starting"
     >
-      <h1 className="text-3xl font-semibold tracking-tight text-slate-100">
-        Homman<span className="text-sky-400">3D</span>
-      </h1>
+      <BrandLogo
+        variant="full-dark"
+        className="h-32 w-auto drop-shadow-[0_0_24px_rgba(20,184,166,0.18)]"
+      />
 
       <svg
         viewBox="0 0 240 60"
-        className="mt-4 h-12 w-60"
+        className="mt-5 h-11 w-56"
         fill="none"
         aria-hidden
         stroke="currentColor"
@@ -38,15 +43,19 @@ export function SplashScreen({ leaving }: { leaving: boolean }) {
         strokeLinejoin="round"
       >
         {/* The rhythm, laid down twice so the sweep never runs out of line. */}
-        <path d={TRACE} className="text-sky-500/20" />
-        <path d={TRACE} className="animate-ecg text-sky-300" />
+        <path d={TRACE} className="text-teal-500/20" />
+        <path d={TRACE} className="animate-ecg text-teal-300" />
       </svg>
 
-      <p className="mt-3 text-[11px] text-slate-500">Loading the anatomy…</p>
+      <p className="mt-3 text-[11px] text-slate-400">
+        {fa ? "در حال بارگذاری اطلس آناتومی…" : "Loading the anatomy…"}
+      </p>
 
       {/* The boundary belongs on the first screen, not only on the fifth. */}
-      <p className="absolute bottom-6 text-[10px] text-slate-700">
-        Educational use only — not a medical device.
+      <p className="absolute bottom-6 text-[10px] text-slate-600">
+        {fa
+          ? "صرفاً برای آموزش؛ ابزار پزشکی و تشخیصی نیست."
+          : "Educational use only — not a medical device."}
       </p>
     </div>
   );

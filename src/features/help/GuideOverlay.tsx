@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 
+import { BrandLogo } from "@/components/BrandLogo";
 import { useCopy } from "@/features/chat/useCopy";
 import { APP_VERSION_LABEL } from "@/lib/appVersion";
 import { MAX_SEVERITY, MAX_VISITS } from "@/lib/studyDb";
@@ -1898,7 +1899,7 @@ export function GuideOverlay({ onClose }: { onClose: () => void }) {
       className="absolute inset-0 z-50 flex items-center justify-center bg-slate-950/80 p-4 backdrop-blur-sm"
       role="dialog"
       aria-modal="true"
-      aria-label="How Anatria3D works"
+      aria-label="How HOOMAAN works"
       onClick={onClose}
     >
       <div
@@ -1933,9 +1934,9 @@ export function GuideOverlay({ onClose }: { onClose: () => void }) {
 
         <div className="flex min-w-0 flex-1 flex-col">
           <header className="flex shrink-0 items-center gap-2 border-b border-slate-800 px-5 py-3">
-            <h2 className="text-sm font-semibold tracking-tight text-slate-100">
-              How Anatria<span className="text-sky-400">3D</span> works
-            </h2>
+            <h2 className="flex items-center gap-2 text-sm font-semibold tracking-tight text-slate-100"><BrandLogo variant="mark-dark" className="h-5 w-auto shrink-0" decorative /> How HOOMAAN works</h2>
+
+
             <button
               type="button"
               onClick={onClose}

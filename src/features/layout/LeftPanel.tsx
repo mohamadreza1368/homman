@@ -36,7 +36,7 @@ export function LeftPanel() {
   const fa = language === 'fa';
 
   return (
-    <div className="flex h-full min-h-0 flex-col">
+    <div dir={fa ? "rtl" : "ltr"} className="flex h-full min-h-0 flex-col">
       <div className="flex shrink-0 border-b border-slate-800">
         <TabButton active={tab === "atlas"} onClick={() => setTab("atlas")}>
           {fa ? 'اطلس' : 'Atlas'}
@@ -63,7 +63,7 @@ export function LeftPanel() {
           type="button"
           onClick={() => setStatus(true)}
           className="shrink-0 self-center px-2 text-[10px] font-medium tabular-nums text-slate-600 transition hover:text-slate-300"
-          title={`Anatria3D ${APP_VERSION_LABEL} — click for status and log`}
+          title={`HOOMAAN ${APP_VERSION_LABEL} — click for status and log`}
         >
           {APP_VERSION_LABEL}
         </button>

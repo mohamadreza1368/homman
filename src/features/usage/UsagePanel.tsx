@@ -1,37 +1,19 @@
 import { useEffect, useMemo } from "react";
 
+import { useInterfaceLanguage } from "@/stores/interfaceLanguage";
 import { useUsageStore } from "@/stores/usageStore";
 
 import { byModel, summarise, totals, type Grain } from "./aggregate";
 import { formatTokens } from "./tokens";
 
-/**
- * What the assistant has cost, over time and per model.
- *
- * # Why this is a panel of its own
- *
- * The per-answer count belongs next to the answer, where it is one faint line
- * you can ignore. Everything else — trends, models, months — is a different
- * activity: you go looking for it, once, when the provider's bill surprises
- * you. Putting it in the chat would tax every reading of every answer with a
- * dashboard nobody asked for at that moment.
- *
- * # No prices
- *
- * Tokens only, deliberately — see `tokens.ts`. Rates change without notice and
- * differ by tier, region and cache state; a euro figure would be quietly wrong
- * for somebody within the month. Being silent about the bill is better than
- * being confidently wrong about it, and the provider's own dashboard is the
- * authority.
- */
-
-const GRAINS: { id: Grain; label: string; window: string }[] = [
-  { id: "day", label: "Daily", window: "last 14 days" },
-  { id: "week", label: "Weekly", window: "last 12 weeks" },
-  { id: "month", label: "Monthly", window: "last 12 months" },
+const GRAINS: { id: Grain; label: string; labelFa: string; window: string; windowFa: string }[] = [
+  { id: "day", label: "Daily", labelFa: "روزانه", window: "last 14 days", windowFa: "۱۴ روز گذشته" },
+  { id: "week", label: "Weekly", labelFa: "هفتگی", window: "last 12 weeks", windowFa: "۱۲ هفته گذشته" },
+  { id: "month", label: "Monthly", labelFa: "ماهانه", window: "last 12 months", windowFa: "۱۲ ماه گذشته" },
 ];
 
 export function UsagePanel() {
+  const fa = useInterfaceLanguage((s) => s.language === "fa");
   const buckets = useUsageStore((s) => s.buckets);
   const grain = useUsageStore((s) => s.grain);
   const loaded = useUsageStore((s) => s.loaded);
@@ -47,10 +29,11 @@ export function UsagePanel() {
   const periods = useMemo(() => summarise(buckets, grain), [buckets, grain]);
   const models = useMemo(() => byModel(buckets), [buckets]);
   const sum = useMemo(() => totals(buckets), [buckets]);
-  const window = GRAINS.find((entry) => entry.id === grain)?.window ?? "";
+  const activeGrain = GRAINS.find((entry) => entry.id === grain);
+  const windowLabel = (fa ? activeGrain?.windowFa : activeGrain?.window) ?? "";
 
   return (
-    <div className="flex h-full min-h-0 flex-col text-xs">
+    <div dir={fa ? "rtl" : "ltr"} className="flex h-full min-h-0 flex-col text-xs">
       <div className="flex shrink-0 items-center gap-1 border-b border-slate-800 px-3 py-2">
         {GRAINS.map((entry) => (
           <button
@@ -58,14 +41,14 @@ export function UsagePanel() {
             type="button"
             onClick={() => void setGrain(entry.id)}
             aria-pressed={grain === entry.id}
-            title={`Group by ${entry.label.toLowerCase().replace("ly", "")} — ${entry.window}`}
+            title={fa ? `${entry.labelFa} — ${entry.windowFa}` : `Group by ${entry.label.toLowerCase().replace("ly", "")} — ${entry.window}`}
             className={`rounded border px-2 py-1 text-[11px] transition ${
               grain === entry.id
                 ? "border-sky-500 bg-sky-500/10 text-sky-300"
                 : "border-slate-700 text-slate-400 hover:border-slate-600"
             }`}
           >
-            {entry.label}
+            {fa ? entry.labelFa : entry.label}
           </button>
         ))}
       </div>
@@ -80,21 +63,21 @@ export function UsagePanel() {
       )}
 
       <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-3 py-3">
-        <Total sum={sum} window={window} loaded={loaded} />
+        <Total sum={sum} window={windowLabel} loaded={loaded} fa={fa} />
 
         {periods.length > 0 && (
-          <Section title={`Over the ${window}`}>
-            <Timeline periods={periods} />
+          <Section title={fa ? `در بازهٔ ${windowLabel}` : `Over the ${windowLabel}`}>
+            <Timeline periods={periods} fa={fa} />
           </Section>
         )}
 
         {models.length > 0 && (
-          <Section title="By model">
+          <Section title={fa ? "بر اساس مدل" : "By model"}>
             <div className="space-y-1.5">
               {models.map((row) => (
                 <div key={`${row.provider}/${row.model}`}>
                   <div className="flex items-baseline gap-2">
-                    <span className="min-w-0 flex-1 truncate text-[11px] text-slate-300">
+                    <span dir="ltr" className="min-w-0 flex-1 truncate text-[11px] text-slate-300">
                       {row.model}
                     </span>
                     <span className="tabular-nums text-[11px] text-slate-400">
@@ -106,8 +89,9 @@ export function UsagePanel() {
                   </div>
                   <Bar fraction={row.share} />
                   <p className="mt-0.5 text-[10px] text-slate-600">
-                    {row.provider} · {row.turns} {row.turns === 1 ? "answer" : "answers"} ·{" "}
-                    {formatTokens(row.input)} sent, {formatTokens(row.output)} received
+                    {fa
+                      ? `${row.turns} پاسخ · ${formatTokens(row.input)} ورودی، ${formatTokens(row.output)} خروجی`
+                      : `${row.provider} · ${row.turns} ${row.turns === 1 ? "answer" : "answers"} · ${formatTokens(row.input)} sent, ${formatTokens(row.output)} received`}
                   </p>
                 </div>
               ))}
@@ -117,15 +101,16 @@ export function UsagePanel() {
 
         {loaded && buckets.length === 0 && (
           <p className="pt-4 text-center text-[11px] leading-relaxed text-slate-600">
-            Nothing yet. Every answer the assistant gives is counted here, from the
-            next one on.
+            {fa
+              ? "هنوز مصرفی ثبت نشده است. از اولین پاسخ دستیار به بعد، آمار توکن‌ها اینجا نمایش داده می‌شود."
+              : "Nothing yet. Every answer the assistant gives is counted here, from the next one on."}
           </p>
         )}
 
         <p className="border-t border-slate-800/70 pt-3 text-[10px] leading-relaxed text-slate-600">
-          Counts are what your provider reported for each answer, stored on this
-          machine only. No prices: rates change and differ by tier and region, so
-          your provider&apos;s own dashboard is the authority on the bill.
+          {fa
+            ? "اعداد بر اساس گزارش سرویس API شما محاسبه شده و فقط روی دستگاه خودتان نگهداری می‌شوند."
+            : "Counts are what your provider reported for each answer, stored on this machine only. No prices: your provider's dashboard is the authority on the bill."}
         </p>
       </div>
     </div>
@@ -136,37 +121,34 @@ function Total({
   sum,
   window,
   loaded,
+  fa,
 }: {
   sum: { input: number; output: number; cached: number; total: number; turns: number };
   window: string;
   loaded: boolean;
+  fa: boolean;
 }) {
-  if (!loaded) return <p className="text-[11px] text-slate-500">Reading…</p>;
+  if (!loaded) return <p className="text-[11px] text-slate-500">{fa ? "در حال خواندن…" : "Reading…"}</p>;
 
   return (
     <div className="rounded border border-slate-800 bg-slate-900/40 px-3 py-2">
       <p className="text-[10px] uppercase tracking-wider text-slate-500">{window}</p>
       <p className="mt-0.5 text-lg font-semibold tabular-nums text-slate-100">
         {formatTokens(sum.total)}
-        <span className="ml-1 text-[11px] font-normal text-slate-500">tokens</span>
+        <span className="ms-1 text-[11px] font-normal text-slate-500">
+          {fa ? "توکن" : "tokens"}
+        </span>
       </p>
       <p className="mt-0.5 text-[10px] text-slate-500">
-        {formatTokens(sum.input)} sent · {formatTokens(sum.output)} received ·{" "}
-        {sum.turns} {sum.turns === 1 ? "answer" : "answers"}
-        {sum.turns > 0 && ` · ${formatTokens(sum.total / sum.turns)} each on average`}
+        {fa
+          ? `${formatTokens(sum.input)} ارسال · ${formatTokens(sum.output)} دریافت · ${sum.turns} پاسخ`
+          : `${formatTokens(sum.input)} sent · ${formatTokens(sum.output)} received · ${sum.turns} ${sum.turns === 1 ? "answer" : "answers"}${sum.turns > 0 ? ` · ${formatTokens(sum.total / sum.turns)} each on average` : ""}`}
       </p>
-      {/*
-        Said only when there is something to say. Every question re-sends the
-        whole conversation, which is what makes the number above grow — but a
-        provider that recognises the repetition charges a fraction for it, and
-        without this line the panel reports the volume as though all of it were
-        paid for at full rate. Turns recorded before the journal counted this
-        contribute nothing, so the figure can only ever understate the saving.
-      */}
       {sum.cached > 0 && (
         <p className="mt-0.5 text-[10px] text-slate-500">
-          {formatTokens(sum.cached)} of what was sent came back out of the
-          provider&rsquo;s cache, billed at a reduced rate.
+          {fa
+            ? `${formatTokens(sum.cached)} توکن از حافظهٔ نهان (Cache) بازخوانی شد.`
+            : `${formatTokens(sum.cached)} of what was sent came back out of the provider's cache, billed at a reduced rate.`}
         </p>
       )}
     </div>
@@ -182,17 +164,12 @@ function Section({ title, children }: { title: string; children: React.ReactNode
   );
 }
 
-/**
- * Bars scaled against the busiest period rather than against the total.
- *
- * The question a reader brings here is "is this week worse than last week",
- * which is a comparison between the rows — scaling to the sum would flatten
- * every row into a sliver as soon as there were a dozen of them.
- */
 function Timeline({
   periods,
+  fa,
 }: {
   periods: { key: string; label: string; total: number; turns: number }[];
+  fa: boolean;
 }) {
   const peak = Math.max(...periods.map((period) => period.total), 1);
 
@@ -208,7 +185,11 @@ function Timeline({
           </div>
           <span
             className="w-12 shrink-0 text-right tabular-nums text-[10px] text-slate-400"
-            title={`${period.turns} ${period.turns === 1 ? "answer" : "answers"}`}
+            title={
+              fa
+                ? `${period.turns} پاسخ`
+                : `${period.turns} ${period.turns === 1 ? "answer" : "answers"}`
+            }
           >
             {formatTokens(period.total)}
           </span>
@@ -218,7 +199,6 @@ function Timeline({
   );
 }
 
-/** A hairline stays visible for a period that cost almost nothing but not nothing. */
 function Bar({ fraction }: { fraction: number }) {
   return (
     <div className="mt-0.5 h-1 overflow-hidden rounded-full bg-slate-800">
