@@ -22,7 +22,7 @@
     "react-dom": "^19.0.0",
     "tailwind-merge": "^3.0.1",
     "three": "^0.174.0",
-    "three-mesh-bvh": "^0.8.2"
+    "three-mesh-bvh": "^0.9.18"
   },
   "devDependencies": {
     "@types/node": "^22.13.4",
