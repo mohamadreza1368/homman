@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useSceneStore } from "@/stores/sceneStore";
+import { DiseaseDefinition } from "./DiseaseDefinition";
 
 interface Site { uberon: string; sourceDisease: string; male: string[]; female: string[] }
 interface Disease { id: string; name: string; sites: Site[] }
@@ -38,6 +39,7 @@ export function OntologySites({ query, selectedOnly, fa }: { query: string; sele
       {matches.slice(0, 40).map((d) => <li key={d.id} className="rounded-xl border border-slate-700 bg-slate-900 p-3">
         <a dir="ltr" className="block text-left text-sm text-slate-100 underline decoration-teal-700" href={`https://disease-ontology.org/term/${d.id}/`} target="_blank" rel="noreferrer">{d.name}</a>
         <div dir="ltr" className="mt-1 text-left text-[10px] text-slate-400">{d.id}</div>
+        <DiseaseDefinition id={d.id} fa={fa} />
         {d.sites.map((site) => <div key={`${site.uberon}-${site.sourceDisease}`} className="mt-2 rounded-lg bg-slate-950/70 p-2">
           <div className="text-[10px] leading-5 text-slate-400" dir="ltr">{site.uberon} · {site.sourceDisease === d.id ? (fa ? "ارتباط مستقیم" : "direct") : (fa ? `از ردهٔ ${site.sourceDisease}` : `inherited from ${site.sourceDisease}`)}</div>
           {site[model].filter((id) => organs[id]).map((id) => <button key={id} type="button" onClick={() => {

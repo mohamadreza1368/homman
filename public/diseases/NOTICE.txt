@@ -5,6 +5,8 @@ License: Creative Commons Attribution 4.0 International, https://creativecommons
 The mondo-index.json file is a modified extract: it retains Mondo identifiers,
 English labels and exact synonyms; obsolete terms and terms marked not_a_disease
 are excluded. The original release and complete ontology remain available above.
+definitions.json also contains English definitions and source references from
+the same release and from Disease Ontology, as described below.
 This index is for terminology search; it is not a diagnosis, a complete list
 of all possible diseases, or an anatomical mapping.
 
