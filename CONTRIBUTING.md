@@ -1,29 +1,35 @@
-# راهنمای مشارکت و اصول تغییر داده‌های پزشکی (CONTRIBUTING)
+# Contributing to Anatria3D
 
-هرگونه تغییر در کد، مدل‌های سه‌بعدی یا داده‌های پزشکی **هومان 3D** باید این اصول را رعایت کند:
+Thank you for looking. Please read this before opening a pull request, because
+it decides whether one can be accepted at all.
 
-## ۱. مرزبندی کاربرد و زبان UI
-- هیچ متنی در رابط کاربری یا مستندات نباید ادعای تشخیص بیماری، توصیه درمان، تریاژ یا اعتبار بالینی داشته باشد.
-- تمام نمایش‌های بیماری و عملکرد فیزیولوژیک باید صراحتاً با عنوان **نمایش آموزشی / مفهومی** ارائه شوند.
+## Pull requests need an agreement first
 
-## ۲. اصول تغییر داده‌های آناتومی و پاتولوژی
-1. منبع حقیقت ساختارها `frontend/src/data/anatomyCatalog.json` است که منحصراً از طریق اسکریپت `python pipeline/scripts/build_release_data.py` از روی `pipeline/data/medical_knowledge.db` ساخته می‌شود. از ویرایش دستی JSONهای خروجی بدون به‌روزرسانی پایپ‌لاین خودداری کنید.
-2. هر رکورد جدید باید دارای فیلدهای زیر باشد:
-   - `source` و `sourceVersion`
-   - `reviewedBy` (فرد دارای صلاحیت علمی/پزشکی برای نسخه‌های انتشار عمومی) و `reviewedAt`
-   - `contentStatus`: یکی از `reference`، `educational_visualization` یا `draft`
-   - متون فارسی و انگلیسی جداگانه و شفاف
-   - یادداشت محدودیت مجوز واژگان پزشکی (`licenseRestriction`)
-3. هرگز داده‌های آزمایشی یا mock را درون `frontend/src/` قرار ندهید؛ نمونه‌های آزمایشی باید بیرون از باندل تولید (مانند `pipeline/fixtures/`) نگهداری شوند.
+The application's code is under the **Business Source License 1.1** (see
+[`LICENSE`](LICENSE)), and the same code is also offered under commercial
+licences. That is only possible while the licensor holds the right to license
+every line of it. The BSL, unlike the Apache licence earlier versions used, has
+no clause that licenses a contribution back automatically.
 
-## ۳. الزامات بررسی پیش از ارسال Pull Request
-پیش از ارسال PR، تمام دستورهای زیر باید بدون خطا اجرا شوند:
+So **a pull request cannot be merged without a written contributor agreement**
+with the licensor, Nurdzhan Kerimov (Digital Rose). Write to
+**anatria@digitalrose.org** before starting any work you intend to contribute,
+and nothing will be wasted.
 
-```bash
-npm run lint
-npm run pipeline:check
-npm run validate:data
-npm run typecheck
-npm test
-npm run build
-```
+## What needs no agreement
+
+- **Reporting a bug or suggesting a feature** in the issues. Describe what you
+  saw and on which system; a screenshot helps.
+- **Reporting a security problem** — privately, as [`SECURITY.md`](SECURITY.md)
+  describes, never in a public issue.
+- **Forking and changing the code for your own study, teaching or
+  non-production use**, which the licence already allows. A fork may not be
+  called Anatria3D: the name is a trademark and is not licensed.
+
+## The anatomy is different
+
+The meshes and nomenclature in `public/anatomy/` are not ours and are not under
+the application's licence. They are CC BY-SA 4.0 and CC BY 4.0, from Z-Anatomy,
+BodyParts3D and the NIH Human Reference Atlas — see
+[`public/anatomy/LICENSE`](public/anatomy/LICENSE). Corrections to them are
+welcome under those licences, and are best sent upstream as well.

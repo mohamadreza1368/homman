@@ -1,0 +1,58 @@
+{
+ "system": "endocrine",
+ "collections": [
+  "Bonus collection/Visceral systems/Endocrine glands"
+ ],
+ "output": "endocrine_male.glb",
+ "draco": true,
+ "object_count": 6,
+ "skipped_count": 2,
+ "skipped": [
+  "Endocrine glands.j",
+  "Hypophysis.j"
+ ],
+ "objects": [
+  {
+   "name": "Adenohypophysis",
+   "polygons": 678,
+   "path": [
+    "Endocrine glands"
+   ]
+  },
+  {
+   "name": "Neurohypophysis",
+   "polygons": 592,
+   "path": [
+    "Endocrine glands"
+   ]
+  },
+  {
+   "name": "Pineal gland",
+   "polygons": 592,
+   "path": [
+    "Endocrine glands"
+   ]
+  },
+  {
+   "name": "Suprarenal gland.l",
+   "polygons": 3996,
+   "path": [
+    "Endocrine glands"
+   ]
+  },
+  {
+   "name": "Suprarenal gland.r",
+   "polygons": 2294,
+   "path": [
+    "Endocrine glands"
+   ]
+  },
+  {
+   "name": "Thyroid gland",
+   "polygons": 1300,
+   "path": [
+    "Endocrine glands"
+   ]
+  }
+ ]
+}

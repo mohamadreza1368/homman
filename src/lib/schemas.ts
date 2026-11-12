@@ -1,0 +1,856 @@
+import { z } from "zod";
+
+/**
+ * Wire format for the Anatria3D IPC chain: React -> Rust -> Python sidecar.
+ *
+ * Two rules govern this file and its Pydantic mirror in
+ * `engine/anatria_engine/protocol.py`:
+ *
+ * 1. The wire is snake_case end to end. Rust serde and Pydantic both get the
+ *    field names for free, and there is no casing boundary to get wrong.
+ * 2. There is no `api_key` field on the frontend request. Rust reads the key
+ *    from the OS keyring and injects it when it writes to the sidecar's stdin,
+ *    so the key never enters the webview's JS context.
+ *
+ * `tests/contract.test.ts` diffs the JSON Schema generated from these Zod
+ * schemas against the one generated from the Pydantic models. That test is the
+ * only thing standing between us and the two sides drifting apart silently.
+ */
+
+export const PROTOCOL_VERSION = 2;
+
+// ---------------------------------------------------------------------------
+// Primitives
+// ---------------------------------------------------------------------------
+
+/**
+ * `auto` is not a language. It is the absence of a choice: the assistant
+ * answers in whatever the reader wrote in, and keeps doing so.
+ */
+export const LanguageSchema = z.enum(["auto", "bg", "es", "en"]);
+export type Language = z.infer<typeof LanguageSchema>;
+
+export const UserProfileSchema = z.enum(["layperson", "student", "clinician"]);
+export type UserProfile = z.infer<typeof UserProfileSchema>;
+
+/**
+ * Which body is on screen. The two are separate atlases, not one model with a
+ * switch — see `manifest.ts`.
+ *
+ * `male` is Z-Anatomy's whole body, 3,478 structures across every system.
+ * `female` is the trunk, built from the NIH Human Reference Atlas: 264
+ * structures — spine, abdominal organs, pelvis and breast — and deliberately
+ * not a whole body, because no open source for one exists. The application says
+ * so where the reader chooses.
+ */
+export const GenderModelSchema = z.enum(["male", "female"]);
+export type GenderModel = z.infer<typeof GenderModelSchema>;
+
+export const AiProviderSchema = z.enum(["anthropic", "openai", "google"]);
+export type AiProvider = z.infer<typeof AiProviderSchema>;
+
+/**
+ * What the assistant is doing this turn.
+ *
+ * `tutor` answers the question that was asked. `case` runs a clinical drill:
+ * the assistant presents a scenario, marks the anatomy on the model, and asks
+ * the student what they would do — then grades the answer instead of supplying
+ * it. The difference is entirely in the instructions and in one extra tool, so
+ * a drill keeps the same scene control and the same safety layer as a lesson.
+ *
+ * `review` reads a case back — what was presented, what was reasoned, where the
+ * gaps are. It writes nothing: the journal's `kind` column accepts only `tutor`
+ * and `case`, so a review cannot be filed as a visit even by accident. That is
+ * the intent. A summary is generated prose, and the journal holds what the
+ * reader actually did.
+ */
+export const SessionModeSchema = z.enum(["tutor", "case", "review"]);
+export type SessionMode = z.infer<typeof SessionModeSchema>;
+
+/**
+ * The modes the journal can actually hold.
+ *
+ * `review` is missing on purpose, and the SQLite table says the same thing with
+ * `CHECK (kind IN ('tutor', 'case'))`. A summary is generated prose; the
+ * journal records what the reader did. Stating it in the type means a printed
+ * page cannot be asked to label a session kind that can never exist.
+ */
+export type FiledMode = Exclude<SessionMode, "review">;
+
+export const AnatomicalSystemSchema = z.enum([
+  "cardiovascular",
+  "respiratory",
+  "renal",
+  "digestive",
+  "nervous",
+  "endocrine",
+  "lymphatic",
+  // Bone, muscle and joint are separate systems, not one block: studying
+  // the skeleton means seeing the skeleton, with the musculature off.
+  "skeletal",
+  "muscular",
+  "articular",
+  "reproductive",
+  "integumentary",
+  // Surface and regional anatomy — taught alongside the systems, and 299
+  // structures of the atlas would otherwise be dropped.
+  "regional",
+]);
+export type AnatomicalSystem = z.infer<typeof AnatomicalSystemSchema>;
+
+export const SectionPlaneSchema = z.enum(["axial", "coronal", "sagittal"]);
+export type SectionPlane = z.infer<typeof SectionPlaneSchema>;
+
+/**
+ * The textbook rhythms and heart sounds the heartbeat can play. The catalogue
+ * itself — labels, captions, timing — lives in the viewer's `rhythms.ts`; this
+ * is only the list of names both sides of the protocol agree on.
+ */
+export const HeartRhythmIdSchema = z.enum([
+  "normal",
+  "sinus_tachycardia",
+  "sinus_bradycardia",
+  "av_block_1",
+  "mobitz_1",
+  "mobitz_2",
+  "av_block_3",
+  "atrial_fibrillation",
+  "atrial_flutter",
+  "premature_ventricular",
+  "ventricular_tachycardia",
+  "ventricular_fibrillation",
+  "asystole",
+  "aortic_stenosis",
+  "mitral_regurgitation",
+  "aortic_regurgitation",
+  "mitral_stenosis",
+  "third_heart_sound",
+  "fourth_heart_sound",
+]);
+export type HeartRhythmId = z.infer<typeof HeartRhythmIdSchema>;
+
+/** Which way the scanner reads the body; "coronal" is the viewer's Front. */
+export const ScannerPlaneSchema = z.enum(["axial", "coronal"]);
+export type ScannerPlane = z.infer<typeof ScannerPlaneSchema>;
+
+// ---------------------------------------------------------------------------
+// Anatomy metadata
+// ---------------------------------------------------------------------------
+
+/**
+ * One entry per mesh in `public/anatomy/manifest.json`.
+ *
+ * **Nomenclature is professional-standard only** — Terminologia Anatomica 2
+ * Latin plus clinical English. There are deliberately no localised labels here.
+ *
+ * Translating anatomy is not a lookup, it is an explanation: the right wording
+ * for "Ventriculus sinister" differs for a layperson, a medical student and a
+ * clinician, and differs again across BG, ES and EN. That is the AI's job, done
+ * per turn with the user's profile in hand. Shipping a frozen translation table
+ * would produce one wording for all three audiences and leave a pile of
+ * unreviewed medical terms in the repo.
+ */
+export const OrganMetaSchema = z.object({
+  organ_id: z.string().min(1),
+  ta2_latin: z.string().min(1),
+  name_en: z.string().min(1),
+  system: AnatomicalSystemSchema,
+});
+export type OrganMeta = z.infer<typeof OrganMetaSchema>;
+
+/** One structure the user has selected. */
+export const OrganContextSchema = z.object({
+  organ_id: z.string().min(1),
+  ta2_latin: z.string().min(1),
+  name_en: z.string().min(1),
+  system: AnatomicalSystemSchema,
+});
+export type OrganContext = z.infer<typeof OrganContextSchema>;
+
+// ---------------------------------------------------------------------------
+// Scene commands — what the agent is allowed to do to the viewport
+// ---------------------------------------------------------------------------
+
+export const SceneCommandSchema = z.discriminatedUnion("action", [
+  z.object({
+    action: z.literal("say"),
+    // Count Unicode code points, as Pydantic does, not UTF-16 code units.
+    text: z.string().refine((text) => [...text].length <= 4000, {
+      message: "Text must contain at most 4000 characters.",
+    }),
+  }),
+  z.object({
+    action: z.literal("focus_organ"),
+    organ_id: z.string().min(1),
+  }),
+  z.object({
+    action: z.literal("set_layer_visibility"),
+    system: AnatomicalSystemSchema,
+    visible: z.boolean(),
+  }),
+  /**
+   * See through a whole system without switching it off.
+   *
+   * A third state between shown and hidden, and a distinct teaching move:
+   * ghosting the skin keeps the relationship between it and the muscles under
+   * it on screen, where hiding it throws that relationship away. `1` is solid.
+   */
+  z.object({
+    action: z.literal("set_layer_opacity"),
+    system: AnatomicalSystemSchema,
+    opacity: z.number().min(0).max(1),
+  }),
+  z.object({
+    action: z.literal("isolate_structures"),
+    organ_ids: z.array(z.string().min(1)).min(1).max(64),
+  }),
+  /**
+   * Show a structure together with everything anatomically inside it — the
+   * heart with its chambers and valves, the brain with its lobes.
+   *
+   * Resolved in the viewer rather than the engine: the hierarchy lives in the
+   * manifest, and sending thousands of ancestry paths to the model on every
+   * turn to let it expand the set itself would cost more than the feature.
+   */
+  z.object({
+    action: z.literal("isolate_region"),
+    organ_id: z.string().min(1),
+  }),
+  /**
+   * Isolate a named anatomical group — "Brain", "Muscles of hand", "Vertebral column".
+   *
+   * Most groups are not structures. The atlas has no mesh called "Kidney" on
+   * the female body: it is fifty parts under one heading, and the same is true
+   * of 109 of the male atlas's 110 groups. Until this existed the reader could
+   * isolate them by right-clicking and the assistant could not, so "show me the
+   * whole kidney" was a request it had to answer by naming fifty ids or not at
+   * all.
+   *
+   * The name is the key rather than an id, for the same reason the right-click
+   * menu uses it: there is no id to use.
+   */
+  z.object({
+    action: z.literal("isolate_group"),
+    group: z.string().min(1),
+  }),
+  /**
+   * Fold the vessels — or the nerves — that reach the study set into it.
+   *
+   * **The one relation naming cannot express.** The atlas is organised by
+   * system and anatomy is studied by territory: isolating the heart brings its
+   * seventeen parts because they are its descendants, and leaves the coronary
+   * arteries behind because they live under *Systemic arteries*, an entirely
+   * different branch. No amount of walking the hierarchy fixes that.
+   *
+   * So this is not a list of ids the assistant could have named. It asks the
+   * viewer to measure which vessels actually pass through what is being
+   * studied, which is a question only the live geometry can answer — the
+   * reader has had it on the study bar as `+ vessels` since 0.1; this is the
+   * same button, reachable from the other side.
+   *
+   * Requires something to be isolated. "Show me the vessels" against the whole
+   * body is every vessel in it, which is the atlas with extra steps.
+   */
+  z.object({
+    action: z.literal("add_supply"),
+    kind: z.enum(["vascular", "neural"]),
+  }),
+  z.object({
+    action: z.literal("apply_pathology_overlay"),
+    organ_id: z.string().min(1),
+    pathology: z.string().min(1).max(120),
+    severity: z.number().min(0).max(1),
+  }),
+  z.object({
+    action: z.literal("clear_pathology_overlays"),
+  }),
+  /**
+   * Animate a route travelling through an ordered list of structures.
+   *
+   * The one command behind "what happens when you drink a glass of water",
+   * "trace the blood through the heart", "follow the air to the alveoli" and
+   * "where does urine go" — a physiological *process* is an order, and an order
+   * is the one thing a static highlight cannot show.
+   *
+   * Deliberately generic rather than one command per topic: the sequence is
+   * data, so a new lesson costs nothing. The engine validates every id against
+   * the loaded manifest, so the route can only ever be built from real anatomy.
+   *
+   * `step_seconds` is the time spent traversing each segment, which is what
+   * lets the pace match the narration.
+   */
+  z.object({
+    action: z.literal("highlight_pathway"),
+    /** What the route is, for the badge over the canvas. */
+    label: z.string().min(1).max(120),
+    // At least two: a route through one structure is `focus_organ`. Capped
+    // because a "pathway" of forty structures is a tour, and the reader loses
+    // the thread long before the marker arrives.
+    organ_ids: z.array(z.string().min(1)).min(2).max(24),
+    step_seconds: z.number().min(0.2).max(10),
+    loop: z.boolean(),
+  }),
+  z.object({
+    action: z.literal("clear_pathway"),
+  }),
+  /**
+   * Shine a light on the structures being talked about.
+   *
+   * The quietest thing the assistant can do to the scene: nothing moves,
+   * nothing is hidden, nothing is claimed to be diseased. It is the difference
+   * between naming a structure and pointing at it, and it is the only highlight
+   * that reads *through* a ghosted body — which is where an explanation of what
+   * lies under what actually happens.
+   *
+   * An empty list turns the light off, so there is no second command for it.
+   * Unlike the pathology overlays, which accumulate one structure at a time,
+   * this is always set whole: what is lit is exactly what was last asked for.
+   */
+  z.object({
+    action: z.literal("illuminate_structures"),
+    // Capped for the same reason a pathway is: past a couple of dozen, a lit
+    // set is a lit body, and the reader learns nothing from being told
+    // everything is important.
+    organ_ids: z.array(z.string().min(1)).max(24),
+  }),
+  z.object({
+    action: z.literal("set_cross_section"),
+    plane: SectionPlaneSchema,
+    // Normalised position along the plane's axis, -1 to 1, model-space.
+    position: z.number().min(-1).max(1),
+  }),
+  /**
+   * Put the scanner's plane at the height of a structure.
+   *
+   * A height rather than a named vertebral level, and that is the whole point:
+   * a level is one kind of answer to "take me there", and the reader asking to
+   * be taken to the aortic valve, the hilum of the left kidney or the arch of
+   * the atlas deserves the same instrument. The levels come out of it for free,
+   * because a vertebra is a structure like any other and the panel names the
+   * level it lands on.
+   */
+  z.object({
+    action: z.literal("scan_at_structure"),
+    organ_id: z.string().min(1),
+    /** Axial or coronal. Absent (or null off the wire) keeps the reader's own. */
+    plane: ScannerPlaneSchema.nullable().optional(),
+  }),
+  /**
+   * Start the heartbeat on a textbook rhythm or heart sound, so an explanation
+   * can be seen and heard while it is given.
+   */
+  z.object({
+    action: z.literal("set_heart_rhythm"),
+    rhythm: HeartRhythmIdSchema,
+    /** Turn the heart sounds on or off. Absent keeps the reader's setting. */
+    sound: z.boolean().nullable().optional(),
+  }),
+  z.object({
+    action: z.literal("reset_view"),
+  }),
+]);
+export type SceneCommand = z.infer<typeof SceneCommandSchema>;
+
+export type SceneCommandAction = SceneCommand["action"];
+
+// ---------------------------------------------------------------------------
+// Frontend -> Rust
+// ---------------------------------------------------------------------------
+
+export const ChatTurnSchema = z.object({
+  role: z.enum(["user", "assistant"]),
+  content: z.string(),
+});
+export type ChatTurn = z.infer<typeof ChatTurnSchema>;
+
+/**
+ * Note the absence of `api_key`. This is deliberate and load-bearing — see the
+ * file header. Rust adds the key on the way to the sidecar.
+ */
+/**
+ * Something the reader marked on the body.
+ *
+ * `organ_id` is where they marked it, not where the cause is — the assistant is
+ * told in as many words not to relocate it to the organ it suspects.
+ */
+export const CaseComplaintSchema = z.object({
+  organ_id: z.string().min(1),
+  /** The structure's name, so the assistant can speak it without leaking an id. */
+  label: z.string().min(1),
+  symptom: z.string().min(1).max(200),
+  severity: z.number().int().min(0).max(10).nullable().optional(),
+});
+
+/**
+ * Something learned about the patient after the case was opened.
+ *
+ * `findings` is what was sealed on day one. These accumulate beside it, each
+ * stamped with the visit it was known at — a weight coming down over four
+ * visits is a different case from a weight that was always low.
+ */
+export const CaseRecordUpdateSchema = z.object({
+  visit_no: z.number().int().min(1),
+  body: z.string().min(1).max(20_000),
+});
+export type CaseRecordUpdate = z.infer<typeof CaseRecordUpdateSchema>;
+
+export const CaseVisitSummarySchema = z.object({
+  visit_no: z.number().int().min(1),
+  score: z.number().int().min(0).max(100).nullable().optional(),
+  verdict: z.string().max(4000).nullable().optional(),
+});
+
+/**
+ * The simulated patient a drill is a visit to.
+ *
+ * **No name, and no free-text identity of any kind** — the journal behind this
+ * has no column for one, so the shape itself is the guarantee.
+ *
+ * Sending it is what stops the safety layer misfiring. Without it the engine
+ * cannot tell an invented patient from a real one, and a reader typing "he has
+ * neck pain" is told to see a doctor about someone who does not exist.
+ */
+export const VirtualPatientSchema = z.object({
+  title: z.string().min(1).max(200),
+  sex: z.enum(["male", "female"]),
+  age_years: z.number().int().min(0).max(130).nullable().optional(),
+  height_cm: z.number().int().min(30).max(260).nullable().optional(),
+  weight_kg: z.number().positive().max(400).nullable().optional(),
+  /**
+   * Vitals, history and results the reader is **given**.
+   *
+   * Split out from the sealed answer because one field could not do both jobs:
+   * an author wrote the facts the reader needs to reason at all into the half
+   * that may never be spoken, and the assistant handed them over anyway.
+   */
+  findings: z.string().max(20_000).default(""),
+  /**
+   * What has been added to the record since, oldest first.
+   *
+   * Given to the reader exactly as `findings` is — these are not secret. They
+   * are separate only because they were learned later, and that ordering is
+   * itself clinical information.
+   */
+  record_updates: z.array(CaseRecordUpdateSchema).max(200).default([]),
+  /** Sealed before anything was attempted. The assistant steers by it, never states it. */
+  /**
+   * May be sent empty, and that is a deliberate act by the caller: a review of
+   * a case with an ungraded visit goes without it, so the summary physically
+   * cannot contain the answer.
+   */
+  ground_truth: z.string().max(20_000).default(""),
+  visit_no: z.number().int().min(1),
+  /** `.default([])` mirrors Pydantic's `default_factory=list`: a field with a
+   *  default reads as optional on both sides, and the contract test compares
+   *  exactly that. */
+  complaints: z.array(CaseComplaintSchema).max(200).default([]),
+  earlier_visits: z.array(CaseVisitSummarySchema).max(20).default([]),
+});
+export type VirtualPatient = z.infer<typeof VirtualPatientSchema>;
+
+/**
+ * Where the scanner's plane is held, for a reader who has selected nothing.
+ *
+ * Sent only when it stands in for a selection — see `scannerAim` for exactly
+ * when. Everything is optional, as on the Pydantic side.
+ */
+export const ScannerContextSchema = z.object({
+  level: z.string().min(1).max(40).nullable().optional(),
+  crossing: z.array(OrganContextSchema).max(12).default([]),
+  total: z.number().int().min(0).default(0),
+});
+export type ScannerContext = z.infer<typeof ScannerContextSchema>;
+
+/**
+ * The textbook rhythm the heartbeat is showing, while it is beating.
+ *
+ * Strings from the app's own catalogue rather than an id, so the engine does
+ * not keep a second copy of thirteen captions that would drift from the panel.
+ * See `heartAim` for when it is sent.
+ */
+export const HeartContextSchema = z.object({
+  rhythm: z.string().min(1).max(60),
+  rate: z.string().min(1).max(40),
+  /** What the animation shows, as the panel says it. */
+  pattern: z.string().min(1).max(400),
+  /** Whether the heart sounds are playing with it. */
+  sound: z.boolean().default(false),
+});
+export type HeartContext = z.infer<typeof HeartContextSchema>;
+
+/**
+ * The breathing the body is showing, while it breathes.
+ *
+ * The panel's own strings, as the heartbeat's are. `heart` is what the breath
+ * does to the heartbeat on screen — the arrhythmia it brings, or why this
+ * rhythm does not follow it — and is absent while the heart is not beating.
+ * See `breathAim` for when it is sent.
+ */
+export const BreathContextSchema = z.object({
+  pattern: z.string().min(1).max(60),
+  rate: z.string().min(1).max(40),
+  /** What the breath does, as the panel says it. */
+  what: z.string().min(1).max(400),
+  heart: z.string().min(1).max(400).nullable().optional(),
+});
+export type BreathContext = z.infer<typeof BreathContextSchema>;
+
+export const AgentRequestSchema = z.object({
+  request_id: z.string().min(1),
+  query: z.string().min(1).max(8000),
+  /**
+   * Prior turns, oldest first, excluding the one being sent. Without this a
+   * follow-up like "and why?" arrives with no idea what it refers to — the
+   * panel would look like a chat while behaving like a search box.
+   */
+  history: z.array(ChatTurnSchema).max(100),
+  provider: AiProviderSchema,
+  /** Omit to let the engine pick the provider's current default model. */
+  model: z.string().min(1).optional(),
+  profile: UserProfileSchema,
+  language: LanguageSchema,
+  gender_model: GenderModelSchema,
+  /** Lesson or clinical drill — see `SessionModeSchema`. */
+  mode: SessionModeSchema,
+  /**
+   * Everything the user currently has selected, in the order they picked it.
+   *
+   * A list rather than one structure because comparing is the everyday study
+   * move — "how do these four rotator cuff muscles differ?" — and a single-
+   * context protocol forces that into four separate questions.
+   */
+  selection: z.array(OrganContextSchema).max(64),
+  /**
+   * The organs actually loaded in the scene right now. The agent's tools
+   * validate every organ_id against this list, so it cannot invent anatomy.
+   */
+  available_organs: z.array(OrganMetaSchema),
+  /**
+   * Named groups in the manifest hierarchy that can be isolated whole.
+   *
+   * Names, not ids, because most of them have neither: 109 of the male atlas's
+   * 110 groups have no mesh of their own. Sending the list costs a few hundred
+   * tokens and is what lets the assistant reach "the kidney" or "the muscles" —
+   * which the reader has always been able to do by right-clicking.
+   *
+   * Deliberately *not* the whole ancestry of every organ. That would be the
+   * hierarchy of several thousand structures on every turn, which is the cost
+   * the summarised inventory exists to avoid.
+   *
+   * Optional on the way in, like every field added to an existing event: an
+   * engine that predates it must not reject the frame, and a frame that omits
+   * it must not fail here. The app always sends it; absent, `isolate_group`
+   * simply has nothing to offer and the model names ids instead.
+   */
+  available_groups: z.array(z.string().min(1)).max(400).optional(),
+  /**
+   * The virtual patient this drill belongs to, when there is one.
+   *
+   * Optional on purpose, and the Pydantic side defaults it the same way: a new
+   * field on an existing event must be optional on the way in, or every frame
+   * from a build that predates it fails validation and is silently dropped.
+   */
+  case: VirtualPatientSchema.optional(),
+  /**
+   * Where the scanner is, when it stands in for a selection: "what hurts here?"
+   * typed while looking at a section at T8. Optional on the way in, like every
+   * field added to an existing event.
+   */
+  scanner: ScannerContextSchema.optional(),
+  /**
+   * The rhythm the heart is beating in, so "explain this" means that rhythm.
+   * Optional on the way in, like every field added to an existing event.
+   */
+  heart: HeartContextSchema.optional(),
+  /** The breathing on screen, so "what is happening?" can mean that too. Optional, as `heart` is. */
+  breathing: BreathContextSchema.optional(),
+});
+export type AgentRequest = z.infer<typeof AgentRequestSchema>;
+
+/**
+ * Ask a provider which models the stored key can actually use.
+ *
+ * Doubles as key validation: the call that fills the picker is the call that
+ * proves the credential works, so there is no separate "test key" path that
+ * could drift from the real one.
+ */
+export const ListModelsRequestSchema = z.object({
+  request_id: z.string().min(1),
+  provider: AiProviderSchema,
+});
+export type ListModelsRequest = z.infer<typeof ListModelsRequestSchema>;
+
+/**
+ * An Ollama model name, as `local_chat.py` will send it to Ollama on this
+ * computer: `qwen3.5:9b`, `library/llama3.1:8b`, `hf.co/user/repo:Q4_K_M`.
+ * Mirrors `LOCAL_MODEL_PATTERN` and `_local_model_name` on the Pydantic side.
+ */
+export const LocalModelNameSchema = z
+  .string()
+  .regex(/^[A-Za-z0-9][A-Za-z0-9._:/@-]{0,199}$/)
+  .refine((value) => !value.includes("://") && !value.includes(".."), "not an Ollama model name");
+
+/**
+ * A conversation turn with a model running in Ollama on this computer.
+ *
+ * Words only: no scene, no tools, no key. Rust forwards it without touching the
+ * keyring and the engine answers it without building an agent, so nothing it
+ * says can move the atlas. See `engine/anatria_engine/local_chat.py`.
+ */
+export const LocalChatRequestSchema = z.object({
+  request_id: z.string().min(1),
+  query: z.string().min(1).max(8000),
+  history: z.array(ChatTurnSchema).max(100).default([]),
+  model: LocalModelNameSchema,
+  profile: UserProfileSchema,
+  gender_model: GenderModelSchema.default("male"),
+  selection: z.array(OrganContextSchema).max(64).default([]),
+});
+export type LocalChatRequest = z.input<typeof LocalChatRequestSchema>;
+
+/** Ask Ollama on this computer which chat models it has. */
+export const LocalModelsRequestSchema = z.object({
+  request_id: z.string().min(1),
+});
+export type LocalModelsRequest = z.infer<typeof LocalModelsRequestSchema>;
+
+export const LocalModelInfoSchema = z.object({
+  name: LocalModelNameSchema,
+  /** As Ollama reports it: "8.0B". */
+  parameter_size: z.string().nullable().optional(),
+  /** On disk, in bytes — a fair guide to the memory it will need. */
+  size_bytes: z.number().int().nonnegative().nullable().optional(),
+});
+export type LocalModelInfo = z.infer<typeof LocalModelInfoSchema>;
+
+export const ModelInfoSchema = z.object({
+  id: z.string().min(1),
+  label: z.string().min(1),
+  description: z.string().nullable().optional(),
+  /** The entry the engine would pick if none is chosen. */
+  recommended: z.boolean(),
+});
+export type ModelInfo = z.infer<typeof ModelInfoSchema>;
+
+// ---------------------------------------------------------------------------
+// Python -> Rust -> Frontend (events)
+// ---------------------------------------------------------------------------
+
+export const TokenUsageSchema = z.object({
+  input_tokens: z.number().int().nonnegative(),
+  output_tokens: z.number().int().nonnegative(),
+  /**
+   * How many of `input_tokens` came back out of the provider's prompt cache.
+   *
+   * A subset of the input total, not an addition to it — that is the engine's
+   * convention and pydantic-ai's before it. Defaulted, so a turn recorded by a
+   * build that predates the field, or answered by a provider that reports no
+   * cache, reads as zero rather than failing to parse.
+   */
+  cache_read_tokens: z.number().int().nonnegative().default(0),
+});
+export type TokenUsage = z.infer<typeof TokenUsageSchema>;
+
+/**
+ * Error codes the engine can report. Kept as a closed set so the UI can render
+ * a translated, actionable message instead of leaking a Python traceback.
+ */
+export const EngineErrorCodeSchema = z.enum([
+  "missing_api_key",
+  "invalid_api_key",
+  "provider_error",
+  "rate_limited",
+  /**
+   * The provider is up but the chosen model is saturated (HTTP 503). Its own
+   * code because the user's next move is "retry, or pick another model" — not
+   * the shrug that "internal error" invites.
+   */
+  "service_unavailable",
+  "guardrail_triggered",
+  "invalid_request",
+  "internal_error",
+]);
+export type EngineErrorCode = z.infer<typeof EngineErrorCodeSchema>;
+
+export const EngineEventSchema = z.discriminatedUnion("type", [
+  /** Handshake, emitted once when the sidecar finishes booting. */
+  z.object({
+    type: z.literal("ready"),
+    protocol_version: z.number().int(),
+    engine_version: z.string(),
+  }),
+  z.object({
+    type: z.literal("text_delta"),
+    request_id: z.string(),
+    text: z.string(),
+  }),
+  /** Surfaced so the chat panel can show "focusing left ventricle…". */
+  z.object({
+    type: z.literal("tool_started"),
+    request_id: z.string(),
+    tool: z.string(),
+  }),
+  z.object({
+    type: z.literal("scene_command"),
+    request_id: z.string(),
+    command: SceneCommandSchema,
+  }),
+  z.object({
+    type: z.literal("models"),
+    request_id: z.string(),
+    provider: AiProviderSchema,
+    models: z.array(ModelInfoSchema),
+  }),
+  /** What Ollama on this computer offers, and whether it answered at all. */
+  z.object({
+    type: z.literal("local_models"),
+    request_id: z.string(),
+    running: z.boolean(),
+    models: z.array(LocalModelInfoSchema),
+  }),
+  /**
+   * The grade for a case drill, emitted by the assistant's own tool once it has
+   * evaluated the student's answer.
+   *
+   * A number rather than prose because it is what makes the journal show
+   * progress: "you have run eleven cardiac cases, averaging 74" is a fact a
+   * student can act on, and it cannot be recovered from a paragraph after the
+   * fact. The reasoning still streams as text — this is the part worth storing.
+   */
+  z.object({
+    type: z.literal("case_verdict"),
+    request_id: z.string(),
+    score: z.number().int().min(0).max(100),
+    verdict: z.string().min(1).max(4000),
+  }),
+  /**
+   * The turn is over, with what it cost and what ran it.
+   *
+   * `model` is the id the engine actually sent to the provider, defaults
+   * resolved — not what the panel had selected, which is null whenever the
+   * reader never chose one. Both fields are nullable because a `done` also
+   * closes work that never reached a provider, and "we were not told" must stay
+   * distinguishable from "this cost nothing".
+   *
+   * `model` is **defaulted, not required**, and that is load-bearing. A `done`
+   * is the one frame that must never be dropped: it clears the composer, files
+   * the turn in the journal and records what it cost, so a validation failure
+   * here does not degrade anything — it loses all three at once and leaves the
+   * send button stuck on "Stop". A build whose sidecar is older than its window
+   * (the Tauri build does not rebuild the engine) sends this frame without the
+   * field, and it must still parse. **New fields on an event are optional on
+   * the way in, always.**
+   */
+  z.object({
+    type: z.literal("done"),
+    request_id: z.string(),
+    usage: TokenUsageSchema.nullable(),
+    model: z.string().nullable().default(null),
+  }),
+  z.object({
+    type: z.literal("error"),
+    request_id: z.string().nullable(),
+    code: EngineErrorCodeSchema,
+    message: z.string(),
+  }),
+]);
+export type EngineEvent = z.infer<typeof EngineEventSchema>;
+
+export type EngineEventType = EngineEvent["type"];
+
+// ---------------------------------------------------------------------------
+// Manifest
+// ---------------------------------------------------------------------------
+
+/**
+ * Each organ names the .glb it lives in and its node within that file, so one
+ * file can hold a whole system (which is what a Blender export produces
+ * naturally) and the loader groups by `mesh_file`. Adding a second system later
+ * needs no schema change.
+ *
+ * Note this shape is TypeScript-only — the Python engine reasons about organ
+ * identity and labels, never about geometry — so it is outside the scope of the
+ * cross-language contract test.
+ */
+export const ManifestOrganSchema = OrganMetaSchema.extend({
+  mesh_file: z.string().min(1),
+  node: z.string().min(1),
+  /**
+   * What tells this structure apart from others sharing its TA2 term.
+   *
+   * Terminologia Anatomica names classes, not instances: there is one
+   * "Vertebra thoracica" for all twelve, one "Os ilium" for compact and spongy
+   * bone alike. The label under the cursor and the leader lines on an exported
+   * plate both show the Latin, so without this a spine exports as twelve
+   * identical names — a picture that names nothing.
+   *
+   * It is not part of the term and never goes into `ta2_latin`. "Vertebra
+   * thoracica T7" is not a term TA2 lists, and writing one there would put an
+   * invented Latin name in the nomenclature.
+   */
+  qualifier: z.string().optional(),
+  /**
+   * Anatomical ancestry, outermost first — `["Heart", "Left ventricle"]`.
+   *
+   * Taken from Z-Anatomy's own collection nesting, which *is* the anatomical
+   * hierarchy. It is what lets a reader study an organ together with
+   * everything inside it rather than as one opaque shell.
+   */
+  path: z.array(z.string()),
+});
+
+/**
+ * One anatomical system, packaged as a single .glb.
+ *
+ * A system does not own a single mesh file. Z-Anatomy's own top-level
+ * collections are flat, so structures belonging to one system can arrive from
+ * more than one export — the files a system needs are derived from its organs
+ * instead of declared here. The viewer fetches only the files the visible
+ * systems actually reference.
+ */
+export const AnatomySystemSchema = z.object({
+  system: AnatomicalSystemSchema,
+  organ_count: z.number().int().nonnegative(),
+  /** Fetched at startup. Everything else loads on demand. */
+  load_on_start: z.boolean(),
+});
+export type AnatomySystem = z.infer<typeof AnatomySystemSchema>;
+
+export const AnatomyManifestSchema = z.object({
+  version: z.number().int(),
+  gender_model: GenderModelSchema,
+  /**
+   * Attribution is a licence obligation under both CC BY-SA 4.0 (the male
+   * atlas) and CC BY 4.0 (the female one), so it travels with the data rather
+   * than living only in a NOTICE file somebody has to go and find.
+   */
+  attribution: z.string(),
+  /**
+   * The same credit in one line, for the footer of an exported image.
+   *
+   * Separate from `attribution` because that is a sentence and this has to fit
+   * under a picture. Optional so an older manifest still parses — the export
+   * falls back to the full sentence, which is long and correct rather than
+   * short and wrong.
+   */
+  credit: z.string().optional(),
+  license: z.string(),
+  /**
+   * Where the meshes came from, when the atlas is built from a published
+   * digital object rather than exported from a .blend. Optional because the
+   * male atlas has no single upstream URL to point at.
+   */
+  source: z
+    .object({
+      version: z.string(),
+      url: z.string(),
+      metadata: z.string().optional(),
+      license: z.string(),
+      licenseUrl: z.string().optional(),
+    })
+    .optional(),
+  systems: z.array(AnatomySystemSchema).min(1),
+  organs: z.array(ManifestOrganSchema),
+});
+export type AnatomyManifest = z.infer<typeof AnatomyManifestSchema>;
+export type ManifestOrgan = z.infer<typeof ManifestOrganSchema>;

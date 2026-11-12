@@ -1,0 +1,75 @@
+[project]
+name = "anatria-engine"
+version = "0.1.0"
+description = "Anatria3D AI sidecar — multi-provider agent with typed 3D scene control"
+license = "BUSL-1.1"
+requires-python = ">=3.12"
+
+dependencies = [
+    "pydantic>=2.13.4",
+    # Slim install with only the three providers the app exposes. The full
+    # `pydantic-ai` package pulls in every provider integration, which would
+    # roughly triple the PyInstaller bundle for no benefit.
+    #
+    # Pinned exactly. This is the agent itself and it ships inside the sidecar,
+    # which CI builds from whatever this line resolves to on the day: unpinned,
+    # v0.6.0 shipped 2.54.0 while the developer's venv had 2.25.0, and by
+    # 2026-10-24 CI was installing 2.61.0, which hands a tool's ModelRetry back
+    # as a tool-return part instead of a retry-prompt (five tests failed on it;
+    # the model still receives the text). 2.54.0 is what v0.6.0 shipped and was
+    # tested with on Windows and Linux. Move it on purpose, with the whole
+    # suite and a real provider turn, and update `retries()` in
+    # tests/test_scene_tools.py when crossing into the new part kind.
+    "pydantic-ai-slim[anthropic,google,openai]==2.54.0",
+    # Imported directly by the local Ollama chat (`local_chat.py`). Already in
+    # the sidecar through the provider SDKs; named here because this code
+    # depends on it, not only something it depends on.
+    "httpx>=0.28.1,<0.29",
+]
+
+# NOTE: there is no PDF renderer here, and there will not be one. Printing is
+# done by the webview — see `src/features/study/PrintSheet.tsx`. Every Python
+# candidate carried a constraint worth refusing: PyMuPDF is AGPL unless
+# licensed, WeasyPrint needs a GTK runtime shipped on Windows, and ReportLab
+# would need a bundled font per script the assistant can answer in, with no
+# answer at all for right-to-left. The browser engine already has the system's
+# fonts and the layout engine, and costs nothing in the installer.
+
+[project.optional-dependencies]
+dev = [
+    "pyinstaller>=6.21.0",
+    "pytest>=9.1.1",
+    "pytest-asyncio>=0.24",
+    # Pinned to one minor release. Ruff adds rules in minor releases, and with
+    # "RUF" selected below each new one is on the moment CI installs it: an
+    # unpinned ruff turned Gates red on 2026-10-21 with no commit at all (RUF071
+    # in 0.17), and the same would have failed a release workflow after its tag
+    # existed. Move it on purpose, run `ruff check`, and fix what it finds.
+    "ruff>=0.17.1,<0.18",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["anatria_engine"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "UP", "B", "SIM", "RUF"]
+ignore = [
+    # Flags Cyrillic characters as "ambiguous" look-alikes for Latin ones.
+    # Bulgarian is a primary target language here, so Cyrillic in UI strings is
+    # the intended content, not a homoglyph mistake.
+    "RUF001",
+    "RUF002",
+    "RUF003",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"

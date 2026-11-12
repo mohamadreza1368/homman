@@ -1,0 +1,788 @@
+"""Pydantic mirror of the IPC wire format.
+
+The authoritative companion is `src/lib/schemas.ts`. Keep the two in lockstep —
+`tests/protocol-contract.test.ts` runs this module and compares the two
+surfaces field by field, and fails loudly when they diverge.
+
+Note what that test does *not* do: it does not compare generated JSON Schema.
+It normalises both sides to the same shape and checks them, which is why a
+Pydantic model here is `extra="forbid"` and a new field needs a default on this
+side and `.optional()` on the TypeScript side, or the contract fails.
+
+Wire convention: snake_case throughout, so serde (Rust) and Pydantic (Python)
+both deserialise without rename shims.
+
+The one asymmetry with the TypeScript file is `AgentRequest.api_key`: Rust
+reads the key from the OS keyring and injects it here, on stdin. The frontend
+never sees it, so it is absent from the TypeScript request schema by design.
+"""
+
+from __future__ import annotations
+
+from typing import Annotated, Literal
+
+from pydantic import AfterValidator, BaseModel, ConfigDict, Field
+
+PROTOCOL_VERSION = 2
+ENGINE_VERSION = "0.1.0"
+
+#: `auto` is not a language, it is the absence of a choice: answer in whatever
+#: the reader wrote in. See `_language_rule` in prompts.py.
+Language = Literal["auto", "bg", "es", "en"]
+UserProfile = Literal["layperson", "student", "clinician"]
+GenderModel = Literal["male", "female"]
+AiProvider = Literal["anthropic", "openai", "google"]
+SectionPlane = Literal["axial", "coronal", "sagittal"]
+#: Which way the scanner reads the body. "coronal" is the frontal plane, which
+#: the viewer's own control calls Front.
+ScannerPlane = Literal["axial", "coronal"]
+
+#: The textbook rhythms and heart sounds the heartbeat can play. The catalogue —
+#: labels, captions, timing — lives in the viewer; this is the list of names.
+HeartRhythmId = Literal[
+    "normal",
+    "sinus_tachycardia",
+    "sinus_bradycardia",
+    "av_block_1",
+    "mobitz_1",
+    "mobitz_2",
+    "av_block_3",
+    "atrial_fibrillation",
+    "atrial_flutter",
+    "premature_ventricular",
+    "ventricular_tachycardia",
+    "ventricular_fibrillation",
+    "asystole",
+    "aortic_stenosis",
+    "mitral_regurgitation",
+    "aortic_regurgitation",
+    "mitral_stenosis",
+    "third_heart_sound",
+    "fourth_heart_sound",
+]
+
+#: What the assistant is doing this turn.
+#:
+#: "tutor" answers the question asked. "case" runs a clinical drill: present a
+#: scenario, mark the anatomy, ask the student what they would do, then grade
+#: the answer rather than supply it. The difference lives in the instructions
+#: and one extra tool, so a drill keeps the same scene control and the same
+#: safety layer as a lesson.
+#:
+#: "review" reads a case back: what was presented, what the reader reasoned,
+#: and where the gaps are. It writes nothing — the journal's own CHECK
+#: constraint allows only 'tutor' and 'case', so a review cannot be filed as a
+#: visit even by accident, which is the intent rather than a limitation. A
+#: summary is generated prose, and the journal holds what the reader did.
+SessionMode = Literal["tutor", "case", "review"]
+
+AnatomicalSystem = Literal[
+    "cardiovascular",
+    "respiratory",
+    "renal",
+    "digestive",
+    "nervous",
+    "endocrine",
+    "lymphatic",
+    # Bone, muscle and joint are separate systems, not one block: studying
+    # the skeleton means seeing the skeleton, with the musculature off.
+    "skeletal",
+    "muscular",
+    "articular",
+    "reproductive",
+    "integumentary",
+    # Surface and regional anatomy, taught alongside the systems.
+    "regional",
+]
+
+EngineErrorCode = Literal[
+    "missing_api_key",
+    "invalid_api_key",
+    "provider_error",
+    "rate_limited",
+    # The provider is up but the specific model is saturated (HTTP 503). Its own
+    # code because the user's next move is "retry, or pick another model" — not
+    # the shrug that "internal error" invites.
+    "service_unavailable",
+    "guardrail_triggered",
+    "invalid_request",
+    "internal_error",
+]
+
+
+class Strict(BaseModel):
+    """Reject unknown fields so a protocol drift fails here, not three layers up."""
+
+    model_config = ConfigDict(extra="forbid")
+
+
+# ---------------------------------------------------------------------------
+# Anatomy metadata
+# ---------------------------------------------------------------------------
+
+
+class OrganMeta(Strict):
+    """One loaded structure, in professional nomenclature only.
+
+    There are no localised labels here by design. Rendering "Ventriculus
+    sinister" for a layperson, a medical student and a clinician calls for three
+    different explanations in each of BG, ES and EN — that is the agent's job,
+    done per turn with the profile in hand, not a frozen lookup table.
+    """
+
+    organ_id: str = Field(min_length=1)
+    ta2_latin: str = Field(min_length=1)
+    name_en: str = Field(min_length=1)
+    system: AnatomicalSystem
+
+    def describe(self) -> str:
+        """Compact form for the prompt: `organ_id — Latin (English)`."""
+        return f"{self.organ_id} — {self.ta2_latin} ({self.name_en})"
+
+
+class OrganContext(Strict):
+    organ_id: str = Field(min_length=1)
+    ta2_latin: str = Field(min_length=1)
+    name_en: str = Field(min_length=1)
+    system: AnatomicalSystem
+
+    def describe(self) -> str:
+        return f"{self.ta2_latin} ({self.name_en})"
+
+
+class ScannerContext(Strict):
+    """Where the scanner's plane is held, for a reader who has selected nothing.
+
+    Sent only when the reader put the light somewhere — pinned or held — on an
+    axial plane, in a tutoring turn, with no selection. A selection is the more
+    specific statement of what they mean, so the client leaves this out whenever
+    there is one, and `build_instructions` ignores it if both arrive.
+    """
+
+    #: The vertebral level the plane is at, when it is at one ("T8", "L4–L5").
+    level: str | None = Field(default=None, min_length=1, max_length=40)
+    #: The largest structures the plane crosses, largest first.
+    crossing: list[OrganContext] = Field(default_factory=list, max_length=12)
+    #: Everything the plane crosses, including the ones not named.
+    total: int = Field(default=0, ge=0)
+
+
+class HeartContext(Strict):
+    """The textbook rhythm the heartbeat is showing, while it is beating.
+
+    Sent in tutoring turns only. The strings are the app's own catalogue, so the
+    engine keeps no second copy of the captions to drift from the panel.
+    """
+
+    rhythm: str = Field(min_length=1, max_length=60)
+    rate: str = Field(min_length=1, max_length=40)
+    #: What the animation shows, as the panel says it.
+    pattern: str = Field(min_length=1, max_length=400)
+    #: Whether the heart sounds are playing with it.
+    sound: bool = False
+
+
+class BreathContext(Strict):
+    """The breathing the body is showing, while it breathes.
+
+    Sent in tutoring turns only, in the panel's own words. `heart` is what the
+    breath does to the heartbeat on screen, absent while the heart is still.
+    """
+
+    pattern: str = Field(min_length=1, max_length=60)
+    rate: str = Field(min_length=1, max_length=40)
+    #: What the breath does, as the panel says it.
+    what: str = Field(min_length=1, max_length=400)
+    heart: str | None = Field(default=None, min_length=1, max_length=400)
+
+
+class CaseComplaint(Strict):
+    """Something the reader marked on the body.
+
+    `organ_id` is **where they marked it**, not where the cause is. Referred
+    pain runs the wrong way round for a static atlas to teach, and keeping the
+    two apart is the whole point of recording one.
+    """
+
+    organ_id: str = Field(min_length=1)
+    #: The structure's name, so the assistant can speak it without leaking an id.
+    label: str = Field(min_length=1)
+    symptom: str = Field(min_length=1, max_length=200)
+    #: 0–10, the reader's own scale. Absent when it was not asked.
+    severity: int | None = Field(default=None, ge=0, le=10)
+
+
+class CaseVisitSummary(Strict):
+    """A past visit, as the current one needs to remember it."""
+
+    visit_no: int = Field(ge=1)
+    score: int | None = Field(default=None, ge=0, le=100)
+    verdict: str | None = Field(default=None, max_length=4000)
+
+
+class CaseRecordUpdate(Strict):
+    """Something learned about the patient after the case was opened.
+
+    The interval history. `findings` is what was sealed on day one and never
+    changes; these accumulate, each stamped with the visit it was known at, so
+    a course that developed reads as one — a weight coming down over four
+    visits is a different case from a weight that was always low.
+    """
+
+    visit_no: int = Field(ge=1)
+    body: str = Field(min_length=1, max_length=20_000)
+
+
+class VirtualPatient(Strict):
+    """The simulated patient this drill is a visit to.
+
+    **Nobody described here is real, and the field list is what guarantees it:**
+    there is no name, and no free-text identity of any kind, because the journal
+    that stores this has no column for one. These are the parameters of a
+    teaching scenario.
+
+    Its presence is what stops the safety layer misfiring. Without it the engine
+    cannot tell an invented patient from a real one, so a reader typing "he has
+    neck pain" gets a refusal that is correct in form and wrong in fact — which
+    is exactly what happened before this field existed.
+    """
+
+    title: str = Field(min_length=1, max_length=200)
+    sex: Literal["male", "female"]
+    age_years: int | None = Field(default=None, ge=0, le=130)
+    height_cm: int | None = Field(default=None, ge=30, le=260)
+    weight_kg: float | None = Field(default=None, gt=0, le=400)
+    #: Vitals, history and results the reader is **given**.
+    #:
+    #: The counterpart to `ground_truth`, and split from it because one field
+    #: could not do both jobs: an author wrote "overweight, high blood
+    #: pressure" — facts the reader needs to reason at all — into the half that
+    #: may never be spoken, and the assistant quoted the seal back to them.
+    findings: str = Field(default="", max_length=20_000)
+    #: What has been added to the record since, oldest first.
+    #:
+    #: Given to the reader in the same way `findings` is — these are not
+    #: secret. They are separate from it only because they were learned later,
+    #: and that ordering is itself clinical information.
+    record_updates: list[CaseRecordUpdate] = Field(default_factory=list, max_length=200)
+    #: What the case was sealed with, before anything was attempted. The
+    #: assistant needs it to keep the course coherent across visits and must
+    #: never say it — see the prompt layer, which spends a paragraph on that.
+    #:
+    #: **May arrive empty, and that is a deliberate act by the caller.** A
+    #: review of a case that still has an ungraded visit is sent without it, so
+    #: the summary physically cannot contain the answer. What is not given
+    #: cannot be leaked, which is a stronger guarantee than an instruction not
+    #: to mention it.
+    ground_truth: str = Field(default="", max_length=20_000)
+    #: Which visit this turn belongs to, counting from one.
+    visit_no: int = Field(ge=1)
+    #: The presentation so far, oldest first.
+    complaints: list[CaseComplaint] = Field(default_factory=list, max_length=200)
+    #: Earlier visits, oldest first. Read from the journal, never generated.
+    earlier_visits: list[CaseVisitSummary] = Field(default_factory=list, max_length=20)
+
+
+# ---------------------------------------------------------------------------
+# Scene commands
+# ---------------------------------------------------------------------------
+
+
+class FocusOrgan(Strict):
+    action: Literal["focus_organ"] = "focus_organ"
+    organ_id: str = Field(min_length=1)
+
+
+class SetLayerVisibility(Strict):
+    action: Literal["set_layer_visibility"] = "set_layer_visibility"
+    system: AnatomicalSystem
+    visible: bool
+
+
+class SetLayerOpacity(Strict):
+    """See through a whole system without switching it off.
+
+    A third state between shown and hidden, and a distinct teaching move:
+    ghosting the skin keeps its relationship to the muscles underneath on
+    screen, where hiding it throws that relationship away. 1.0 is solid.
+    """
+
+    action: Literal["set_layer_opacity"] = "set_layer_opacity"
+    system: AnatomicalSystem
+    opacity: float = Field(ge=0.0, le=1.0)
+
+
+class IsolateStructures(Strict):
+    action: Literal["isolate_structures"] = "isolate_structures"
+    organ_ids: list[str] = Field(min_length=1, max_length=64)
+
+
+class ApplyPathologyOverlay(Strict):
+    action: Literal["apply_pathology_overlay"] = "apply_pathology_overlay"
+    organ_id: str = Field(min_length=1)
+    pathology: str = Field(min_length=1, max_length=120)
+    severity: float = Field(ge=0.0, le=1.0)
+
+
+class IsolateRegion(Strict):
+    """Show a structure with everything anatomically inside it.
+
+    Expanded by the viewer, which holds the manifest hierarchy — sending
+    thousands of ancestry paths to the model each turn so it could expand the
+    set itself would cost more than the feature is worth.
+    """
+
+    action: Literal["isolate_region"] = "isolate_region"
+    organ_id: str = Field(min_length=1)
+
+
+class IsolateGroup(Strict):
+    """Show every structure under a named group in the manifest hierarchy.
+
+    Most groups are not structures. The atlas has no mesh called "Kidney" on the
+    female body — it is fifty parts under one heading — and 109 of the male
+    atlas's 110 groups are the same. The reader has always been able to isolate
+    them by right-clicking; without this the assistant could not, so "show me
+    the whole kidney" had to be answered by naming fifty ids or not at all.
+
+    Expanded by the viewer, which holds the hierarchy. The name is the key
+    because there is no id to use.
+    """
+
+    action: Literal["isolate_group"] = "isolate_group"
+    group: str = Field(min_length=1)
+
+
+class AddSupply(Strict):
+    """Fold the vessels — or the nerves — that reach the study set into it.
+
+    **The one relation naming cannot express.** The atlas is organised by system
+    and anatomy is studied by territory: isolating the heart brings its
+    seventeen parts because they are its descendants, and leaves the coronary
+    arteries behind because they live under *Systemic arteries*, an entirely
+    different branch. Walking the hierarchy never reaches them.
+
+    So this is not a list of ids the assistant could have named instead. It asks
+    the viewer to measure which vessels actually pass through what is being
+    studied, and only the live geometry can answer that. The reader has had it
+    on the study bar as `+ vessels` since 0.1; this is the same button reached
+    from the other side.
+
+    Requires something to be isolated. Asking for the vessels of the whole body
+    returns every vessel in it, which is the atlas with extra steps.
+    """
+
+    action: Literal["add_supply"] = "add_supply"
+    #: `vascular` brings arteries and veins, `neural` brings nerves.
+    kind: Literal["vascular", "neural"]
+
+
+class ClearPathologyOverlays(Strict):
+    action: Literal["clear_pathology_overlays"] = "clear_pathology_overlays"
+
+
+class HighlightPathway(Strict):
+    """Animate a route travelling through an ordered list of structures.
+
+    The one command behind "what happens when you drink a glass of water",
+    "trace the blood through the heart", "follow the air to the alveoli" and
+    "where does urine go". A physiological process is an *order*, and an order
+    is the one thing a static highlight cannot show.
+
+    Generic by design rather than one command per topic: the sequence is data,
+    so a new lesson costs nothing. Every id is validated against the loaded
+    manifest before this is emitted, so a route can only be built from anatomy
+    that is actually on screen.
+
+    Note the absence of defaults on `step_seconds` and `loop`. The tool that
+    builds this supplies them; the wire model keeps them required so the
+    contract test sees the same optionality on the TypeScript side.
+    """
+
+    action: Literal["highlight_pathway"] = "highlight_pathway"
+    #: What the route is, for the badge the viewer shows over the canvas.
+    label: str = Field(min_length=1, max_length=120)
+    #: At least two — a route through one structure is `FocusOrgan`.
+    organ_ids: list[str] = Field(min_length=2, max_length=24)
+    #: Seconds spent traversing each segment, so the pace can match narration.
+    step_seconds: float = Field(ge=0.2, le=10.0)
+    loop: bool
+
+
+class ClearPathway(Strict):
+    action: Literal["clear_pathway"] = "clear_pathway"
+
+
+class IlluminateStructures(Strict):
+    """Shine a light on the structures being talked about.
+
+    The quietest thing the assistant can do to the scene: nothing moves, nothing
+    is hidden, nothing is claimed to be diseased. It is the difference between
+    naming a structure and pointing at it, and it is the only highlight that
+    reads *through* a ghosted body — which is where an explanation of what lies
+    under what actually happens.
+
+    An empty list turns the light off, so there is no second command for it.
+    Unlike the pathology overlays, which accumulate one structure at a time,
+    this is always set whole: what is lit is exactly what was last asked for.
+    """
+
+    action: Literal["illuminate_structures"] = "illuminate_structures"
+    organ_ids: list[str] = Field(max_length=24)
+
+
+class SetCrossSection(Strict):
+    action: Literal["set_cross_section"] = "set_cross_section"
+    plane: SectionPlane
+    position: float = Field(ge=-1.0, le=1.0)
+
+
+class ScanAtStructure(Strict):
+    """Put the scanner's plane at the height of a structure.
+
+    A height rather than a named vertebral level. A level is only one kind of
+    answer to "take me there", and somebody asking for the aortic valve or the
+    hilum of the left kidney deserves the same instrument; the levels come out
+    of it for free, because a vertebra is a structure like any other and the
+    panel names whichever level the plane lands on.
+    """
+
+    action: Literal["scan_at_structure"] = "scan_at_structure"
+    organ_id: str = Field(min_length=1)
+    #: Axial or coronal. Absent keeps whichever plane the reader has set.
+    plane: ScannerPlane | None = None
+
+
+class SetHeartRhythm(Strict):
+    """Start the heartbeat on a textbook rhythm or heart sound."""
+
+    action: Literal["set_heart_rhythm"] = "set_heart_rhythm"
+    rhythm: HeartRhythmId
+    #: Turn the heart sounds on or off. Absent keeps the reader's setting.
+    sound: bool | None = None
+
+
+class ResetView(Strict):
+    action: Literal["reset_view"] = "reset_view"
+
+
+BridgeText = Annotated[str, Field(max_length=4000)]
+
+
+class Say(Strict):
+    """External prose for the bridge lane, never an assistant turn."""
+
+    action: Literal["say"] = "say"
+    text: BridgeText
+
+
+SceneCommand = Annotated[
+    FocusOrgan
+    | SetLayerVisibility
+    | SetLayerOpacity
+    | IsolateStructures
+    | IsolateRegion
+    | IsolateGroup
+    | AddSupply
+    | ApplyPathologyOverlay
+    | ClearPathologyOverlays
+    | HighlightPathway
+    | ClearPathway
+    | IlluminateStructures
+    | SetCrossSection
+    | ScanAtStructure
+    | SetHeartRhythm
+    | ResetView
+    | Say,
+    Field(discriminator="action"),
+]
+
+
+# ---------------------------------------------------------------------------
+# Inbound: Rust -> engine (stdin)
+# ---------------------------------------------------------------------------
+
+
+class TranscriptTurn(Strict):
+    role: Literal["user", "assistant"]
+    content: str
+
+
+class AgentRequest(Strict):
+    kind: Literal["agent_request"] = "agent_request"
+    request_id: str = Field(min_length=1)
+    query: str = Field(min_length=1, max_length=8000)
+    #: Prior turns, oldest first, excluding the one being sent. Without this a
+    #: follow-up like "and why?" arrives with no idea what it refers to.
+    #:
+    #: Required, not defaulted: a client that forgets to send it should fail
+    #: loudly here rather than run every turn context-free, which looks like the
+    #: model forgetting rather than the frame being wrong.
+    history: list[TranscriptTurn] = Field(max_length=100)
+    provider: AiProvider
+    model: str | None = None
+    profile: UserProfile
+    language: Language
+    gender_model: GenderModel
+    #: Lesson or clinical drill — see `SessionMode`.
+    mode: SessionMode
+    #: Everything the user has selected, in pick order. A list rather than one
+    #: structure because comparing is the everyday study move.
+    selection: list[OrganContext] = Field(max_length=64)
+    available_organs: list[OrganMeta]
+    #: Named groups in the manifest hierarchy that can be isolated whole —
+    #: "Brain", "Muscles of hand", "Vertebral column". Names, not ids, because most of
+    #: them have neither.
+    #:
+    #: Defaulted for the usual reason: a new field on an existing event is
+    #: optional on the way in, or every frame from an older client fails
+    #: validation and is dropped.
+    available_groups: list[str] = Field(default_factory=list, max_length=400)
+    #: The virtual patient this drill belongs to, when there is one.
+    #:
+    #: Defaulted, not required — a new field on an existing event is optional on
+    #: the way in, or every frame from an older client fails validation and is
+    #: dropped. That rule was learned the expensive way when token accounting
+    #: vanished for a release.
+    case: VirtualPatient | None = None
+    #: Where the scanner is, when it stands in for a selection. Defaulted for the
+    #: same reason as `case`.
+    scanner: ScannerContext | None = None
+    #: The rhythm the heart is beating in, when the heartbeat is on. Defaulted
+    #: for the same reason as `case`.
+    heart: HeartContext | None = None
+    #: The breathing on screen, when it is on. Defaulted for the same reason.
+    breathing: BreathContext | None = None
+    # Injected by Rust from the OS keyring — never present on the frontend side.
+    api_key: str = Field(min_length=1, repr=False)
+
+
+class ListModelsRequest(Strict):
+    """Ask a provider which models this key can actually use.
+
+    Doubles as key validation: the same call that fills the picker is the one
+    that proves the credential works, so there is no separate "test key" path
+    that could drift from the real one.
+    """
+
+    kind: Literal["list_models"] = "list_models"
+    request_id: str = Field(min_length=1)
+    provider: AiProvider
+    api_key: str = Field(min_length=1, repr=False)
+
+
+#: An Ollama model name: `qwen3.5:9b`, `library/llama3.1:8b`,
+#: `hf.co/user/repo:Q4_K_M`. Nothing that could leave the name and become a path
+#: or a query on the request it is put into. The host is fixed in
+#: `local_chat.py`, so a URL here could not redirect anything — it is refused
+#: anyway (`_local_model_name`), along with `..`, because neither is a name.
+LOCAL_MODEL_PATTERN = r"^[A-Za-z0-9][A-Za-z0-9._:/@-]{0,199}$"
+
+
+def _local_model_name(value: str) -> str:
+    if "://" in value or ".." in value:
+        raise ValueError("not an Ollama model name")
+    return value
+
+
+LocalModelName = Annotated[
+    str, Field(pattern=LOCAL_MODEL_PATTERN), AfterValidator(_local_model_name)
+]
+
+
+class LocalChatRequest(Strict):
+    """A conversation turn with a model running in Ollama on this computer.
+
+    Words only: no scene, no tools, no key. Rust forwards it without reading
+    the keyring, and the engine answers it without building an agent — see
+    `local_chat.py`. The structures selected are sent so "this" can mean them;
+    the inventory is not, because nothing here can act on it. Neither is the
+    language setting: the model answers in the language of the question.
+    """
+
+    kind: Literal["local_chat_request"] = "local_chat_request"
+    request_id: str = Field(min_length=1)
+    query: str = Field(min_length=1, max_length=8000)
+    history: list[TranscriptTurn] = Field(default_factory=list, max_length=100)
+    model: LocalModelName
+    profile: UserProfile
+    gender_model: GenderModel = "male"
+    selection: list[OrganContext] = Field(default_factory=list, max_length=64)
+
+
+class LocalModelsRequest(Strict):
+    """Ask Ollama on this computer which chat models it has."""
+
+    kind: Literal["local_models_request"] = "local_models_request"
+    request_id: str = Field(min_length=1)
+
+
+class CancelRequest(Strict):
+    kind: Literal["cancel"] = "cancel"
+    request_id: str = Field(min_length=1)
+
+
+class ShutdownRequest(Strict):
+    kind: Literal["shutdown"] = "shutdown"
+
+
+EngineRequest = Annotated[
+    AgentRequest
+    | ListModelsRequest
+    | LocalChatRequest
+    | LocalModelsRequest
+    | CancelRequest
+    | ShutdownRequest,
+    Field(discriminator="kind"),
+]
+
+
+# ---------------------------------------------------------------------------
+# Outbound: engine -> Rust (stdout)
+# ---------------------------------------------------------------------------
+
+
+class TokenUsage(Strict):
+    input_tokens: int = Field(ge=0)
+    output_tokens: int = Field(ge=0)
+    #: How many of `input_tokens` the provider served from its prompt cache.
+    #:
+    #: A subset, not an addition. pydantic-ai's own convention is that
+    #: `input_tokens` is the inclusive total — it normalises the providers that
+    #: report cache reads separately, so the same rule holds everywhere — and
+    #: this is carried alongside rather than subtracted because both numbers
+    #: are true and they answer different questions: how much context the turn
+    #: needed, and how much of it had to be paid for at full rate.
+    #:
+    #: It matters most exactly where the app used to be most misleading. Every
+    #: turn re-sends the whole transcript, so a long conversation looks
+    #: alarming — but a long conversation is also the one a provider caches
+    #: best, and cache reads are billed at a fraction. OpenAI caches any prompt
+    #: over 1,024 tokens without being asked.
+    #:
+    #: Defaulted, so a build of the window that predates this field still reads
+    #: the frame, and a provider that reports no cache figure means zero rather
+    #: than an error.
+    cache_read_tokens: int = Field(default=0, ge=0)
+
+
+class ReadyEvent(Strict):
+    type: Literal["ready"] = "ready"
+    # No defaults: these always appear on the wire, so the contract test sees
+    # them as required on both sides. `ready()` below is the single construction
+    # site, so the ergonomic cost is nil.
+    protocol_version: int
+    engine_version: str
+
+    @staticmethod
+    def current() -> ReadyEvent:
+        return ReadyEvent(
+            protocol_version=PROTOCOL_VERSION, engine_version=ENGINE_VERSION
+        )
+
+
+class TextDeltaEvent(Strict):
+    type: Literal["text_delta"] = "text_delta"
+    request_id: str
+    text: str
+
+
+class ToolStartedEvent(Strict):
+    type: Literal["tool_started"] = "tool_started"
+    request_id: str
+    tool: str
+
+
+class SceneCommandEvent(Strict):
+    type: Literal["scene_command"] = "scene_command"
+    request_id: str
+    command: SceneCommand
+
+
+class ModelInfo(Strict):
+    id: str = Field(min_length=1)
+    label: str = Field(min_length=1)
+    description: str | None = None
+    #: True for the entry the engine would pick if none is chosen.
+    recommended: bool = False
+
+
+class ModelsEvent(Strict):
+    type: Literal["models"] = "models"
+    request_id: str
+    provider: AiProvider
+    models: list[ModelInfo]
+
+
+class LocalModelInfo(Strict):
+    name: LocalModelName
+    #: As Ollama reports it: "8.0B", "4.3B". Absent when it does not say.
+    parameter_size: str | None = None
+    #: On disk, in bytes — a fair guide to the memory it will need.
+    size_bytes: int | None = Field(default=None, ge=0)
+
+
+class LocalModelsEvent(Strict):
+    """What Ollama on this computer offers, and whether it answered at all."""
+
+    type: Literal["local_models"] = "local_models"
+    request_id: str
+    #: False when nothing answered on Ollama's address: not installed, or not started.
+    running: bool
+    models: list[LocalModelInfo]
+
+
+class CaseVerdictEvent(Strict):
+    """The grade for a case drill, from the assistant's own evaluation.
+
+    A number rather than prose because it is what lets the journal show
+    progress: "eleven cardiac cases, averaging 74" is a fact a student can act
+    on, and it cannot be recovered from a paragraph afterwards. The reasoning
+    still streams as ordinary text — this is only the part worth storing.
+    """
+
+    type: Literal["case_verdict"] = "case_verdict"
+    request_id: str
+    score: int = Field(ge=0, le=100)
+    verdict: str = Field(min_length=1, max_length=4000)
+
+
+class DoneEvent(Strict):
+    """The turn is over, with what it cost and what ran it.
+
+    `model` is the id the SDK was actually given, defaults resolved — not what
+    the panel had selected, which is `null` whenever the reader never chose one.
+    Both it and `usage` are nullable because a `done` also closes turns that
+    never reached a provider, and "we were not told" has to stay distinguishable
+    from "this cost nothing": only one of the two belongs in a total.
+    """
+
+    type: Literal["done"] = "done"
+    request_id: str
+    usage: TokenUsage | None
+    # Defaulted to match the reader. See the Zod side for why a `done` may
+    # never fail to parse: an engine older than the window it is talking to
+    # sends this frame without the field, and dropping it would cost the turn
+    # its journal entry, its token count and the composer's ready state.
+    model: str | None = None
+
+
+class ErrorEvent(Strict):
+    type: Literal["error"] = "error"
+    request_id: str | None
+    code: EngineErrorCode
+    message: str
+
+
+EngineEvent = Annotated[
+    ReadyEvent
+    | TextDeltaEvent
+    | ToolStartedEvent
+    | SceneCommandEvent
+    | ModelsEvent
+    | LocalModelsEvent
+    | CaseVerdictEvent
+    | DoneEvent
+    | ErrorEvent,
+    Field(discriminator="type"),
+]

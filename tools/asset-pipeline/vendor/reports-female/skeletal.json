@@ -1,0 +1,612 @@
+{
+ "system": "skeletal",
+ "sex": "female",
+ "source": {
+  "version": "v1.5",
+  "url": "https://cdn.humanatlas.io/digital-objects/ref-organ/united-female/v1.5/assets/3d-vh-f-united.glb",
+  "metadata": "https://cdn.humanatlas.io/digital-objects/ref-organ/united-female/v1.5/metadata.json",
+  "license": "CC-BY-4.0",
+  "licenseUrl": "https://creativecommons.org/licenses/by/4.0/",
+  "sha256": "472567a56896b9b7890508da6501fbf858e56aaa30745365f7a71ade782b529c"
+ },
+ "output": "skeletal_female.glb",
+ "draco": true,
+ "object_count": 39,
+ "objects": [
+  {
+   "name": "Atlas (C1)",
+   "organ_id": "atlas_c1",
+   "node": "VH_F_cervical_vertebra_1",
+   "term": "Atlas (C1)",
+   "qualifier": null,
+   "side": null,
+   "ontology_id": "UBERON:0001092",
+   "source_label": "vertebral bone 1",
+   "polygons": 15952,
+   "path": [
+    "Vertebral column",
+    "Cervical vertebrae"
+   ]
+  },
+  {
+   "name": "Axis (C2)",
+   "organ_id": "axis_c2",
+   "node": "VH_F_cervical_vertebra_2",
+   "term": "Axis (C2)",
+   "qualifier": null,
+   "side": null,
+   "ontology_id": "UBERON:0001093",
+   "source_label": "vertebral bone 2",
+   "polygons": 15426,
+   "path": [
+    "Vertebral column",
+    "Cervical vertebrae"
+   ]
+  },
+  {
+   "name": "Coccyx",
+   "organ_id": "coccyx",
+   "node": "VH_F_coccyx",
+   "term": "Coccyx",
+   "qualifier": null,
+   "side": null,
+   "ontology_id": "UBERON:0001350",
+   "source_label": "coccyx",
+   "polygons": 1390,
+   "path": [
+    "Pelvic girdle"
+   ]
+  },
+  {
+   "name": "Ilium, compact bone (left)",
+   "organ_id": "ilium_compact_bone_l",
+   "node": "VH_F_ilium_compact_bone_L",
+   "term": "Ilium",
+   "qualifier": "compact bone",
+   "side": "left",
+   "ontology_id": "UBERON:0001439",
+   "source_label": "compact bone tissue",
+   "polygons": 12684,
+   "path": [
+    "Pelvic girdle",
+    "Hip bone",
+    "Ilium"
+   ]
+  },
+  {
+   "name": "Ilium, compact bone (right)",
+   "organ_id": "ilium_compact_bone_r",
+   "node": "VH_F_ilium_compact_bone_R",
+   "term": "Ilium",
+   "qualifier": "compact bone",
+   "side": "right",
+   "ontology_id": "UBERON:0001439",
+   "source_label": "compact bone tissue",
+   "polygons": 11810,
+   "path": [
+    "Pelvic girdle",
+    "Hip bone",
+    "Ilium"
+   ]
+  },
+  {
+   "name": "Ilium, spongy bone (left)",
+   "organ_id": "ilium_spongy_bone_l",
+   "node": "VH_F_ilium_spongy_bone_L",
+   "term": "Ilium",
+   "qualifier": "spongy bone",
+   "side": "left",
+   "ontology_id": "UBERON:0002483",
+   "source_label": "trabecular bone tissue",
+   "polygons": 6022,
+   "path": [
+    "Pelvic girdle",
+    "Hip bone",
+    "Ilium"
+   ]
+  },
+  {
+   "name": "Ilium, spongy bone (right)",
+   "organ_id": "ilium_spongy_bone_r",
+   "node": "VH_F_ilium_spongy_bone_R",
+   "term": "Ilium",
+   "qualifier": "spongy bone",
+   "side": "right",
+   "ontology_id": "UBERON:0002483",
+   "source_label": "trabecular bone tissue",
+   "polygons": 5597,
+   "path": [
+    "Pelvic girdle",
+    "Hip bone",
+    "Ilium"
+   ]
+  },
+  {
+   "name": "Ischium, compact bone (left)",
+   "organ_id": "ischium_compact_bone_l",
+   "node": "VH_F_ischium_compact_bone_L",
+   "term": "Ischium",
+   "qualifier": "compact bone",
+   "side": "left",
+   "ontology_id": "UBERON:0001439",
+   "source_label": "compact bone tissue",
+   "polygons": 5392,
+   "path": [
+    "Pelvic girdle",
+    "Hip bone",
+    "Ischium"
+   ]
+  },
+  {
+   "name": "Ischium, compact bone (right)",
+   "organ_id": "ischium_compact_bone_r",
+   "node": "VH_F_ischium_compact_bone_R",
+   "term": "Ischium",
+   "qualifier": "compact bone",
+   "side": "right",
+   "ontology_id": "UBERON:0001439",
+   "source_label": "compact bone tissue",
+   "polygons": 5390,
+   "path": [
+    "Pelvic girdle",
+    "Hip bone",
+    "Ischium"
+   ]
+  },
+  {
+   "name": "Ischium, spongy bone (left)",
+   "organ_id": "ischium_spongy_bone_l",
+   "node": "VH_F_ischium_spongy_bone_L",
+   "term": "Ischium",
+   "qualifier": "spongy bone",
+   "side": "left",
+   "ontology_id": "UBERON:0002483",
+   "source_label": "trabecular bone tissue",
+   "polygons": 2296,
+   "path": [
+    "Pelvic girdle",
+    "Hip bone",
+    "Ischium"
+   ]
+  },
+  {
+   "name": "Ischium, spongy bone (right)",
+   "organ_id": "ischium_spongy_bone_r",
+   "node": "VH_F_ischium_spongy_bone_R",
+   "term": "Ischium",
+   "qualifier": "spongy bone",
+   "side": "right",
+   "ontology_id": "UBERON:0002483",
+   "source_label": "trabecular bone tissue",
+   "polygons": 2291,
+   "path": [
+    "Pelvic girdle",
+    "Hip bone",
+    "Ischium"
+   ]
+  },
+  {
+   "name": "Lumbar vertebra, L6",
+   "organ_id": "vertebra_l6",
+   "node": "VH_F_lumbar_vertebra_6",
+   "term": "Lumbar vertebra",
+   "qualifier": "L6",
+   "side": null,
+   "ontology_id": "-",
+   "source_label": "-",
+   "polygons": 17860,
+   "path": [
+    "Vertebral column",
+    "Lumbar vertebrae"
+   ]
+  },
+  {
+   "name": "Pubis, compact bone (left)",
+   "organ_id": "pubis_compact_bone_l",
+   "node": "VH_F_pubis_compact_bone_L",
+   "term": "Pubis",
+   "qualifier": "compact bone",
+   "side": "left",
+   "ontology_id": "UBERON:0001439",
+   "source_label": "compact bone tissue",
+   "polygons": 5376,
+   "path": [
+    "Pelvic girdle",
+    "Hip bone",
+    "Pubis"
+   ]
+  },
+  {
+   "name": "Pubis, compact bone (right)",
+   "organ_id": "pubis_compact_bone_r",
+   "node": "VH_F_pubis_compact_bone_R",
+   "term": "Pubis",
+   "qualifier": "compact bone",
+   "side": "right",
+   "ontology_id": "UBERON:0001439",
+   "source_label": "compact bone tissue",
+   "polygons": 5080,
+   "path": [
+    "Pelvic girdle",
+    "Hip bone",
+    "Pubis"
+   ]
+  },
+  {
+   "name": "Pubis, spongy bone (left)",
+   "organ_id": "pubis_spongy_bone_l",
+   "node": "VH_F_pubis_spongy_bone_L",
+   "term": "Pubis",
+   "qualifier": "spongy bone",
+   "side": "left",
+   "ontology_id": "UBERON:0002483",
+   "source_label": "trabecular bone tissue",
+   "polygons": 2312,
+   "path": [
+    "Pelvic girdle",
+    "Hip bone",
+    "Pubis"
+   ]
+  },
+  {
+   "name": "Pubis, spongy bone (right)",
+   "organ_id": "pubis_spongy_bone_r",
+   "node": "VH_F_pubis_spongy_bone_R",
+   "term": "Pubis",
+   "qualifier": "spongy bone",
+   "side": "right",
+   "ontology_id": "UBERON:0002483",
+   "source_label": "trabecular bone tissue",
+   "polygons": 2172,
+   "path": [
+    "Pelvic girdle",
+    "Hip bone",
+    "Pubis"
+   ]
+  },
+  {
+   "name": "Sacrum",
+   "organ_id": "sacrum",
+   "node": "VH_F_sacrum",
+   "term": "Sacrum",
+   "qualifier": null,
+   "side": null,
+   "ontology_id": "UBERON:0003690",
+   "source_label": "fused sacrum",
+   "polygons": 19636,
+   "path": [
+    "Pelvic girdle"
+   ]
+  },
+  {
+   "name": "Vertebra C3",
+   "organ_id": "vertebra_c3",
+   "node": "VH_F_cervical_vertebra_3",
+   "term": "Vertebra C3",
+   "qualifier": null,
+   "side": null,
+   "ontology_id": "UBERON:0004612",
+   "source_label": "mammalian cervical vertebra 3",
+   "polygons": 17926,
+   "path": [
+    "Vertebral column",
+    "Cervical vertebrae"
+   ]
+  },
+  {
+   "name": "Vertebra C4",
+   "organ_id": "vertebra_c4",
+   "node": "VH_F_cervical_vertebra_4",
+   "term": "Vertebra C4",
+   "qualifier": null,
+   "side": null,
+   "ontology_id": "UBERON:0004613",
+   "source_label": "mammalian cervical vertebra 4",
+   "polygons": 19724,
+   "path": [
+    "Vertebral column",
+    "Cervical vertebrae"
+   ]
+  },
+  {
+   "name": "Vertebra C5",
+   "organ_id": "vertebra_c5",
+   "node": "VH_F_cervical_vertebra_5",
+   "term": "Vertebra C5",
+   "qualifier": null,
+   "side": null,
+   "ontology_id": "UBERON:0004614",
+   "source_label": "mammalian cervical vertebra 5",
+   "polygons": 19472,
+   "path": [
+    "Vertebral column",
+    "Cervical vertebrae"
+   ]
+  },
+  {
+   "name": "Vertebra C6",
+   "organ_id": "vertebra_c6",
+   "node": "VH_F_cervical_vertebra_6",
+   "term": "Vertebra C6",
+   "qualifier": null,
+   "side": null,
+   "ontology_id": "UBERON:0004615",
+   "source_label": "mammalian cervical vertebra 6",
+   "polygons": 18848,
+   "path": [
+    "Vertebral column",
+    "Cervical vertebrae"
+   ]
+  },
+  {
+   "name": "Vertebra C7",
+   "organ_id": "vertebra_c7",
+   "node": "VH_F_cervical_vertebra_7",
+   "term": "Vertebra C7",
+   "qualifier": null,
+   "side": null,
+   "ontology_id": "UBERON:0004616",
+   "source_label": "mammalian cervical vertebra 7",
+   "polygons": 16724,
+   "path": [
+    "Vertebral column",
+    "Cervical vertebrae"
+   ]
+  },
+  {
+   "name": "Vertebra L1",
+   "organ_id": "vertebra_l1",
+   "node": "VH_F_lumbar_vertebra_1",
+   "term": "Vertebra L1",
+   "qualifier": null,
+   "side": null,
+   "ontology_id": "UBERON:0004617",
+   "source_label": "lumbar vertebra 1",
+   "polygons": 18208,
+   "path": [
+    "Vertebral column",
+    "Lumbar vertebrae"
+   ]
+  },
+  {
+   "name": "Vertebra L2",
+   "organ_id": "vertebra_l2",
+   "node": "VH_F_lumbar_vertebra_2",
+   "term": "Vertebra L2",
+   "qualifier": null,
+   "side": null,
+   "ontology_id": "UBERON:0004618",
+   "source_label": "lumbar vertebra 2",
+   "polygons": 17612,
+   "path": [
+    "Vertebral column",
+    "Lumbar vertebrae"
+   ]
+  },
+  {
+   "name": "Vertebra L3",
+   "organ_id": "vertebra_l3",
+   "node": "VH_F_lumbar_vertebra_3",
+   "term": "Vertebra L3",
+   "qualifier": null,
+   "side": null,
+   "ontology_id": "UBERON:0004619",
+   "source_label": "lumbar vertebra 3",
+   "polygons": 18540,
+   "path": [
+    "Vertebral column",
+    "Lumbar vertebrae"
+   ]
+  },
+  {
+   "name": "Vertebra L4",
+   "organ_id": "vertebra_l4",
+   "node": "VH_F_lumbar_vertebra_4",
+   "term": "Vertebra L4",
+   "qualifier": null,
+   "side": null,
+   "ontology_id": "UBERON:0004620",
+   "source_label": "lumbar vertebra 4",
+   "polygons": 19238,
+   "path": [
+    "Vertebral column",
+    "Lumbar vertebrae"
+   ]
+  },
+  {
+   "name": "Vertebra L5",
+   "organ_id": "vertebra_l5",
+   "node": "VH_F_lumbar_vertebra_5",
+   "term": "Vertebra L5",
+   "qualifier": null,
+   "side": null,
+   "ontology_id": "UBERON:0004621",
+   "source_label": "lumbar vertebra 5",
+   "polygons": 18002,
+   "path": [
+    "Vertebral column",
+    "Lumbar vertebrae"
+   ]
+  },
+  {
+   "name": "Vertebra T1",
+   "organ_id": "vertebra_t1",
+   "node": "VH_F_thoracic_vertebra_1",
+   "term": "Vertebra T1",
+   "qualifier": null,
+   "side": null,
+   "ontology_id": "UBERON:0004626",
+   "source_label": "thoracic vertebra 1",
+   "polygons": 15084,
+   "path": [
+    "Vertebral column",
+    "Thoracic vertebrae"
+   ]
+  },
+  {
+   "name": "Vertebra T10",
+   "organ_id": "vertebra_t10",
+   "node": "VH_F_thoracic_vertebra_10",
+   "term": "Vertebra T10",
+   "qualifier": null,
+   "side": null,
+   "ontology_id": "UBERON:0004634",
+   "source_label": "thoracic vertebra 10",
+   "polygons": 16402,
+   "path": [
+    "Vertebral column",
+    "Thoracic vertebrae"
+   ]
+  },
+  {
+   "name": "Vertebra T11",
+   "organ_id": "vertebra_t11",
+   "node": "VH_F_thoracic_vertebra_11",
+   "term": "Vertebra T11",
+   "qualifier": null,
+   "side": null,
+   "ontology_id": "UBERON:0004635",
+   "source_label": "thoracic vertebra 11",
+   "polygons": 15614,
+   "path": [
+    "Vertebral column",
+    "Thoracic vertebrae"
+   ]
+  },
+  {
+   "name": "Vertebra T12",
+   "organ_id": "vertebra_t12",
+   "node": "VH_F_thoracic_vertebra_12",
+   "term": "Vertebra T12",
+   "qualifier": null,
+   "side": null,
+   "ontology_id": "UBERON:0004636",
+   "source_label": "thoracic vertebra 12",
+   "polygons": 17736,
+   "path": [
+    "Vertebral column",
+    "Thoracic vertebrae"
+   ]
+  },
+  {
+   "name": "Vertebra T2",
+   "organ_id": "vertebra_t2",
+   "node": "VH_F_thoracic_vertebra_2",
+   "term": "Vertebra T2",
+   "qualifier": null,
+   "side": null,
+   "ontology_id": "UBERON:0004627",
+   "source_label": "thoracic vertebra 2",
+   "polygons": 15536,
+   "path": [
+    "Vertebral column",
+    "Thoracic vertebrae"
+   ]
+  },
+  {
+   "name": "Vertebra T3",
+   "organ_id": "vertebra_t3",
+   "node": "VH_F_thoracic_vertebra_3",
+   "term": "Vertebra T3",
+   "qualifier": null,
+   "side": null,
+   "ontology_id": "UBERON:0004628",
+   "source_label": "thoracic vertebra 3",
+   "polygons": 16232,
+   "path": [
+    "Vertebral column",
+    "Thoracic vertebrae"
+   ]
+  },
+  {
+   "name": "Vertebra T4",
+   "organ_id": "vertebra_t4",
+   "node": "VH_F_thoracic_vertebra_4",
+   "term": "Vertebra T4",
+   "qualifier": null,
+   "side": null,
+   "ontology_id": "UBERON:0004629",
+   "source_label": "thoracic vertebra 4",
+   "polygons": 15292,
+   "path": [
+    "Vertebral column",
+    "Thoracic vertebrae"
+   ]
+  },
+  {
+   "name": "Vertebra T5",
+   "organ_id": "vertebra_t5",
+   "node": "VH_F_thoracic_vertebra_5",
+   "term": "Vertebra T5",
+   "qualifier": null,
+   "side": null,
+   "ontology_id": "UBERON:0004630",
+   "source_label": "thoracic vertebra 5",
+   "polygons": 15846,
+   "path": [
+    "Vertebral column",
+    "Thoracic vertebrae"
+   ]
+  },
+  {
+   "name": "Vertebra T6",
+   "organ_id": "vertebra_t6",
+   "node": "VH_F_thoracic_vertebra_6",
+   "term": "Vertebra T6",
+   "qualifier": null,
+   "side": null,
+   "ontology_id": "UBERON:0004631",
+   "source_label": "thoracic vertebra 6",
+   "polygons": 16030,
+   "path": [
+    "Vertebral column",
+    "Thoracic vertebrae"
+   ]
+  },
+  {
+   "name": "Vertebra T7",
+   "organ_id": "vertebra_t7",
+   "node": "VH_F_thoracic_vertebra_7",
+   "term": "Vertebra T7",
+   "qualifier": null,
+   "side": null,
+   "ontology_id": "UBERON:0004632",
+   "source_label": "thoracic vertebra 7",
+   "polygons": 15848,
+   "path": [
+    "Vertebral column",
+    "Thoracic vertebrae"
+   ]
+  },
+  {
+   "name": "Vertebra T8",
+   "organ_id": "vertebra_t8",
+   "node": "VH_F_thoracic_vertebra_8",
+   "term": "Vertebra T8",
+   "qualifier": null,
+   "side": null,
+   "ontology_id": "UBERON:0011050",
+   "source_label": "thoracic vertebra 8",
+   "polygons": 16830,
+   "path": [
+    "Vertebral column",
+    "Thoracic vertebrae"
+   ]
+  },
+  {
+   "name": "Vertebra T9",
+   "organ_id": "vertebra_t9",
+   "node": "VH_F_thoracic_vertebra_9",
+   "term": "Vertebra T9",
+   "qualifier": null,
+   "side": null,
+   "ontology_id": "UBERON:0004633",
+   "source_label": "thoracic vertebra 9",
+   "polygons": 16486,
+   "path": [
+    "Vertebral column",
+    "Thoracic vertebrae"
+   ]
+  }
+ ]
+}

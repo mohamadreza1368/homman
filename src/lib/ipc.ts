@@ -1,0 +1,231 @@
+import { invoke } from "@tauri-apps/api/core";
+import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+
+import {
+  AgentRequestSchema,
+  EngineEventSchema,
+  ListModelsRequestSchema,
+  LocalChatRequestSchema,
+  LocalModelsRequestSchema,
+  type AgentRequest,
+  type AiProvider,
+  type EngineEvent,
+  type ListModelsRequest,
+  type LocalChatRequest,
+  type LocalModelsRequest,
+} from "./schemas";
+
+/** Channel Rust forwards every engine frame on. Mirrors `sidecar::ENGINE_EVENT`. */
+const ENGINE_EVENT = "anatria://engine-event";
+
+// ---------------------------------------------------------------------------
+// Credentials
+// ---------------------------------------------------------------------------
+
+/**
+ * There is no `getApiKey`. Rust exposes no command that returns a key — it
+ * reads from the OS keyring only to fill in the frame it writes to the
+ * engine's stdin. Keys are write-only and existence-checkable from here.
+ */
+export function saveApiKey(provider: AiProvider, apiKey: string): Promise<void> {
+  return invoke("save_api_key", { provider, apiKey });
+}
+
+export function hasApiKey(provider: AiProvider): Promise<boolean> {
+  return invoke("has_api_key", { provider });
+}
+
+export function deleteApiKey(provider: AiProvider): Promise<void> {
+  return invoke("delete_api_key", { provider });
+}
+
+// ---------------------------------------------------------------------------
+// Engine
+// ---------------------------------------------------------------------------
+
+/**
+ * Requests are validated here before they leave the renderer. A bad request
+ * caught at this boundary produces a stack trace pointing at the caller;
+ * caught at the Pydantic end it produces an error event with no such context.
+ */
+export function askAgent(request: AgentRequest): Promise<void> {
+  return invoke("ask_agent", { request: AgentRequestSchema.parse(request) });
+}
+
+/**
+ * Fetch the models the stored key can use. Rust injects the key, so this both
+ * populates the picker and validates the credential — a bad key comes back as
+ * an `invalid_api_key` error event on the same request id.
+ */
+export function listModels(request: ListModelsRequest): Promise<void> {
+  return invoke("list_models", { request: ListModelsRequestSchema.parse(request) });
+}
+
+/**
+ * One turn with a model running in Ollama on this computer.
+ *
+ * Its own command, not `askAgent` with another provider: Rust forwards it
+ * without reading the keyring, and the engine answers it without tools, so a
+ * local model's answer cannot move the atlas. See `local_chat.py`.
+ */
+export function askLocal(request: LocalChatRequest): Promise<void> {
+  return invoke("ask_local", { request: LocalChatRequestSchema.parse(request) });
+}
+
+/** Which chat models Ollama on this computer has; answered by a `local_models` event. */
+export function listLocalModels(request: LocalModelsRequest): Promise<void> {
+  return invoke("list_local_models", { request: LocalModelsRequestSchema.parse(request) });
+}
+
+export interface EngineStatus {
+  ready: boolean;
+  /** Why it is not running — a failed spawn, or the last crash. */
+  error: string | null;
+  /** What it announced at boot, or null before it has said anything. */
+  protocol_version: number | null;
+}
+
+/**
+ * Ask what the engine is doing, rather than waiting to be told.
+ *
+ * `ready` is emitted once, and Rust spawns the sidecar in `setup()` — before
+ * the window has run any JavaScript. A frontend that only listens is betting on
+ * winning that race, and losing it disables the composer permanently. A spawn
+ * failure is worse: reported from the same place, it is *always* lost, leaving
+ * a missing engine binary looking like an unexplained "offline".
+ *
+ * Call this once the listener is attached: whatever already happened is
+ * answered here, whatever happens next arrives as an event.
+ */
+export function engineStatus(): Promise<EngineStatus> {
+  return invoke("engine_status");
+}
+
+/**
+ * Restart the analysis engine after it has died.
+ *
+ * The window keeps working without the engine — the atlas, the tree and the
+ * viewport are all useful on their own — so a crash must be recoverable from
+ * inside the app rather than by quitting it.
+ */
+export function restartEngine(): Promise<void> {
+  return invoke("restart_engine");
+}
+
+export function cancelRequest(requestId: string): Promise<void> {
+  return invoke("cancel_request", { requestId });
+}
+
+// ---------------------------------------------------------------------------
+// Control bridge
+// ---------------------------------------------------------------------------
+
+export interface BridgeStatus {
+  /** Whether this build has a transport at all. Windows only, for now. */
+  supported: boolean;
+  running: boolean;
+  /**
+   * The pipe a client connects to, or null when stopped.
+   *
+   * Shown for somebody writing a client of their own. The MCP server does not
+   * need it: the name carries this account's SID, which any program running as
+   * the reader can work out for itself — which is what makes the whole thing
+   * configurable in one line that never changes.
+   */
+  pipe: string | null;
+  /** Scene commands admitted since the bridge was started. */
+  accepted: number;
+  /** Lines refused: not a scene command, or malformed. */
+  refused: number;
+  /**
+   * Where the MCP server was installed, or null in a build without it.
+   *
+   * It ships as source — seventy kilobytes of Python — rather than a second
+   * frozen binary, which would have cost about ninety megabytes for something
+   * most readers never touch. An agent that can run a shell can build an
+   * environment for it; what it cannot do is invent the code, and until this
+   * shipped the only copy was in a repository it had no reason to have.
+   */
+  server: string | null;
+}
+
+export function bridgeStatus(): Promise<BridgeStatus> {
+  return invoke("bridge_status");
+}
+
+/**
+ * Turn the bridge on, and get back what it became.
+ *
+ * The status is the return value rather than something to poll for, so the
+ * panel can never draw a switch as on while the pipe failed to open.
+ */
+export function startBridge(): Promise<BridgeStatus> {
+  return invoke("start_bridge");
+}
+
+/** Turn it off. The pipe goes with it, so there is nothing left to open. */
+export function stopBridge(): Promise<BridgeStatus> {
+  return invoke("stop_bridge");
+}
+
+/** The stable-display switch: what is stored, and what this window started with. */
+export interface DisplayStatus {
+  /** Windows and Linux have a remedy; elsewhere the switch is not offered. */
+  supported: boolean;
+  /** The stored choice, which applies from the next launch. */
+  stableDisplay: boolean;
+  /** Whether this running window was started with it. */
+  active: boolean;
+}
+
+export function displayStatus(): Promise<DisplayStatus> {
+  return invoke("display_status");
+}
+
+export function setStableDisplay(on: boolean): Promise<DisplayStatus> {
+  return invoke("set_stable_display", { on });
+}
+
+// ---------------------------------------------------------------------------
+// Events
+// ---------------------------------------------------------------------------
+
+export interface EngineListenerOptions {
+  /**
+   * Called when a frame arrives that does not match the protocol. Defaults to
+   * a console error. Frames are dropped rather than passed through half-typed —
+   * a scene command with a malformed payload must never reach the viewport.
+   */
+  onProtocolViolation?: (payload: unknown, issues: string) => void;
+}
+
+export function onEngineEvent(
+  handler: (event: EngineEvent) => void,
+  options: EngineListenerOptions = {},
+): Promise<UnlistenFn> {
+  // The default logs *what was wrong*, never the frame it was wrong about.
+  // Zod's message already names the failing paths and the types it expected,
+  // which is what a person debugging this needs; the payload adds only the
+  // data. And the data is a reader's note, a patient record, an answer — none
+  // of which should reach a console log because a schema drifted. A caller that
+  // genuinely needs the frame still receives it and can decide for itself.
+  const onViolation =
+    options.onProtocolViolation ??
+    ((_payload, issues) => {
+      console.error("[engine] protocol violation", issues);
+    });
+
+  return listen<unknown>(ENGINE_EVENT, (message) => {
+    const parsed = EngineEventSchema.safeParse(message.payload);
+    if (!parsed.success) {
+      onViolation(message.payload, parsed.error.message);
+      return;
+    }
+    handler(parsed.data);
+  });
+}
+
+/** Correlation id for one request/response exchange. */
+export function newRequestId(): string {
+  return crypto.randomUUID();
+}

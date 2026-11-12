@@ -1,0 +1,131 @@
+Anatria3D — licensing notice
+============================
+
+Anatria3D is educational software. It is NOT a medical device, and it is not
+for diagnosis or treatment of any person.
+
+
+The application — Business Source License 1.1
+---------------------------------------------
+
+Licensor: Nurdzhan Kerimov (Digital Rose). Copyright (c) 2026.
+
+Free of charge for study, teaching and academic research, and for
+non-commercial evaluation by healthcare professionals.
+
+Any other production use — a commercial clinic or healthcare business,
+any revenue-generating environment, re-branding, or distribution as part of a
+paid product or service — requires a commercial licence. Write to
+anatria@digitalrose.org.
+
+This version converts to the Apache License, Version 2.0 four years after
+its release, on the Change Date stated in the LICENSE file installed with the
+application, which holds the full terms.
+
+The licence above covers the application's own code, and nothing else. The
+anatomy below is third-party material under its own licences, which this one
+does not restrict.
+
+
+The 3D meshes and the anatomical nomenclature shipped with this application are
+not original to it. They come from two unrelated open datasets, under two
+different licences, and they are kept in separate files for that reason.
+
+
+Male atlas — Creative Commons Attribution-ShareAlike 4.0
+--------------------------------------------------------
+
+Files: `anatomy/manifest.json`, `anatomy/*_male.glb`
+
+  1. BodyParts3D
+     The Database Center for Life Science (DBCLS), Japan
+     CC BY-SA 2.1 Japan — https://creativecommons.org/licenses/by-sa/2.1/jp/
+
+  2. Z-Anatomy — the libre 3D atlas of anatomy, derived from BodyParts3D
+     CC BY-SA 4.0 — https://creativecommons.org/licenses/by-sa/4.0/
+     https://www.z-anatomy.com/
+
+  3. Anatria3D adaptations — headless Blender export to glTF binary, modifiers
+     baked in, lossy Draco compression, materials dropped in favour of shading
+     applied by the viewer, stable organ identifiers added, and an anatomical
+     hierarchy derived from Z-Anatomy's own collection nesting.
+
+     As adaptations of CC BY-SA 4.0 material these files are themselves
+     licensed CC BY-SA 4.0.
+
+Redistributing these files, in this application or apart from it, requires
+preserving this attribution and keeping them under CC BY-SA 4.0.
+
+
+Female atlas — Creative Commons Attribution 4.0
+------------------------------------------------
+
+Files: `anatomy/manifest_female.json`, `anatomy/*_female.glb`
+
+The trunk — spine, abdominal organs, pelvis and breast, 264 structures. Not a
+whole body, because no open dataset provides a female one.
+
+  1. Visible Human Female
+     U.S. National Library of Medicine, National Institutes of Health
+     The Visible Human Project — the dataset everything below derives from.
+     https://www.nlm.nih.gov/research/visible/visible_human.html
+
+  2. Human Reference Atlas 3D Reference Organ Library
+     HuBMAP Consortium / NIH — https://humanatlas.io/
+     Digital object ref-organ/united-female v1.5
+     CC BY 4.0 — https://creativecommons.org/licenses/by/4.0/
+
+  3. Anatria3D adaptations — 264 of 888 structures selected, node hierarchy
+     flattened with transforms baked in, materials and UV sets dropped, lossy
+     Draco compression, stable organ identifiers added, and each structure
+     matched by hand to a Terminologia Anatomica term.
+
+     As adaptations of CC BY 4.0 material these files remain CC BY 4.0.
+
+Redistributing these files requires preserving this attribution. There is no
+share-alike obligation on them.
+
+**The two atlases must not be merged into one file.** Folding CC BY material
+into a CC BY-SA work forces share-alike onto it, imposing a condition the HRA's
+authors chose not to impose.
+
+The full notice ships alongside the data, in `anatomy/NOTICE` and
+`anatomy/LICENSE`.
+
+The nomenclature of both is Terminologia Anatomica 2 Latin and clinical English
+only. No localised medical terminology is stored or redistributed here;
+translation is performed at runtime by the AI assistant for the reader in front
+of it.
+
+
+Application source code — earlier versions
+-------------------------------------------
+
+The licence for this version's code is the Business Source License 1.1 stated
+at the top of this notice, and its full text ships as LICENSE.
+
+Versions of Anatria3D up to and including 0.4.0 were published under the
+Apache License, Version 2.0, and remain under it. The Apache text ships as
+LICENSES/Apache-2.0.txt, because it is also the licence this version converts
+to on its change date.
+
+The licences do not merge: the code is under the Business Source License 1.1,
+the anatomy is under CC BY-SA 4.0 and CC BY 4.0, and redistributing the anatomy
+keeps it under those licences whatever you do with the code.
+
+
+Bundled components
+------------------
+
+The application bundles a Python runtime and third-party Python packages, each
+under its own licence. Their licence files are installed alongside them, under
+`anatria-engine/_internal/`.
+
+
+Your own data
+-------------
+
+Notes, saved sessions and case results are written to a local SQLite database
+in your user profile. Nothing is uploaded. The only data that leaves the machine
+is the text of a question you send, which goes to the AI provider whose API key
+you supplied.

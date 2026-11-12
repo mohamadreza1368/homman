@@ -1,0 +1,339 @@
+# Build the installers from a tag, and publish them with their checksums.
+#
+# This workflow is what makes the download trustworthy. Anatria3D is not
+# code-signed, so the only thing a reader can verify is that the file they have
+# is the file this pipeline produced from this public source — which is exactly
+# what a build on a maintainer's laptop cannot demonstrate.
+#
+# It is also the prerequisite for free code signing: the open-source signing
+# programmes sign what a public CI built, never an artefact uploaded by hand.
+#
+# Run by hand it builds everything and publishes nothing, leaving the packages
+# attached to the run. That is how a build gets tried on a real machine before
+# a tag claims it works there — the runner is Ubuntu, and the distributions
+# this has to start on are not.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write # to create the release and attach the installers
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 60
+
+    steps:
+      - uses: actions/checkout@v7
+
+      # No `version:` here on purpose. `packageManager` in package.json is the
+      # single source of truth for which pnpm this repository uses, and
+      # `pnpm/action-setup` **refuses to run when both are set** — even when
+      # they agree, which is how this was first broken. The field in
+      # package.json is also the more useful half: it pins an exact version
+      # rather than a major, and it governs a laptop as well as a runner, so
+      # the two cannot drift.
+      - uses: pnpm/action-setup@v6
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Install JS dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Create the engine virtualenv
+        run: |
+          python -m venv .venv
+          .venv/Scripts/python -m pip install --upgrade pip
+          .venv/Scripts/python -m pip install -e "engine[dev]"
+
+      # Before the Rust gates, not after: Tauri's build script validates the
+      # resource paths in tauri.conf.json, and the sidecar is one of them, so
+      # `cargo test` cannot even build without it on a clean machine.
+      #
+      # It has to be rebuilt for the release regardless — anything that changed
+      # under engine/, prompt text included, ships stale otherwise.
+      - name: Build the Python sidecar
+        run: .venv/Scripts/python engine/build_sidecar.py --clean
+
+      # The one check a tag needs that the others cannot make: the five files
+      # agreeing with each other says nothing about whether they agree with
+      # the tag that was pushed. `github.ref_name` is handed over unedited —
+      # the script strips the `v`. Empty on a manual run, where there is no
+      # tag to disagree with.
+      - name: Versions agree with the tag
+        run: node tools/check-version.mjs ${{ github.ref_type == 'tag' && github.ref_name || '' }}
+
+      # The gates again, on the exact commit being released. A tag is the one
+      # moment where "it passed on main yesterday" is not good enough.
+      - name: Gates
+        run: |
+          pnpm typecheck
+          pnpm test
+          .venv/Scripts/python -m pytest engine -q
+          .venv/Scripts/python -m ruff check engine
+          cargo test --manifest-path src-tauri/Cargo.toml
+
+      - name: Build the installers
+        run: pnpm tauri build
+
+      # Published beside the files. With an unsigned installer this is the whole
+      # of what a university's IT department can check, and it is what lets them
+      # allowlist the build by hash.
+      # Per-platform filename, and that is not tidiness. Both platforms' files
+      # end up in one release, and two assets called `checksums.txt` do not
+      # merge — the second upload replaces the first, silently taking the other
+      # platform's hashes with it.
+      - name: Checksums
+        shell: pwsh
+        run: |
+          $out = "checksums-windows.txt"
+          Get-ChildItem -Recurse -Include *.msi, *.exe `
+            -Path src-tauri/target/release/bundle |
+            ForEach-Object {
+              $hash = (Get-FileHash $_.FullName -Algorithm SHA256).Hash
+              "$hash  $($_.Name)" | Tee-Object -FilePath $out -Append
+            }
+
+      # Attached to the run itself, so a `workflow_dispatch` produces something
+      # installable without a tag and without a release. That is the whole
+      # point: the only way to find out whether a package actually starts on a
+      # given distribution is to start it, and doing that from a tag means the
+      # tag exists before the answer does.
+      #
+      # Short retention deliberately. These are for trying a build out; the
+      # release is where a build is kept.
+      - name: Keep the installers on the run
+        uses: actions/upload-artifact@v7
+        with:
+          name: windows-installers
+          retention-days: 14
+          path: |
+            src-tauri/target/release/bundle/nsis/*-setup.exe
+            src-tauri/target/release/bundle/msi/*.msi
+            checksums-windows.txt
+
+  linux:
+    # **22.04 on purpose, not `ubuntu-latest`.** A binary linked against an
+    # older glibc runs on newer distributions; the reverse does not hold. Built
+    # on 24.04 these packages would refuse to start on Ubuntu 22.04 LTS, which
+    # is what a great many university machines are still running — and the
+    # failure would land on the student as "it does not open", with nothing to
+    # tell them why.
+    #
+    # When this runner image is retired, moving to the next LTS is the change,
+    # and it drops support for everything older on that day. Not a silent bump.
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
+
+    steps:
+      - uses: actions/checkout@v7
+
+      # Tauri v2's Linux prerequisites. `patchelf` and `librsvg2-dev` are the
+      # two the AppImage bundler needs and the deb does not, so a missing one
+      # fails only the second artefact.
+      - name: Install the system dependencies
+        # Ten minutes, against the job's sixty. This normally takes under two,
+        # and on 19 Aug 2026 a dead Ubuntu mirror hung it until the whole job
+        # timed out — an hour of runner spent on a step that had already
+        # failed, during a release. The retry is a person re-running the job;
+        # what was missing was finding out an hour earlier.
+        timeout-minutes: 10
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            libxdo-dev \
+            libssl-dev \
+            patchelf \
+            build-essential \
+            curl wget file
+
+      # No `version:` here on purpose. `packageManager` in package.json is the
+      # single source of truth for which pnpm this repository uses, and
+      # `pnpm/action-setup` **refuses to run when both are set** — even when
+      # they agree, which is how this was first broken. The field in
+      # package.json is also the more useful half: it pins an exact version
+      # rather than a major, and it governs a laptop as well as a runner, so
+      # the two cannot drift.
+      - uses: pnpm/action-setup@v6
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Install JS dependencies
+        run: pnpm install --frozen-lockfile
+
+      # At the repository root, and `bin` rather than `Scripts`. The contract
+      # test spawns it from here too.
+      - name: Create the engine virtualenv
+        run: |
+          python -m venv .venv
+          .venv/bin/python -m pip install --upgrade pip
+          .venv/bin/python -m pip install -e "engine[dev]"
+
+      # Before any Rust step, for the same reason as on Windows: Tauri's build
+      # script validates the resources declared in tauri.conf.json, and the
+      # sidecar is one of them.
+      - name: Build the Python sidecar
+        run: .venv/bin/python engine/build_sidecar.py --clean
+
+      # The one check a tag needs that the others cannot make: the five files
+      # agreeing with each other says nothing about whether they agree with
+      # the tag that was pushed. `github.ref_name` is handed over unedited —
+      # the script strips the `v`. Empty on a manual run, where there is no
+      # tag to disagree with.
+      - name: Versions agree with the tag
+        run: node tools/check-version.mjs ${{ github.ref_type == 'tag' && github.ref_name || '' }}
+
+      # The gates again, on the exact commit being released. A tag is the one
+      # moment where "it passed on main yesterday" is not good enough.
+      - name: Gates
+        run: |
+          pnpm typecheck
+          pnpm test
+          .venv/bin/python -m pytest engine -q
+          .venv/bin/python -m ruff check engine
+          cargo test --manifest-path src-tauri/Cargo.toml
+
+      - name: Build the packages
+        run: pnpm tauri build
+
+      # `hash  basename`, matching the Windows file. Written out longhand
+      # because `sha256sum` prints the path it was given: stripping that with a
+      # greedy substitution takes the hash with it.
+      - name: Checksums
+        run: |
+          find src-tauri/target/release/bundle \
+            \( -name '*.deb' -o -name '*.AppImage' \) -type f |
+            while read -r file; do
+              printf '%s  %s\n' "$(sha256sum "$file" | cut -d' ' -f1)" "$(basename "$file")"
+            done > checksums-linux.txt
+          cat checksums-linux.txt
+
+      # See the note on the Windows job. This is the one that earns its keep:
+      # the runner is Ubuntu and the machines this has to work on are not, so
+      # the packages have to leave CI and be started somewhere else before a
+      # tag promises they run.
+      - name: Keep the packages on the run
+        uses: actions/upload-artifact@v7
+        with:
+          name: linux-packages
+          retention-days: 14
+          path: |
+            src-tauri/target/release/bundle/deb/*.deb
+            src-tauri/target/release/bundle/appimage/*.AppImage
+            checksums-linux.txt
+
+  # One job publishes, and that is the whole fix.
+  #
+  # v0.1.7 shipped with an empty body. Both build jobs called the release action
+  # at once, each created a draft for the same tag, and the one that noticed the
+  # collision adopted the other's release and deleted its own — taking its notes
+  # with it. The comment here used to claim the second job left the first one's
+  # body alone. It did not; it raced it.
+  #
+  # It also closes a failure nobody had noticed: with each job publishing for
+  # itself, one platform failing left a release carrying only the other, looking
+  # complete. This runs only if both built.
+  publish:
+    needs: [windows, linux]
+    runs-on: ubuntu-22.04
+    if: startsWith(github.ref, 'refs/tags/')
+
+    steps:
+      # For the notes generator and the changelog it reads. The packages
+      # themselves arrive as artifacts, which is why the build jobs upload them
+      # whether or not a tag started the run.
+      - uses: actions/checkout@v7
+
+      # No `name`, so every artifact this run produced comes down at once, each
+      # under its own directory. v8 also fails the run on a digest mismatch
+      # where older majors only warned — which is the behaviour worth having in
+      # the one workflow whose output people are asked to trust unsigned.
+      - uses: actions/download-artifact@v8
+        with:
+          path: artifacts
+
+      # Assembled, not pasted. The words come from CHANGELOG.md, written as the
+      # work lands rather than reconstructed at tag time, and the hashes are
+      # read from the files the builds produced — so what the notes claim and
+      # what is attached cannot drift apart. It fails if the changelog has no
+      # section for this tag.
+      - name: Write the notes
+        run: |
+          node tools/release-notes.mjs "${{ github.ref_name }}" artifacts > notes.md
+          cat notes.md
+
+      # v0.2.0 shipped a draft holding two checksum files and no installers.
+      # The upload action carries each file's path inside the artifact, so the
+      # packages arrive at `artifacts/windows-installers/src-tauri/target/
+      # release/bundle/nsis/…` rather than one level down — and the old
+      # `artifacts/*/*` patterns matched only the checksums, which do sit at the
+      # artifact root. `action-gh-release` prints "🤔 Pattern does not match any
+      # files" and carries on, so the run was green and the release was empty.
+      #
+      # Counting first is the point. A release with no packages in it is a
+      # failure however cheerful the log was, and it must stop the run rather
+      # than reach the drafting step.
+      - name: The packages are all here
+        run: |
+          shopt -s globstar nullglob
+          missing=0
+          for pattern in '**/*-setup.exe' '**/*.msi' '**/*.deb' '**/*.AppImage'; do
+            found=(artifacts/$pattern)
+            if [ ${#found[@]} -eq 0 ]; then
+              echo "::error::No file matched $pattern under artifacts/"
+              missing=1
+            else
+              printf '%s\n' "${found[@]}"
+            fi
+          done
+          exit $missing
+
+      - name: Publish
+        uses: softprops/action-gh-release@v3
+        with:
+          draft: true # reviewed before anyone can download it
+          name: Anatria3D ${{ github.ref_name }}
+          body_path: notes.md
+          # `**` because the artifact keeps the bundle's directory structure.
+          # Every pattern ends in a file extension, so none of them can match
+          # the directories the download action creates — which was the worry
+          # that produced the too-shallow patterns this replaces.
+          files: |
+            artifacts/**/*-setup.exe
+            artifacts/**/*.msi
+            artifacts/**/*.deb
+            artifacts/**/*.AppImage
+            artifacts/**/checksums-*.txt

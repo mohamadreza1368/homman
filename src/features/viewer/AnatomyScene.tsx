@@ -1,0 +1,1211 @@
+import { OrbitControls, useGLTF } from "@react-three/drei";
+import { useFrame, useThree } from "@react-three/fiber";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import * as THREE from "three";
+import {
+  advanceScanBand,
+  advanceScanEntry,
+  advanceScanPulse,
+  firePulse,
+  holdScanBand,
+  resetScanBand,
+  resetScanEntry,
+  scanFractionFor,
+  scanRangeAlong,
+  SCAN_TRAVEL_M,
+  setScanGhost,
+  setScanReveal,
+  setScanTint,
+  SHARED_SCAN,
+  setScanPlane,
+  sweepAxis,
+} from "./scanBand";
+import { ScanRing } from "./ScanRing";
+import { AxialProbe } from "./AxialProbe";
+import { HeartbeatDriver } from "./HeartbeatDriver";
+import { BreathDriver } from "./BreathDriver";
+import { depthLabel, SECTION_VIEW, SECTION_WANTED, slicePlane, wantSection } from "./axialSlice";
+import { scanTint } from "./scanTints";
+import { CURRENT_LEVEL, levelAt } from "./vertebralLevel";
+import { playScanPing } from "./scanSound";
+import {
+  CROSSING_INTERVAL_S,
+  CROSSING_LIMIT,
+  CURRENT_CROSSING,
+  crossingAt,
+  NOTHING_CROSSED,
+  sameCrossing,
+  SWEEP_RUNNING,
+} from "./scanCrossing";
+import type { OrbitControls as OrbitControlsImpl } from "three-stdlib";
+
+import { meshUrl, organsInFile } from "@/lib/manifest";
+import type { AnatomyManifest, ManifestOrgan, SectionPlane } from "@/lib/schemas";
+import {
+  isOrganVisible,
+  organOpacity,
+  useSceneStore,
+  type CrossSection,
+  type FocusRequest,
+  type ViewpointRequest,
+} from "@/stores/sceneStore";
+import { useChatStore } from "@/stores/chatStore";
+import { scanIsStill, useScanStore } from "@/stores/scanStore";
+import { useStudyStore } from "@/stores/studyStore";
+
+import { illuminationGlow } from "./depthStack";
+import { buildEyeGroups } from "./eyes";
+import { EyeGlobe } from "./EyeGlobe";
+import { backgroundTheme } from "./background";
+import { framingDistance, lateralSign, scanStance, viewDirection } from "./cameraViews";
+import { busiestTouches } from "./coverage";
+import { explodeMembers, explodeOffsets } from "./explode";
+import {
+  STUDIO_AMBIENT,
+  STUDIO_FILL,
+  STUDIO_KEY,
+  STUDIO_RIM,
+  studioLightDirections,
+} from "./lighting";
+import { keepsColour } from "./scan";
+import {
+  collectSupply,
+  isSystemMeasured,
+  studyEnvelope,
+  SUPPLY_SYSTEM,
+} from "./supply";
+import { useExplodeMotion } from "./useExplodeMotion";
+import { setViewerHandle } from "./viewerBridge";
+import { OrganMesh } from "./OrganMesh";
+import { PathwayFlow } from "./PathwayFlow";
+
+/**
+ * Plane normals point *away* from the half-space that is kept, which is what
+ * three.js clipping expects: a fragment survives when `normal · p + constant > 0`.
+ * So a sagittal cut at x = p keeps x < p.
+ */
+const PLANE_NORMALS: Record<SectionPlane, THREE.Vector3> = {
+  sagittal: new THREE.Vector3(-1, 0, 0),
+  coronal: new THREE.Vector3(0, 0, -1),
+  axial: new THREE.Vector3(0, -1, 0),
+};
+
+/**
+ * Self-hosted, copied from `three/examples/jsm/libs/draco` into `public/`.
+ * drei defaults to a Google CDN, which a local-first desktop app must not
+ * depend on and which the app's CSP blocks outright.
+ */
+const DRACO_DECODER_PATH = "/draco/";
+
+/** One entry per organ: its geometry plus the node transform from the glTF. */
+interface OrganGeometry {
+  geometry: THREE.BufferGeometry;
+  matrix: THREE.Matrix4;
+}
+
+function buildClippingPlanes(
+  section: CrossSection | null,
+  bounds: THREE.Box3 | null,
+): THREE.Plane[] {
+  if (!section) return [];
+  const normal = PLANE_NORMALS[section.plane].clone();
+
+  // The command's position is normalised -1..1. Map it onto the model's real
+  // extent along that axis, so a cut behaves the same whether the meshes are
+  // unit-scale or human-scale in metres.
+  let constant = section.position;
+  if (bounds && !bounds.isEmpty()) {
+    const centre = bounds.getCenter(new THREE.Vector3());
+    const size = bounds.getSize(new THREE.Vector3());
+    const axis: Record<SectionPlane, "x" | "y" | "z"> = {
+      sagittal: "x",
+      coronal: "z",
+      axial: "y",
+    };
+    const key = axis[section.plane];
+    constant = -(centre[key] + (section.position * size[key]) / 2) * normal[key];
+  }
+  return [new THREE.Plane(normal, constant)];
+}
+
+/**
+ * Publishes the renderer to the DOM side of the app.
+ *
+ * The label overlay and the image export both need the camera and the measured
+ * centres, and both live outside the canvas. Registered here because this is
+ * the only place those objects exist.
+ */
+function ViewerBridge({
+  centres,
+  offsets,
+  geometryRevision,
+}: {
+  centres: Map<string, THREE.Vector3>;
+  offsets: Map<string, THREE.Vector3>;
+  geometryRevision: number;
+}) {
+  const gl = useThree((state) => state.gl);
+  const scene = useThree((state) => state.scene);
+  const camera = useThree((state) => state.camera);
+  // `makeDefault` on OrbitControls is what publishes it here.
+  const controls = useThree((state) => state.controls) as { enabled: boolean } | null;
+
+  useEffect(() => {
+    setViewerHandle({ gl, scene, camera, centres, offsets, controls, geometryRevision });
+    // Cleared on unmount so a reload cannot hand out a dead renderer.
+    return () => setViewerHandle(null);
+  }, [gl, scene, camera, centres, offsets, controls, geometryRevision]);
+
+  return null;
+}
+
+/**
+ * The lighting rig, riding with the camera.
+ *
+ * Imperative: the directions change on every orbit frame, and routing that
+ * through React state would re-render the scene graph to move three lights.
+ *
+ * The distance is arbitrary — a directional light only carries a direction, and
+ * its target stays at the origin — so the vectors are simply scaled out past
+ * anything in the scene.
+ */
+function StudioLights() {
+  const background = useSceneStore((s) => s.background);
+  const key = useRef<THREE.DirectionalLight>(null);
+  const fill = useRef<THREE.DirectionalLight>(null);
+  const rim = useRef<THREE.DirectionalLight>(null);
+
+  const forward = useRef(new THREE.Vector3());
+  const directions = useRef(studioLightDirections(
+    new THREE.Vector3(0, 0, -1),
+    new THREE.Vector3(0, 1, 0),
+  ));
+
+  useFrame(({ camera }) => {
+    camera.getWorldDirection(forward.current);
+    const aimed = studioLightDirections(forward.current, camera.up, directions.current);
+    key.current?.position.copy(aimed.key).multiplyScalar(10);
+    fill.current?.position.copy(aimed.fill).multiplyScalar(10);
+    rim.current?.position.copy(aimed.rim).multiplyScalar(10);
+  });
+
+  return (
+    <>
+      {/* Ambient is deliberately low. Filling the scene evenly flattens every
+          surface, and on anatomy the shading *is* the information: the groove
+          between two muscle bellies is a shadow, not a colour change. */}
+      {/* Named so the axial pass can aim the same rig at its own camera for a
+          frame. Adding a light of its own would recompile every material; see
+          `aimStudioAt`. */}
+      <ambientLight name={STUDIO_AMBIENT} intensity={backgroundTheme(background).ambient} />
+      <directionalLight name={STUDIO_KEY} ref={key} intensity={1.75} />
+      <directionalLight name={STUDIO_FILL} ref={fill} intensity={0.5} color="#a8cfe8" />
+      <directionalLight name={STUDIO_RIM} ref={rim} intensity={0.75} color="#8fd4ff" />
+      {/* The one light that stays put. A bounce from below is environmental —
+          it belongs to the room, not to the viewer — and keeping it in world
+          space leaves a cue that the body has an underside at all. */}
+      <directionalLight position={[0, -5, 1]} intensity={0.2} color="#ffd8c0" />
+    </>
+  );
+}
+
+/** Frames the model on load, then eases the orbit target onto focused organs. */
+function CameraRig({
+  focusRequest,
+  viewpoint,
+  centres,
+  offsets,
+  boxes,
+  isolatedOrganIds,
+  leftSign,
+  bounds,
+  finestDetail,
+}: {
+  focusRequest: FocusRequest | null;
+  viewpoint: ViewpointRequest | null;
+  centres: Map<string, THREE.Vector3>;
+  offsets: Map<string, THREE.Vector3>;
+  /** Measured extents, for framing whatever is on screen. */
+  boxes: React.RefObject<Map<string, THREE.Box3>>;
+  isolatedOrganIds: string[] | null;
+  /** Which way along X the body's own left lies — see `lateralSign`. */
+  leftSign: 1 | -1;
+  bounds: THREE.Box3 | null;
+  /** Radius of the smallest loaded structure, in model units. */
+  finestDetail: number;
+}) {
+  const controls = useRef<OrbitControlsImpl>(null);
+  const desiredTarget = useRef(new THREE.Vector3());
+  const desiredPosition = useRef(new THREE.Vector3());
+  const { camera } = useThree();
+  const lastSeq = useRef(-1);
+  const lastViewpointSeq = useRef(-1);
+  const framed = useRef(false);
+  /**
+   * What is being eased, if anything.
+   *
+   * `target` is a focus flying to a structure — the camera keeps its own place
+   * and merely turns. `both` is a viewpoint button, which moves the camera as
+   * well. Kept apart because a focus that also moved the camera would undo the
+   * angle the reader had chosen to look from.
+   */
+  const easing = useRef<"none" | "target" | "both">("none");
+
+  /**
+   * Z-Anatomy meshes carry their real-world transforms — the heart sits about
+   * 1.4 m above the origin at human scale. A camera parked near the origin
+   * would stare at empty space, so frame whatever actually loaded rather than
+   * assuming the model is unit-sized and centred.
+   */
+  useEffect(() => {
+    if (!bounds || bounds.isEmpty() || framed.current) return;
+    framed.current = true;
+
+    const centre = bounds.getCenter(new THREE.Vector3());
+    const size = bounds.getSize(new THREE.Vector3());
+    const radius = Math.max(size.x, size.y, size.z, 1e-4) * 0.5;
+
+    const perspective = camera as THREE.PerspectiveCamera;
+    const distance = (radius * 2.2) / Math.tan((perspective.fov * Math.PI) / 360);
+
+    desiredTarget.current.copy(centre);
+    camera.position.set(centre.x, centre.y + radius * 0.3, centre.z + distance);
+    // The near plane has to clear the smallest thing worth inspecting, not the
+    // whole body: derived from the body it would clip a cornea away before the
+    // camera ever got close enough to see it.
+    perspective.near = Math.max(finestDetail / 20, 1e-5);
+    perspective.far = distance * 20;
+    perspective.updateProjectionMatrix();
+
+    const orbit = controls.current;
+    if (orbit) {
+      orbit.target.copy(centre);
+      // Likewise the zoom floor. Scaling it to the whole body put the closest
+      // approach at ~35 cm on a 1.8 m model — fine for an organ, useless for an
+      // eye. Tie it to the finest structure loaded so detail stays reachable.
+      orbit.minDistance = Math.max(finestDetail * 1.5, 1e-4);
+      orbit.maxDistance = distance * 8;
+      orbit.update();
+    }
+  }, [bounds, camera, finestDetail]);
+
+  useEffect(() => {
+    if (!focusRequest || focusRequest.seq === lastSeq.current) return;
+    const centre = centres.get(focusRequest.organId);
+    if (!centre) return;
+    lastSeq.current = focusRequest.seq;
+    desiredTarget.current.copy(centre);
+    // Where the structure has been *drawn*, which in an exploded view is not
+    // where the body keeps it. Flying to the anatomical centre would leave the
+    // camera staring at the gap the structure moved out of.
+    const offset = offsets.get(focusRequest.organId);
+    if (offset) desiredTarget.current.add(offset);
+    easing.current = "target";
+  }, [focusRequest, centres, offsets]);
+
+  /**
+   * The viewpoint buttons.
+   *
+   * `fit` frames what is being *studied* rather than always the whole body —
+   * the same scope rule the exploded view uses — because after isolating a
+   * heart, "frame this" means the heart.
+   *
+   * `orient` keeps the distance it found. Turning to look at a structure from
+   * behind must not also throw away the zoom the reader set to see it, and
+   * `fit` is the separate verb for when they do want reframing.
+   */
+  useEffect(() => {
+    const orbit = controls.current;
+    if (!viewpoint || !orbit || viewpoint.seq === lastViewpointSeq.current) return;
+    lastViewpointSeq.current = viewpoint.seq;
+
+    const perspective = camera as THREE.PerspectiveCamera;
+    const offsetFrom = camera.position.clone().sub(orbit.target);
+    const distance = offsetFrom.length();
+
+    if (viewpoint.kind === "dolly") {
+      const next = THREE.MathUtils.clamp(
+        distance * viewpoint.factor,
+        orbit.minDistance,
+        orbit.maxDistance,
+      );
+      desiredTarget.current.copy(orbit.target);
+      desiredPosition.current
+        .copy(orbit.target)
+        .add(offsetFrom.normalize().multiplyScalar(next));
+    } else if (viewpoint.kind === "orient" || viewpoint.kind === "scan") {
+      /**
+       * Both turn, and neither reframes.
+       *
+       * The scanner takes its own angle because the shot needs one, and it
+       * keeps the reader's distance because that is theirs. Framing the body
+       * on switch-on was the wrong call: somebody who has moved in close to a
+       * kidney and reaches for the scanner wants the light on the kidney, and
+       * being pulled back to the whole body means placing the view a second
+       * time to get back where they already were.
+       */
+      desiredTarget.current.copy(orbit.target);
+      desiredPosition.current
+        .copy(orbit.target)
+        .add(
+          (viewpoint.kind === "scan"
+            ? scanStance()
+            : viewDirection(viewpoint.view, leftSign)
+          ).multiplyScalar(distance),
+        );
+    } else {
+      const framing = studyEnvelope(
+        isolatedOrganIds ?? boxes.current.keys(),
+        boxes.current,
+      );
+      if (!framing) return;
+      const centre = framing.getCenter(new THREE.Vector3());
+      const size = framing.getSize(new THREE.Vector3());
+      const radius = Math.max(size.x, size.y, size.z, 1e-4) * 0.5;
+
+      desiredTarget.current.copy(centre);
+      // Framed from where the camera already stands, so "fit" reframes without
+      // also spinning the model round to a viewpoint nobody asked for.
+      desiredPosition.current
+        .copy(centre)
+        .add(
+          offsetFrom
+            .normalize()
+            .multiplyScalar(framingDistance(radius, perspective.fov)),
+        );
+    }
+
+    easing.current = "both";
+  }, [viewpoint, camera, isolatedOrganIds, leftSign]);
+
+  useFrame((_, delta) => {
+    const orbit = controls.current;
+    if (!orbit) return;
+    // Only steer while a move is in flight. Zoom-to-cursor and panning both
+    // move `orbit.target` themselves, so easing on every frame would drag the
+    // view back to the last focused structure the moment the user tried to look
+    // somewhere else.
+    if (easing.current === "none") return;
+
+    // Frame-rate independent easing: without the delta term this would ease
+    // faster on a 144 Hz display than on a 60 Hz one.
+    const alpha = 1 - Math.pow(0.005, delta);
+    orbit.target.lerp(desiredTarget.current, alpha);
+    if (easing.current === "both") camera.position.lerp(desiredPosition.current, alpha);
+    orbit.update();
+
+    // Both have to have arrived. Stopping on the target alone would strand the
+    // camera part-way through a viewpoint change, at an angle nobody chose.
+    const settled =
+      orbit.target.distanceToSquared(desiredTarget.current) < 1e-8 &&
+      (easing.current === "target" ||
+        camera.position.distanceToSquared(desiredPosition.current) < 1e-8);
+    if (settled) {
+      orbit.target.copy(desiredTarget.current);
+      if (easing.current === "both") camera.position.copy(desiredPosition.current);
+      orbit.update();
+      easing.current = "none";
+    }
+  });
+
+  return (
+    <OrbitControls
+      ref={controls}
+      camera={camera}
+      enableDamping
+      dampingFactor={0.08}
+      // Dolly towards the pointer instead of the orbit centre. Without it,
+      // zooming on a full body always arrives at the pelvis — the target sits
+      // at the body's centre and nothing the user does moves it there.
+      zoomToCursor
+      // Pan parallel to the screen; the default pans along the ground plane,
+      // which on a standing figure slides the view sideways when the user is
+      // trying to travel up towards the head.
+      screenSpacePanning
+      enablePan
+      panSpeed={1.2}
+      makeDefault
+      // Any manual navigation ends the automatic easing, so the camera never
+      // fights the hand that is moving it.
+      onStart={() => {
+        easing.current = "none";
+      }}
+    />
+  );
+}
+
+function SystemMeshes({
+  manifest,
+  file,
+  clippingPlanes,
+  explodeOffsets: offsets,
+  scanBandEnabled,
+  onMeasured,
+  onContextMenu,
+}: {
+  manifest: AnatomyManifest;
+  file: string;
+  clippingPlanes: THREE.Plane[];
+  /** Displacements for the exploded view, keyed across the whole atlas. */
+  explodeOffsets: Map<string, THREE.Vector3>;
+  scanBandEnabled: boolean;
+  onMeasured: (
+    centres: Map<string, THREE.Vector3>,
+    boxes: Map<string, THREE.Box3>,
+    bounds: THREE.Box3,
+    finestDetail: number,
+  ) => void;
+  onContextMenu: (organId: string, x: number, y: number) => void;
+}) {
+  const { nodes } = useGLTF(meshUrl(file), DRACO_DECODER_PATH);
+  const register = useExplodeMotion(offsets);
+
+  const organs = useMemo(() => organsInFile(manifest, file), [manifest, file]);
+
+  const hoveredOrganId = useSceneStore((s) => s.hoveredOrganId);
+  const selectedOrganIds = useSceneStore((s) => s.selectedOrganIds);
+  const hiddenOrganIds = useSceneStore((s) => s.hiddenOrganIds);
+  const hideConnective = useSceneStore((s) => s.hideConnective);
+  const connectiveIds = useSceneStore((s) => s.connectiveIds);
+  const overlays = useSceneStore((s) => s.pathologyOverlays);
+  const caseMarks = useSceneStore((s) => s.caseMarks);
+  const hiddenSystems = useSceneStore((s) => s.hiddenSystems);
+  const systemOpacity = useSceneStore((s) => s.systemOpacity);
+  const isolatedOrganIds = useSceneStore((s) => s.isolatedOrganIds);
+  const setHovered = useSceneStore((s) => s.setHovered);
+  // The viewport's own select: it pins the depth reading as well, so the
+  // panel still shows the column you clicked once the pointer has travelled
+  // over other structures to reach it. The tree and the search box keep
+  // using `selectOrgan`, which has no reading behind it to pin.
+  const selectOrgan = useSceneStore((s) => s.selectFromViewport);
+  const studyOrgan = useSceneStore((s) => s.studyOrgan);
+  const studyRegion = useSceneStore((s) => s.studyRegion);
+  const setDepthStack = useSceneStore((s) => s.setDepthStack);
+  const eyeTracking = useSceneStore((s) => s.eyeTracking);
+
+  /**
+   * Stable, and that is the point rather than a nicety.
+   *
+   * `OrganMesh` is memoised, so a prop rebuilt on every render defeats it for
+   * every structure at once — and this component re-renders on every pointer
+   * move that changes what is hovered. As an inline arrow this one callback
+   * cost three thousand component invocations per mouse move.
+   */
+  const onStudy = useCallback(
+    (organId: string, additive: boolean) =>
+      // Plain double-click studies the whole region, so opening the heart shows
+      // its chambers rather than an empty shell. Holding a modifier builds a
+      // set of individual structures instead.
+      additive ? studyOrgan(organId, true) : studyRegion(organId),
+    [studyOrgan, studyRegion],
+  );
+
+  /**
+   * What is lit, and how deeply.
+   *
+   * Two sources feed one light: the cursor's own column, and whatever the
+   * assistant is pointing at while it explains. **The assistant wins.** Sharing
+   * the appearance without a precedence would leave the reader unable to tell
+   * which of two lit things was being talked about, and the cursor's column is
+   * still named in the panel either way — so nothing is lost by yielding.
+   *
+   * A lookup rather than a search per structure: the alternative is three
+   * thousand `indexOf` calls on every pointer move.
+   */
+  const depthStack = useSceneStore((s) => s.depthStack);
+  const illuminated = useSceneStore((s) => s.illuminated);
+  const bodyTone = useSceneStore((s) => s.bodyTone);
+  /**
+   * What the assistant has pointed at, and how deep into the list each one sits.
+   *
+   * Kept apart from the cursor's stack below rather than merged into it. They
+   * are two different statements — "the explanation is about this" against
+   * "your hand is over this" — and only the first of them outranks the reader's
+   * own selection. Merged, a pointer move across the model would wash out a
+   * selection the reader made deliberately.
+   */
+  const litGlow = useMemo(
+    () =>
+      new Map(
+        illuminated.map((organId, index) => [
+          organId,
+          illuminationGlow(index, illuminated.length),
+        ]),
+      ),
+    [illuminated],
+  );
+
+  /**
+   * What the cursor is over, when the assistant is not pointing at anything.
+   *
+   * Suppressed entirely while something is illuminated: the assistant's light
+   * outranks the cursor's, so the first pointer move must not take over the
+   * structure being explained.
+   */
+  const probeDepth = useMemo(
+    () =>
+      illuminated.length > 0
+        ? new Map<string, number>()
+        : new Map(depthStack.map((organId, index) => [organId, index])),
+    [illuminated, depthStack],
+  );
+
+  /**
+   * The reader's revision, or nothing at all.
+   *
+   * Resolved once here rather than per structure: the busiest count sets the
+   * top of the ramp, so every mesh needs the same two numbers and recomputing
+   * the maximum three thousand times a render would be the same answer three
+   * thousand times.
+   */
+  const coverageVisible = useStudyStore((s) => s.coverageVisible);
+  const coverageCounts = useStudyStore((s) => s.coverage);
+  const coverage = useMemo(
+    () =>
+      coverageVisible
+        ? { byOrgan: coverageCounts, busiest: busiestTouches(coverageCounts) }
+        : null,
+    [coverageVisible, coverageCounts],
+  );
+
+  const geometries = useMemo(() => {
+    const map = new Map<string, OrganGeometry>();
+    const missing: string[] = [];
+
+    for (const organ of organs) {
+      // GLTFLoader runs every node name through `PropertyBinding.sanitizeNodeName`,
+      // which turns whitespace into underscores and strips characters reserved
+      // by the animation-binding syntax. Z-Anatomy names are full anatomical
+      // phrases ("Right atrium"), so a raw lookup misses every single one.
+      // Using three's own function keeps us in step with whatever it does.
+      const node =
+        nodes[organ.node] ?? nodes[THREE.PropertyBinding.sanitizeNodeName(organ.node)];
+      if (node instanceof THREE.Mesh) {
+        node.updateWorldMatrix(true, false);
+        map.set(organ.organ_id, {
+          geometry: node.geometry as THREE.BufferGeometry,
+          matrix: node.matrixWorld.clone(),
+        });
+      } else {
+        missing.push(organ.node);
+      }
+    }
+
+    if (missing.length > 0) {
+      // The manifest and the .glb disagree — usually a stale mesh after a
+      // re-export. Loud, because the organ would otherwise just be absent from
+      // the scene with nothing to say why.
+      console.error(
+        `[viewer] ${file} has no mesh node for: ${missing.join(", ")}. ` +
+          "Re-run the asset pipeline.",
+      );
+    }
+    return map;
+  }, [nodes, organs, file]);
+
+  // Computed here rather than inside the effect that reports it upwards: the
+  // eye groups below need these centres during render to find each globe's
+  // pivot, and measuring twice would be the same arithmetic done in two places.
+  const measured = useMemo(() => {
+    const centres = new Map<string, THREE.Vector3>();
+    // Kept as well as the centres, not instead of them. A centre answers "where
+    // do I fly to"; only the box answers "does this vessel reach that organ",
+    // because an artery's centre can sit a long way from the organ it serves.
+    const boxes = new Map<string, THREE.Box3>();
+    const bounds = new THREE.Box3();
+    let finest = Number.POSITIVE_INFINITY;
+
+    for (const [organId, entry] of geometries) {
+      if (!entry.geometry.boundingBox) entry.geometry.computeBoundingBox();
+      const box = entry.geometry.boundingBox;
+      if (!box) continue;
+      // The geometry's own box is in local space; the node transform is what
+      // places the organ in the body. Skipping this would send the camera to
+      // the wrong spot for every organ that is not at the origin.
+      const world = box.clone().applyMatrix4(entry.matrix);
+      centres.set(organId, world.getCenter(new THREE.Vector3()));
+      boxes.set(organId, world);
+      bounds.union(world);
+
+      const size = world.getSize(new THREE.Vector3());
+      const extent = Math.max(size.x, size.y, size.z);
+      if (extent > 1e-6) finest = Math.min(finest, extent * 0.5);
+    }
+    return { centres, boxes, bounds, finest: Number.isFinite(finest) ? finest : 0.01 };
+  }, [geometries]);
+
+  useEffect(() => {
+    onMeasured(measured.centres, measured.boxes, measured.bounds, measured.finest);
+  }, [measured, onMeasured]);
+
+  /**
+   * The eyeballs in this file, if it has any.
+   *
+   * Empty for every file but the nervous one, so the partition below costs
+   * nothing anywhere else.
+   */
+  const eyes = useMemo(
+    () => buildEyeGroups(organs, measured.centres),
+    [organs, measured],
+  );
+  const eyeOrganIds = useMemo(
+    () => new Set(eyes.flatMap((eye) => eye.organs.map((organ) => organ.organ_id))),
+    [eyes],
+  );
+
+  /**
+   * Each eye part's placement *relative to its globe's centre*, since that is
+   * the space its group puts it in.
+   *
+   * Memoised rather than built during render, and the identity is the point:
+   * these matrices are React props, and a fresh object each render would make
+   * every eye part detach and reattach its ref — dropping the exploded view's
+   * animation for those structures every time anything was hovered.
+   */
+  const eyeMatrices = useMemo(() => {
+    const map = new Map<string, THREE.Matrix4>();
+    for (const eye of eyes) {
+      // T(-centre) once per eye, reused by all its parts.
+      const toLocal = new THREE.Matrix4().makeTranslation(
+        -eye.centre.x,
+        -eye.centre.y,
+        -eye.centre.z,
+      );
+      for (const organ of eye.organs) {
+        const entry = geometries.get(organ.organ_id);
+        if (!entry) continue;
+        map.set(
+          organ.organ_id,
+          new THREE.Matrix4().multiplyMatrices(toLocal, entry.matrix),
+        );
+      }
+    }
+    return map;
+  }, [eyes, geometries]);
+
+  /**
+   * One structure.
+   *
+   * `matrix` is overridden for the eye parts: inside a group positioned at the
+   * globe's centre, a child has to carry its world placement *relative to that
+   * centre*, or it would be drawn an eye's-width away from where it belongs.
+   */
+  const renderOrgan = (organ: ManifestOrgan, matrix?: THREE.Matrix4) => {
+    const entry = geometries.get(organ.organ_id);
+    if (!entry) return null;
+    return (
+      <OrganMesh
+        key={organ.organ_id}
+        scanBandEnabled={scanBandEnabled}
+        worldBox={measured.boxes.get(organ.organ_id)}
+        organ={organ}
+        geometry={entry.geometry}
+        matrix={matrix ?? entry.matrix}
+        visible={isOrganVisible(
+            { hiddenSystems, isolatedOrganIds, hiddenOrganIds, hideConnective, connectiveIds },
+            organ,
+          )}
+        opacity={organOpacity({ systemOpacity }, organ)}
+        hovered={hoveredOrganId === organ.organ_id}
+        selected={selectedOrganIds.includes(organ.organ_id)}
+        // The assistant's overlay wins when both exist: one is what is being
+        // explained right now, the other is the standing presentation. The
+        // mark shows through the moment the explanation moves on.
+        overlay={overlays[organ.organ_id] ?? caseMarks[organ.organ_id]}
+        // Two numbers rather than one object: an object built here would be a
+        // new identity on every render and would defeat the memo below it.
+        coverageTouches={coverage ? (coverage.byOrgan[organ.organ_id] ?? 0) : undefined}
+        coverageBusiest={coverage?.busiest}
+        probeDepth={probeDepth.get(organ.organ_id)}
+        litGlow={litGlow.get(organ.organ_id)}
+        tone={
+          keepsColour({
+            lit: litGlow.has(organ.organ_id),
+            selected: selectedOrganIds.includes(organ.organ_id),
+            isolated: isolatedOrganIds?.includes(organ.organ_id) ?? false,
+          })
+            ? "solid"
+            : bodyTone
+        }
+        clippingPlanes={clippingPlanes}
+        onHover={setHovered}
+        onSelect={selectOrgan}
+        onProbe={setDepthStack}
+        onContextMenu={onContextMenu}
+        onRegister={register}
+        onStudy={onStudy}
+      />
+    );
+  };
+
+  return (
+    <group>
+      {eyes.map((eye) => (
+        <EyeGlobe key={eye.side} eye={eye} enabled={eyeTracking}>
+          {eye.organs.map((organ) => {
+            const matrix = eyeMatrices.get(organ.organ_id);
+            return matrix ? renderOrgan(organ, matrix) : null;
+          })}
+        </EyeGlobe>
+      ))}
+
+      {/* Everything else, in place. The eye parts are already drawn above,
+          inside the group that turns them. */}
+      {organs.map((organ) =>
+        eyeOrganIds.has(organ.organ_id) ? null : renderOrgan(organ),
+      )}
+    </group>
+  );
+}
+
+export function AnatomyScene({
+  manifest,
+  onContextMenu,
+}: {
+  manifest: AnatomyManifest;
+  onContextMenu: (organId: string, x: number, y: number) => void;
+}) {
+  const { gl } = useThree();
+  const crossSection = useSceneStore((s) => s.crossSection);
+  const focusRequest = useSceneStore((s) => s.focusRequest);
+  const hiddenSystems = useSceneStore((s) => s.hiddenSystems);
+  const pathway = useSceneStore((s) => s.pathway);
+  const viewpoint = useSceneStore((s) => s.viewpoint);
+  const explode = useSceneStore((s) => s.explode);
+  const selectedOrganIds = useSceneStore((s) => s.selectedOrganIds);
+  const isolatedOrganIds = useSceneStore((s) => s.isolatedOrganIds);
+  const supplyRequest = useSceneStore((s) => s.supplyRequest);
+  const resolveSupply = useSceneStore((s) => s.resolveSupply);
+  const cancelSupply = useSceneStore((s) => s.cancelSupply);
+
+  // Only visible systems are mounted, and mounting is what triggers the fetch.
+  // Switching a system off unmounts it; switching one on downloads its mesh
+  // file then. That is the whole of the lazy-loading strategy — extending the
+  // atlas to the rest of the body costs nothing until the user opens a system.
+  const activeFiles = useMemo(
+    () =>
+      [
+        ...new Set(
+          manifest.organs
+            .filter((organ) => !hiddenSystems.includes(organ.system))
+            .map((organ) => organ.mesh_file),
+        ),
+      ].sort(),
+    [manifest.organs, hiddenSystems],
+  );
+
+  const centres = useRef(new Map<string, THREE.Vector3>());
+  const boxes = useRef(new Map<string, THREE.Box3>());
+  const [bounds, setBounds] = useState<THREE.Box3 | null>(null);
+  const manualScan = useScanStore((s) => s.enabled);
+  /**
+   * The sweep also runs while an answer is being written.
+   *
+   * This is what the mode is *for*, rather than a use found for it afterwards.
+   * Waiting on a model is the one moment in this application where the reader
+   * has nothing to look at and no idea how long it will be; the sweep turns
+   * that into the atlas reading itself, and the readout names what it passes
+   * while the answer is still being composed.
+   *
+   * An OR rather than a mode: the switch still forces it on and off, and a
+   * question that arrives while it is already running does not switch it off
+   * when the answer lands.
+   */
+  const answering = useChatStore((s) => s.pendingRequestId !== null);
+  // Off is remembered: somebody who turned this down did it because their
+  // machine struggles, and it must stay down without being asked again.
+  const sweepOnAnswer = useScanStore((s) => s.sweepOnAnswer);
+  const scanBandEnabled = manualScan || (answering && sweepOnAnswer);
+  const sinceCrossing = useRef(0);
+
+  /**
+   * Switching the scanner on is a shot, not a state change.
+   *
+   * The sweep winds back to the crown and the camera turns to the angle the
+   * shot is taken from, so the ring can descend onto a body that has some depth
+   * to descend against. It reads as an instrument being started rather than an
+   * effect being enabled, which is the whole of the difference.
+   *
+   * **It turns and does not reframe.** It framed the whole body first and that
+   * was wrong: somebody who had moved in close to a structure and reached for
+   * the scanner was pulled back off it and had to place the view a second time
+   * to get back where they already were. The distance is the reader's; only the
+   * angle belongs to the shot.
+   *
+   * Only on the switch. The sweep also runs while an answer is written, and
+   * moving the camera on every question would be unbearable.
+   */
+  const scanView = useSceneStore((s) => s.scanView);
+  useEffect(() => {
+    resetScanBand();
+    if (manualScan) scanView();
+  }, [manualScan, scanView]);
+
+  /**
+   * A sweep started by a question arrives the same way one started by hand does.
+   *
+   * Only the arrival is wound back, not the sweep: an answer should not drag
+   * the light back to the feet mid-stroke. Without this the second question of
+   * a session gets no entrance at all, because the ramp is still sitting at 1
+   * from the first.
+   */
+  useEffect(() => {
+    if (scanBandEnabled) resetScanEntry();
+  }, [scanBandEnabled]);
+
+
+  /**
+   * The colour reaches the shader as three float writes.
+   *
+   * Not a prop on 3,478 materials and not a re-render: the tint is a shared
+   * uniform, so changing it is the same kind of operation as moving the sweep.
+   */
+  const tint = useScanStore((s) => s.tint);
+  useEffect(() => setScanTint(scanTint(tint).light), [tint]);
+
+  const reveal = useScanStore((s) => s.reveal);
+  useEffect(() => setScanReveal(reveal), [reveal]);
+
+  const ghost = useScanStore((s) => s.ghost);
+  // Subscribed rather than read in the loop: changing it rebuilds the render
+  // target, which is a React concern and happens once when a person clicks.
+  const axialDetail = useScanStore((s) => s.detail);
+  // Subscribed for the same reason: the probe is handed the plane as a prop,
+  // and it changes when a person clicks, never per frame.
+  const scanPlane = useScanStore((s) => s.plane);
+  useEffect(() => setScanGhost(ghost), [ghost]);
+
+  /** Whether the reader had hold of the light on the previous frame. */
+  const wasHeld = useRef(false);
+  /** Bumped when an axial measurement is wanted. See `AxialProbe`. */
+  const axialRequest = useRef(0);
+  const [axialRuns, setAxialRuns] = useState(0);
+  /** The last request seen from outside the loop. See `SECTION_WANTED`. */
+  const lastWanted = useRef(SECTION_WANTED.value);
+
+  useFrame((_, delta) => {
+    // PoC measurement only: M's rolling p95 can miss a single compile stall,
+    if (scanBandEnabled && bounds && !bounds.isEmpty()) {
+      // Read rather than subscribed: this runs sixty times a second and must
+      // not make the scene re-render when the reader touches the slider.
+      const grip = useScanStore.getState();
+      // The axis is named here rather than assumed inside the band: feet to
+      // head for an axial plane, back to front for a frontal one. The band,
+      // the ghost and the crossing list all follow it; the wake is told which
+      // of its two spans to read.
+      const axis = sweepAxis(grip.plane);
+      setScanPlane(grip.plane);
+      const { from, to } = scanRangeAlong(
+        [bounds.min.x, bounds.min.y, bounds.min.z],
+        [bounds.max.x, bounds.max.y, bounds.max.z],
+        axis,
+      );
+      // How far the plane travels through this body — its height, or its
+      // depth — for anything that has to convert a fraction of the slider into
+      // a distance through a person. See `stepFraction`.
+      SCAN_TRAVEL_M.value = to - from;
+
+      /**
+       * The instrument answers the hand.
+       *
+       * Fired on the edge, not on the state: `held` is false for most of the
+       * session, and reacting to the value rather than to the moment it
+       * changed would pulse on every frame the reader is not touching
+       * anything. The comparison lives here rather than in the store because
+       * it is a rendering event — the store holds what is true, not what just
+       * happened.
+       */
+      if (wasHeld.current && !grip.held) {
+        firePulse();
+        // Only when it will be looked at. This is the one part of the mode
+        // that costs real time — about ten milliseconds at the chest, once —
+        // and paying it to produce a picture nobody asked for is exactly the
+        // sort of quiet cost this experiment was measured to avoid.
+        if (grip.axial) {
+          axialRequest.current += 1;
+          setAxialRuns(axialRequest.current);
+        }
+        // Read from the store rather than subscribed: this runs sixty times a
+        // second, and a preference nobody changes mid-frame is not worth a
+        // re-render of 3,478 meshes to observe.
+        if (grip.sound) playScanPing();
+      }
+      wasHeld.current = grip.held;
+      advanceScanPulse(delta);
+
+      /**
+       * The other way to ask for a section: the wheel, from the DOM.
+       *
+       * The plane has already moved by the time this is seen — the wheel wrote
+       * `at` on the store and this frame is reading it — so the only work here
+       * is to order the pass and to bring the crossing list forward. That list
+       * is on a six-times-a-second tick, and a section captioned with the
+       * level the plane has just left is worse than one captioned with
+       * nothing.
+       */
+      if (SECTION_WANTED.value !== lastWanted.current) {
+        lastWanted.current = SECTION_WANTED.value;
+        if (grip.axial) {
+          axialRequest.current += 1;
+          setAxialRuns(axialRequest.current);
+        }
+        sinceCrossing.current = CROSSING_INTERVAL_S;
+      }
+
+      if (scanIsStill(grip)) holdScanBand(grip.at, axis, from, to);
+      else advanceScanBand(delta, axis, from, to);
+
+      // Outside the hold branch on purpose: the mode still has to finish
+      // arriving for a reader who pins the light before it is fully up.
+      advanceScanEntry(delta);
+
+      // What it is passing through, six times a second rather than sixty. The
+      // sweep moves a millimetre a frame and crosses the same structures it
+      // did last frame; recomputing that is work nobody sees.
+      SWEEP_RUNNING.value = true;
+      sinceCrossing.current += delta;
+      if (sinceCrossing.current >= CROSSING_INTERVAL_S) {
+        sinceCrossing.current = 0;
+        const next = crossingAt(boxes.current, SHARED_SCAN.value, axis, CROSSING_LIMIT);
+        if (!sameCrossing(next, CURRENT_CROSSING.value)) CURRENT_CROSSING.value = next;
+        // On the same slower tick, and for the same reason: the level changes
+        // when the plane has travelled a centimetre, not when a frame passed.
+        // A frontal plane has no vertebral level; it has a depth.
+        CURRENT_LEVEL.value =
+          grip.plane === "front"
+            ? depthLabel(to - SHARED_SCAN.value)
+            : levelAt(boxes.current, SHARED_SCAN.value);
+      }
+    } else if (SWEEP_RUNNING.value || CURRENT_CROSSING.value !== NOTHING_CROSSED) {
+      SWEEP_RUNNING.value = false;
+      // Nothing is being read when the sweep is off, and the readout must not
+      // keep showing the last thing it saw.
+      CURRENT_CROSSING.value = NOTHING_CROSSED;
+    }
+  });
+  const [finestDetail, setFinestDetail] = useState(0.01);
+  // `centres` is a ref, so filling it cannot invalidate a memo downstream. This
+  // counter is the signal that it changed — a route built before the digestive
+  // meshes finished loading would otherwise stay empty for ever.
+  const [centresRevision, setCentresRevision] = useState(0);
+
+  /**
+   * The assistant taking the reader to a level.
+   *
+   * The store cannot do this on its own: it knows the light is at 0.62 of the
+   * body and nothing at all about where `vertebra_t8` is. Only the viewer has
+   * measured the meshes, so the request names a structure and is resolved here.
+   *
+   * The sequence number is left unconsumed when the structure has not been
+   * measured yet, so a request made while the body is still loading lands as
+   * soon as it arrives instead of being dropped -- which is why the revision
+   * counter is a dependency.
+   */
+  const scanRequest = useSceneStore((s) => s.scanRequest);
+  const lastScanSeq = useRef(0);
+  useEffect(() => {
+    if (!scanRequest || scanRequest.seq === lastScanSeq.current) return;
+    if (!bounds || bounds.isEmpty()) return;
+    const box = boxes.current.get(scanRequest.organId);
+    if (!box) return;
+    lastScanSeq.current = scanRequest.seq;
+
+    // The assistant may name the plane as well as the place -- "a frontal
+    // section of the heart". Switched first, so the travel below is measured
+    // along the plane it asked for and the picture starts from its whole frame.
+    if (scanRequest.plane) {
+      const wanted = scanRequest.plane === "coronal" ? "front" : "axial";
+      if (useScanStore.getState().plane !== wanted) {
+        useScanStore.getState().setPlane(wanted);
+        SECTION_VIEW.value = null;
+      }
+    }
+    // Along whichever plane the reader has chosen: a structure has a height
+    // and a depth, and "put the plane at the aorta" means the one on screen.
+    const axis = sweepAxis(useScanStore.getState().plane);
+    const { from, to } = scanRangeAlong(
+      [bounds.min.x, bounds.min.y, bounds.min.z],
+      [bounds.max.x, bounds.max.y, bounds.max.z],
+      axis,
+    );
+    // The middle of the structure along the sweep. For a vertebra that is the
+    // level; for something long it is the middle of it, which is the honest
+    // answer to "put the plane at the aorta" and the one the panel will then
+    // describe.
+    const middle = scanRangeAlong(
+      [box.min.x, box.min.y, box.min.z],
+      [box.max.x, box.max.y, box.max.z],
+      axis,
+    );
+    useScanStore
+      .getState()
+      .putAt(scanFractionFor((middle.from + middle.to) / 2, from, to));
+    // Only draws one if the reader has sections switched on; the scene checks.
+    wantSection();
+  }, [scanRequest, bounds, centresRevision]);
+
+  const onMeasured = useCallback(
+    (
+      measured: Map<string, THREE.Vector3>,
+      measuredBoxes: Map<string, THREE.Box3>,
+      box: THREE.Box3,
+      finest: number,
+    ) => {
+      for (const [organId, centre] of measured) centres.current.set(organId, centre);
+      for (const [organId, organBox] of measuredBoxes) boxes.current.set(organId, organBox);
+      setBounds((previous) => {
+        const next = previous ? previous.clone() : new THREE.Box3();
+        next.union(box);
+        return next;
+      });
+      setFinestDetail((previous) => Math.min(previous, finest));
+      setCentresRevision((previous) => previous + 1);
+    },
+    [],
+  );
+
+  // Per-material clipping planes only take effect once local clipping is on.
+  useEffect(() => {
+    gl.localClippingEnabled = true;
+  }, [gl]);
+
+  const clippingPlanes = useMemo(
+    () => buildClippingPlanes(crossSection, bounds),
+    [crossSection, bounds],
+  );
+
+  /**
+   * Where the exploded view puts each structure.
+   *
+   * `centres` is a ref, so `centresRevision` is what says it has changed —
+   * without it an explosion computed before the digestive meshes finished
+   * loading would leave them behind in the body for ever.
+   */
+  const offsets = useMemo(
+    () =>
+      explodeOffsets(
+        explodeMembers({ selectedOrganIds, isolatedOrganIds }, centres.current.keys()),
+        centres.current,
+        explode,
+      ),
+    // `centres` is a ref and cannot invalidate a memo, so `centresRevision`
+    // stands in for it — the same signal `PathwayFlow` is handed.
+    [explode, selectedOrganIds, isolatedOrganIds, centresRevision],
+  );
+
+  /**
+   * Answering a request for an organ's vessels or nerves.
+   *
+   * Here rather than in the store because the answer is geometric, and the
+   * boxes only exist inside the canvas. It runs again on every measurement:
+   * asking for vessels switches the cardiovascular system on, and that system's
+   * meshes stream in *after* the question was asked. Returning "none found"
+   * before they arrive would be a wrong answer the reader cannot see through,
+   * so an unmeasured system means wait, not none.
+   */
+  useEffect(() => {
+    if (!supplyRequest) return;
+    if (isolatedOrganIds === null || isolatedOrganIds.length === 0) {
+      cancelSupply();
+      return;
+    }
+
+    const candidates = manifest.organs
+      .filter((organ) => organ.system === SUPPLY_SYSTEM[supplyRequest.kind])
+      .map((organ) => organ.organ_id);
+    // A system this build does not ship can never answer; anything else is
+    // still on its way.
+    if (candidates.length === 0) {
+      cancelSupply();
+      return;
+    }
+    if (!isSystemMeasured(candidates, boxes.current)) return;
+
+    resolveSupply(collectSupply(isolatedOrganIds, candidates, boxes.current));
+  }, [
+    supplyRequest,
+    // `boxes` is a ref; this counter is what says it has changed.
+    centresRevision,
+    isolatedOrganIds,
+    manifest.organs,
+    resolveSupply,
+    cancelSupply,
+  ]);
+
+  /**
+   * Which way along X the body's own left lies, read off the atlas rather than
+   * assumed from an axis convention. Recomputed as meshes arrive because the
+   * first file loaded may hold no paired structures at all.
+   */
+  const leftSign = useMemo(
+    () => lateralSign(centres.current.keys(), centres.current),
+    // `centres` is a ref and cannot invalidate a memo; `centresRevision` is.
+    [centresRevision],
+  );
+
+  // Sizes for the pathway layer are derived from the model rather than fixed,
+  // so the marker is legible whether the meshes are unit-scale or in metres.
+  const modelScale = useMemo(() => {
+    if (!bounds || bounds.isEmpty()) return 1;
+    const size = bounds.getSize(new THREE.Vector3());
+    return Math.max(size.x, size.y, size.z, 1e-4);
+  }, [bounds]);
+
+  return (
+    <>
+      <StudioLights />
+      <ViewerBridge centres={centres.current} offsets={offsets} geometryRevision={centresRevision} />
+
+      {activeFiles.map((file) => (
+        <SystemMeshes
+          key={file}
+          manifest={manifest}
+          file={file}
+          clippingPlanes={clippingPlanes}
+          explodeOffsets={offsets}
+          scanBandEnabled={scanBandEnabled}
+          onMeasured={onMeasured}
+          onContextMenu={onContextMenu}
+        />
+      ))}
+
+      {/* Mounted with the sweep and gone with it. Nothing of this mode outlives
+          the toggle — see the unmount discipline in `StudyViews`. */}
+      {scanBandEnabled && <ScanRing bounds={bounds} instrument={manualScan} />}
+      {scanBandEnabled && (
+        <AxialProbe
+          bounds={bounds}
+          request={axialRuns}
+          high={axialDetail}
+          leftSign={leftSign}
+          plane={slicePlane(scanPlane)}
+        />
+      )}
+      {/* Idle until the heartbeat is switched on. */}
+      <HeartbeatDriver boxes={boxes.current} organs={manifest.organs} revision={centresRevision} />
+      {/* Idle until the breathing is switched on. */}
+      <BreathDriver boxes={boxes.current} bounds={bounds} revision={centresRevision} />
+
+      {pathway && (
+        <PathwayFlow
+          pathway={pathway}
+          centres={centres.current}
+          centresRevision={centresRevision}
+          modelScale={modelScale}
+        />
+      )}
+
+      <CameraRig
+        focusRequest={focusRequest}
+        viewpoint={viewpoint}
+        centres={centres.current}
+        offsets={offsets}
+        boxes={boxes}
+        isolatedOrganIds={isolatedOrganIds}
+        leftSign={leftSign}
+        bounds={bounds}
+        finestDetail={finestDetail}
+      />
+    </>
+  );
+}

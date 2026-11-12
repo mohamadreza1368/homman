@@ -1,0 +1,352 @@
+@import "tailwindcss";
+
+/*
+ * A window too short for the overlay column at full size.
+ *
+ * Height rather than width, because height is what runs out: a 14-inch laptop
+ * at 1366x768 has plenty of room across and 767 pixels down, and the scanner's
+ * column stacks vertically. 820 is measured, not chosen — the column's content
+ * came to 665 pixels at rest and nearer 740 with the crossing readout up, so
+ * anything under about 820 has to give some of it back.
+ */
+@custom-variant short (@media (max-height: 820px));
+
+@theme {
+  --color-brand-navy: #0f1b2d;
+  --color-brand-cyan: #00a8e8;
+  --color-brand-slate: #1e293b;
+}
+
+/*
+ * The interface is dark, always, and the platform has to be told.
+ *
+ * This read `light dark`, which is an offer to follow the operating system —
+ * and the application does not follow it. The chrome is slate on slate whatever
+ * Windows is set to; the Dark/Light control in the left panel changes the
+ * *viewport background* behind the model, not the panels around it.
+ *
+ * So on a machine set to light mode every native part rendered light against a
+ * dark panel: white scrollbar tracks with arrow buttons at each end, down the
+ * side of the atlas tree and the transcript. Nothing was styled wrongly — the
+ * browser was answering a question honestly and had been asked the wrong one.
+ *
+ * `dark` also covers the controls that are easy to forget: a `<select>`, a range
+ * input's track, the focus ring, and the autofill background.
+ */
+:root {
+  color-scheme: dark;
+}
+
+/*
+ * Scrollbars that belong to the panel they are in.
+ *
+ * `color-scheme: dark` alone gets the colours right and leaves Windows' full
+ * 17px scrollbar with a stepper arrow at each end — correct for a document, too
+ * heavy for a dense tool where several panes scroll at once and none of them is
+ * the page.
+ *
+ * So: no buttons, a narrow bar, and a track that is simply the panel showing
+ * through. The thumb is a mid-slate that holds up against both the dark chrome
+ * and the white print sheet, which is the one light surface in the app.
+ *
+ * Firefox takes the same intent through `scrollbar-width`/`scrollbar-color`;
+ * the WebKit rules are what WebView2 and WKWebView read.
+ */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-slate-600) transparent;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background-color: var(--color-slate-700);
+  border: 2px solid transparent;
+  background-clip: content-box;
+  border-radius: 999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background-color: var(--color-slate-500);
+}
+
+/* The square where a vertical and a horizontal bar meet, which defaults to a
+   flat light patch and is the one piece `color-scheme` does not reach. */
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  font-family:
+    system-ui,
+    -apple-system,
+    "Segoe UI",
+    sans-serif;
+  overflow: hidden;
+}
+
+/*
+ * Tailwind v4 dropped `cursor: pointer` on buttons from its preflight, matching
+ * the browser default rather than the convention every web interface has taught
+ * people to expect. Every control in this application lost its affordance in
+ * that upgrade, silently — nothing looks broken, things just stop inviting the
+ * click.
+ *
+ * The numbered pins in the assistant's answers are what made it visible. They
+ * had always been buttons that fly the camera to a structure, and they read as
+ * decorative superscripts, so nobody pressed them.
+ *
+ * Restored once here rather than as a utility class on eighty elements, because
+ * the next button someone adds should not have to remember.
+ */
+button:not(:disabled),
+[role="button"]:not(:disabled) {
+  cursor: pointer;
+}
+
+/*
+ * The opening screen's cardiac trace: a bright segment sweeping a dim line, the
+ * way a monitor draws it.
+ *
+ * `stroke-dasharray` makes a short visible run followed by a gap longer than
+ * the whole path, so exactly one segment is ever lit; animating the offset
+ * walks it along. The path length is measured in the SVG's own units, and 620
+ * comfortably exceeds it — an overshoot only lengthens the pause between
+ * sweeps, where an undershoot would show two segments at once.
+ */
+@keyframes ecg-sweep {
+  from {
+    stroke-dashoffset: 620;
+  }
+  to {
+    stroke-dashoffset: -60;
+  }
+}
+
+.animate-ecg {
+  stroke-dasharray: 46 620;
+  animation: ecg-sweep 2.2s linear infinite;
+}
+
+/*
+ * Someone who has asked their system for less motion has asked for it here
+ * too. The trace stays — it is the artwork — it simply stops moving.
+ */
+@media (prefers-reduced-motion: reduce) {
+  .animate-ecg {
+    animation: none;
+    stroke-dasharray: none;
+  }
+}
+
+/*
+ * Printing the study journal.
+ *
+ * The app never leaves the screen, so printing means swapping the whole
+ * document for the sheet: `#root` goes away and the portal that `PrintSheet`
+ * renders into `<body>` becomes the page. That is why the sheet is a portal and
+ * not a child of the app — a preview inside `#root` would be hidden along with
+ * everything else here.
+ */
+@media print {
+  /*
+   * Paper is a light surface, whatever the screen was. Said explicitly so the
+   * dark `color-scheme` above cannot reach the printed page and have a driver
+   * decide, for instance, that a form field needs a dark fill.
+   */
+  :root {
+    color-scheme: light;
+  }
+
+  /* The shell's `overflow: hidden` would clip the page to one screenful. */
+  html,
+  body {
+    height: auto;
+    overflow: visible;
+    background: #fff;
+  }
+
+  #root {
+    display: none !important;
+  }
+
+  .no-print {
+    display: none !important;
+  }
+
+  [data-print-root] {
+    position: static;
+    inset: auto;
+    overflow: visible;
+    padding: 0;
+    background: none;
+    backdrop-filter: none;
+  }
+
+  .print-sheet {
+    max-width: none;
+    padding: 0;
+    border-radius: 0;
+    box-shadow: none;
+    color: #000;
+  }
+
+  @page {
+    margin: 16mm 14mm;
+  }
+
+  /*
+   * The compliance notice repeats on every page as a table footer group.
+   *
+   * It was `position: fixed` first. That did repeat it — but a fixed element is
+   * out of the flow and reserves no height, so the last lines of each page ran
+   * underneath it, and its own left edge was clipped by the containing block
+   * the print layout gave it. A table footer group is the one mechanism that
+   * repeats *and* keeps the space, because the notice is still ordinary flowed
+   * content; it is simply flowed once per page.
+   */
+  .print-layout {
+    display: table;
+    width: 100%;
+  }
+
+  .print-layout > tbody {
+    display: table-row-group;
+  }
+
+  .print-layout > tfoot {
+    display: table-footer-group;
+  }
+
+  .print-layout tr {
+    display: table-row;
+  }
+
+  .print-layout td {
+    display: table-cell;
+  }
+
+  .print-footer {
+    margin: 0;
+    padding-top: 3mm;
+    border-top: 0.4pt solid #999;
+  }
+
+  /* A note or a table split across a page boundary is unreadable; a long
+     answer split across one is normal, so those are left alone. */
+  .print-block {
+    break-inside: avoid;
+  }
+
+  /* A heading stranded at the foot of a page belongs to nothing. */
+  .print-keep-with-next {
+    break-after: avoid;
+  }
+}
+
+/*
+ * The print sheet's table exists only so the compliance notice can be a
+ * repeating page footer. On screen it must not behave like a table — a single
+ * cell holding a whole document would shrink-to-fit and ignore the sheet's
+ * width — so every part of it is collapsed back to plain blocks.
+ */
+@media screen {
+  .print-layout,
+  .print-layout > tbody,
+  .print-layout > tfoot,
+  .print-layout tr,
+  .print-layout td {
+    display: block;
+    width: auto;
+  }
+}
+
+/*
+ * The scanner's vertical slider, drawn the same on both engines.
+ *
+ * # Why it is rotated rather than `writing-mode: vertical-lr`
+ *
+ * A vertical range input through `writing-mode` is a recent addition to the
+ * platform, and the two engines this ships on are not the same age: WebView2 on
+ * Windows took it, the WebKitGTK on a Debian desktop may not. Where it is not
+ * implemented the control stays horizontal inside a 16px-wide box — you see the
+ * thumb, there is no track to colour, and a drag maps to sixteen pixels of
+ * travel instead of a hundred and twelve. Reported from a Kali desktop, and
+ * every symptom follows from that one line.
+ *
+ * Rotating a plain horizontal input has worked in every engine for fifteen
+ * years. The wrapper carries the vertical box; the input keeps its own.
+ *
+ * # Why the track is painted here and not with `accent-color`
+ *
+ * Same reason. `accent-color` is the modern way to tint a native control and it
+ * is exactly the kind of thing that is present on one engine and absent on the
+ * other — and when it is absent there is nothing to say the light is cyan. The
+ * track below is ordinary CSS: a gradient whose stop is written from the sweep,
+ * so the filled part means "where the light is" on every machine.
+ */
+.scan-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  background: transparent;
+}
+
+.scan-slider::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 9999px;
+  /* Rotated with the input, so "to right" is up the body. */
+  background: linear-gradient(
+    to right,
+    var(--color-cyan-400) 0 var(--scan-fill, 50%),
+    var(--color-slate-700) var(--scan-fill, 50%) 100%
+  );
+}
+
+.scan-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 12px;
+  height: 12px;
+  margin-top: -4px; /* centred on a 4px track */
+  border-radius: 9999px;
+  background: var(--color-cyan-200);
+  box-shadow: 0 0 6px var(--color-cyan-500);
+}
+
+.scan-slider:focus-visible {
+  outline: 1px solid var(--color-cyan-400);
+  outline-offset: 3px;
+}
+
+/* Firefox is not a target today, and costs two rules to not be wrong on. */
+.scan-slider::-moz-range-track {
+  height: 4px;
+  border-radius: 9999px;
+  background: linear-gradient(
+    to right,
+    var(--color-cyan-400) 0 var(--scan-fill, 50%),
+    var(--color-slate-700) var(--scan-fill, 50%) 100%
+  );
+}
+
+.scan-slider::-moz-range-thumb {
+  width: 12px;
+  height: 12px;
+  border: 0;
+  border-radius: 9999px;
+  background: var(--color-cyan-200);
+}

@@ -1,0 +1,54 @@
+Anatria3D
+Copyright 2026 Digital Rose
+
+The application source code is licensed under the Business Source License 1.1
+by Nurdzhan Kerimov (Digital Rose). It is free to use for study, teaching and
+academic research, and for non-commercial evaluation by healthcare
+professionals; any other production use needs a commercial licence. Each
+version converts to the Apache License, Version 2.0 four years after its
+release, on the Change Date stated in its LICENSE. See the LICENSE file
+alongside this one, and write to anatria@digitalrose.org for a commercial
+licence.
+
+--------------------------------------------------------------------------
+
+This product also includes anatomical 3D meshes and nomenclature that are NOT
+part of the licensed work above and are NOT covered by its licence. They come
+from two unrelated open datasets, under two different Creative Commons
+licences, and nothing in the application's licence restricts the rights those
+licences grant you over them.
+
+The male atlas — `manifest.json`, `*_male.glb` —
+Creative Commons Attribution-ShareAlike 4.0 International:
+
+  BodyParts3D — The Database Center for Life Science (DBCLS), Japan
+                CC BY-SA 2.1 Japan
+  Z-Anatomy   — the libre 3D atlas of anatomy, derived from BodyParts3D
+                CC BY-SA 4.0 — https://www.z-anatomy.com/
+
+Anatria3D's adaptations of those meshes are themselves CC BY-SA 4.0.
+Redistributing them requires preserving this attribution and keeping them under
+that licence.
+
+The female atlas — `manifest_female.json`, `*_female.glb` —
+Creative Commons Attribution 4.0 International:
+
+  Human Reference Atlas 3D Reference Organ Library
+              HuBMAP Consortium / NIH — https://humanatlas.io/
+              ref-organ/united-female v1.5, CC BY 4.0
+  Visible Human Female
+              U.S. National Library of Medicine, the underlying dataset
+              The Visible Human Project — https://www.nlm.nih.gov/research/visible/
+
+Anatria3D's adaptations of those meshes remain CC BY 4.0. Redistributing them
+requires preserving this attribution; there is no share-alike obligation.
+
+The two must not be combined into one file — doing so would impose share-alike
+on material whose authors chose attribution alone. The full attribution ships
+with the data, in `anatomy/NOTICE` and `anatomy/LICENSE`, and is summarised for
+readers in THIRD-PARTY-NOTICES.txt.
+
+--------------------------------------------------------------------------
+
+Anatria3D is educational software. It is not a medical device, and it is not
+for the diagnosis or treatment of any person.

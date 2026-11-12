@@ -1,0 +1,2082 @@
+import { useEffect, useRef, useState } from "react";
+
+import { useCopy } from "@/features/chat/useCopy";
+import { APP_VERSION_LABEL } from "@/lib/appVersion";
+import { MAX_SEVERITY, MAX_VISITS } from "@/lib/studyDb";
+
+/** Where to write for support, custom work or institutional use. */
+const CONTACT_EMAIL = "anatria@digitalrose.org";
+
+/**
+ * How the app works, for someone opening it for the first time.
+ *
+ * It leads with the boundary rather than the controls. A student who learns
+ * what this tool is *not* for before they learn to rotate the model is a
+ * student who never has to unlearn anything.
+ *
+ * Every gesture described here is one that exists — the file is written against
+ * `OrganMesh`, `AnatomyScene` and `SelectionBar`, not against intentions. If a
+ * gesture changes, this changes with it.
+ */
+
+interface Section {
+  id: string;
+  nav: string;
+  title: string;
+  body: React.ReactNode;
+}
+
+const SECTIONS: Section[] = [
+  {
+    id: "boundary",
+    nav: "What this is",
+    title: "An atlas that explains itself",
+    body: (
+      <>
+        <p>
+          Anatria3D is a 3D human anatomy atlas with an assistant that teaches from
+          it. Ask a question and it answers while moving the model — isolating the
+          structure, cutting a section, marking a disease state — so the explanation
+          and the thing being explained are on screen together.
+        </p>
+        <Callout>
+          <strong>It is study material, and only that.</strong> Anatria3D is not a
+          medical device and gives no advice about any real person. If you describe
+          symptoms — yours or anyone's — the assistant will decline and point you to a
+          qualified professional. That boundary is deliberate and cannot be switched
+          off.
+        </Callout>
+        <p>
+          Everything stays on your machine except what the assistant needs to answer.
+          The anatomy ships with the app and your journal lives in a local file. When
+          you ask, Anatria3D sends the AI provider whose key you supplied your
+          question, the recent conversation, what is on screen — the structures
+          selected, the scanner and the heart — and, in a case drill, the invented
+          patient's file. Nothing goes anywhere else. Apart from checking your key,
+          nothing is sent while you are not asking. A <em>Local model</em> sends
+          nothing at all: it runs on your own computer.
+        </p>
+        <Callout>
+          <strong>There are two atlases, and they are not the same size.</strong> The{" "}
+          <em>Body</em> switch above the systems list changes over. Male is a whole
+          body — every system, 3,478 structures. Female is the <em>trunk</em>: the
+          spine from C1 to the coccyx, the pelvic girdle, the reproductive organs with
+          their ligaments, the bladder and ureters, the kidneys, the liver and biliary
+          tract, the pancreas, the spleen, the intestines — and the breast, which
+          exists nowhere on the male atlas: the body of the breast, its lobes,
+          lactiferous ducts and sinuses, suspensory ligaments, nipple and areola.
+        </Callout>
+        <Callout>
+          <strong>What the female atlas does not have, it never had.</strong> No skull,
+          no ribcage, no limbs — and <em>no skeletal muscle or peripheral nerve at
+          all</em>. Its source, the NIH Human Reference Atlas, models organs rather
+          than a body, so those are missing from the data rather than hidden. It is
+          also a different person from the male atlas, which is why switching reloads
+          the scene: nothing of one belongs inside the other.
+        </Callout>
+        <Callout>
+          <strong>Where the female atlas is better.</strong> Its viscera are modelled
+          in far more detail than the male ones. A kidney there opens into capsule,
+          hilum, cortex, columns and every pyramid with its papilla — against a single
+          mesh on the male side. Worth knowing before you assume the bigger atlas is
+          the better one for an organ.
+        </Callout>
+        <Callout>
+          <strong>The female atlas is one woman, not an average — learn the textbook
+          value from her, not her measurements.</strong> She was 59, and was frozen and
+          sectioned lying down. Two things in her differ from what you will be examined
+          on, and neither is a labelling mistake:
+          <ul className="mt-1.5 ml-4 list-disc space-y-1">
+            <li>
+              <strong>Six lumbar vertebrae</strong>, L1 to L6, where most people have
+              five. A real variant, in roughly one person in twenty.
+            </li>
+            <li>
+              <strong>Her kidneys span L1 to L5</strong> and the left is 2.7 cm longer
+              than the right. The value to learn is the classical <em>T12 to L3</em>.
+              Kidneys descend with posture and with the loss of muscle tone after
+              death, and renal ptosis is commoner in older women.
+            </li>
+          </ul>
+        </Callout>
+        <Callout>
+          <strong>Some other things are missing too</strong>, and it is better to read
+          it here than to find out mid-revision. The gut runs duodenum → jejunum and
+          then jumps to the colon: there is no <em>ileum, caecum, rectum or anal
+          canal</em>. There are no <em>meninges</em> — no dura, arachnoid or pia — and
+          no <em>skin</em> as an organ, only named surface regions. Also absent: the
+          thoracic duct, the vocal folds, and the lung's bronchopulmonary segments,
+          though all twenty-seven segmental bronchi are here.
+        </Callout>
+        <p>
+          A few things exist only as their parts, with no single mesh for the whole:
+          the skull, the larynx, the lung, the small intestine, the peritoneum and the
+          lumbar and sacral plexuses. Right-click reaches the group where the atlas
+          defines one.
+        </p>
+        <p>
+          What <em>is</em> complete: the arterial and venous trees down to the limbs,
+          the musculature, the urinary and endocrine organs, every bone, the twelve
+          cranial nerves, the lymph nodes in unusual detail, and the eight hepatic
+          segments.
+        </p>
+      </>
+    ),
+  },
+  {
+    id: "moving",
+    nav: "Moving around",
+    title: "Getting to what you want to see",
+    body: (
+      <>
+        <Rows
+          rows={[
+            ["Drag", "Orbit around the model"],
+            ["Right-drag", "Pan — slide the model sideways"],
+            ["Scroll", "Zoom toward the pointer, not the centre"],
+          ]}
+        />
+        <p>
+          Zoom follows the cursor deliberately. Point at an eye and scroll, and you
+          arrive at the eye; zooming toward the body's centre would let you approach a
+          head only by going through the chest.
+        </p>
+        <p>
+          The <Ui>Atlas</Ui> panel on the left lists every structure, grouped by
+          system. Switch a system off to get it out of the way — the app only loads
+          the geometry for systems that are actually on, so the body arrives in pieces
+          as you ask for them.
+        </p>
+        <Callout>
+          <strong>The row at the bottom right is the way back.</strong> Orbiting
+          freehand is how you end up upside down behind the left shoulder with no
+          idea how you got there. <Ui>Fit</Ui> reframes — the whole body, or just
+          what you are studying if anything is isolated. <Ui>A P L R S</Ui> are the
+          standard anatomical viewpoints: anterior, posterior, left and right
+          lateral, superior. <Ui>+</Ui> and <Ui>−</Ui> move you in and out without
+          needing a scroll wheel.
+          <br />
+          <br />
+          The viewpoints only <em>turn</em> the view; they keep the distance you had.
+          Zooming in on a valve and then pressing <Ui>P</Ui> shows you that valve
+          from behind, still close up — <Ui>Fit</Ui> is the separate button for when
+          you want to pull back out. And <Ui>L</Ui> is the body's own left, not the
+          left of your screen, read from the model itself.
+        </Callout>
+        <Callout>
+          <strong>
+            <Ui>Study views</Ui> shows one structure from four angles at once.
+          </strong>{" "}
+          The button sits over the lower left of the viewport, and it works once
+          something is isolated. The panel you are already driving keeps the top
+          left corner and behaves exactly as it did — orbit, zoom, click, select.
+          The other three are fixed anatomical views of the same thing:{" "}
+          <Ui>A</Ui> anterior, <Ui>L</Ui> left lateral, <Ui>S</Ui> superior,
+          lettered at the middle of the screen.
+          <br />
+          <br />
+          They take their scale from the view you are driving rather than framing
+          themselves, so all four agree about how big the structure is. Move the
+          main camera closer and the other three come with you. They are for
+          looking, not for pointing at: the cursor belongs to the panel you drive,
+          and drawing a region round a selection is unavailable while the view is
+          split, because a lasso across four cameras would enclose things you
+          never drew round.
+          <br />
+          <br />
+          It asks for something isolated first, and that is a limit rather than a
+          preference. Four views of the whole atlas is four passes over three and
+          a half thousand structures, which no machine holds at a usable frame
+          rate. Four views of one isolated structure cost four times almost
+          nothing.
+        </Callout>
+        <p>
+          How you leave the view is how you find it. Which systems are on, how
+          translucent they are, whether names are shown, what the space sits on and
+          whether the eyes follow you all come back next time. What you were{" "}
+          <em>doing</em> does not — a selection, an isolation or a cross-section
+          belongs to the session it was made in. A body that opened already sliced
+          through the neck would just look broken.
+        </p>
+        <p>
+          Each system has three controls, and they answer different questions. The
+          checkbox shows or hides it. <Ui>◐</Ui> makes it translucent — ghost the body
+          surface and the muscles beneath it read straight through, with the surface
+          still there for context, which hiding it would throw away. <Ui>X-ray</Ui> ghosts
+          everything <em>except</em> that system, which is how you follow the nerves
+          through a whole body. <Ui>Solo</Ui> hides the rest outright.
+        </p>
+        <p>
+          A ghosted structure stops catching clicks, so you can reach what is under
+          it. When <em>everything</em> is ghosted there is nothing solid left to
+          catch one, and a click then picks the nearest thing the cursor is
+          crossing — the same structure the panel on the right names first.
+        </p>
+        <Callout>
+          <strong>Point at the body and look at the panel on the right.</strong> It
+          lists everything under the cursor from the surface inwards — at the neck,
+          the surface region, then platysma, then sternocleidomastoid, then the
+          carotid sheath, then the artery. That is the question a surgical approach
+          asks and the one an examiner asks, and it depends on exactly where you are
+          pointing, so no page in a book can answer it.
+          <br />
+          <br />
+          Nothing there is inferred. It is not a model of tissue layers: it is the
+          geometry a ray from your cursor actually crossed, in the order it crossed
+          it. Click any line to fly to that structure.
+          <br />
+          <br />
+          <strong>Click the body and the reading is pinned</strong>, so it stops
+          following the cursor and you can walk over to it — the panel sits over
+          the model, and the journey to it crosses other structures that would
+          otherwise rewrite the list on the way. Without a click it simply
+          follows the pointer and goes when the pointer does. Hover a line for <Ui>solo</Ui> to leave only
+          that structure, or take the whole column with{" "}
+          <Ui>Isolate these …</Ui>: a ray through the shoulder is a surgical
+          approach written down, in the order you would meet it. <Ui>Esc</Ui> puts
+          the body back.
+          <br />
+          <br />
+          <strong>Ctrl-click the lines to pick a few of them</strong> — skin, fascia
+          and the muscle, without the four things behind them. They join the same
+          selection a Ctrl-click on the body builds, so the bar at the bottom counts
+          them and <Ui>I</Ui> isolates them.
+        </Callout>
+        <p>
+          <strong>Then press <Ui>Glass body</Ui>.</strong> The whole model turns to
+          glass, and now the column under your cursor does not just get listed — it{" "}
+          <em>lights up</em>, brightest at the surface and fading with depth. Sweep
+          the pointer across the abdomen and the organs light in turn as you pass
+          over them.
+        </p>
+        <p>
+          The light is warm and white on purpose. Blue would read as "selected" and
+          amber as "diseased"; this is neither. It is a lamp falling on something,
+          which is exactly what it is — and it only becomes visible once you can see
+          through what is in front, which is exactly when you want it.
+        </p>
+        <p>
+          <strong>The assistant uses the same light.</strong> Ask it something and it
+          will point at what it is naming as it names it — the quietest thing it can
+          do to the scene, since nothing moves and nothing is hidden. A bar names
+          what is lit and turns it off. While the assistant's light is on it takes
+          precedence over your cursor's, so there is never a question of which lit
+          thing is being talked about; the panel still lists whatever is under your
+          pointer.
+        </p>
+        <p>
+          <strong>Surface anatomy is what those three controls are for.</strong> The
+          body's outside lives in the <Ui>Regional</Ui> system, and it is the layer to
+          reach for: <Ui>Solo</Ui> it for the surface alone, the way you would look at a
+          person; press <Ui>◐</Ui> once and it turns translucent, so you can read which
+          muscle makes which contour — with the contour still on screen, which is the
+          whole question. Ghosted that far it also stops catching clicks, so the muscle
+          you are looking at is the one you select.
+        </p>
+        <Callout>
+          Switching the surface on over everything else and leaving both solid is the
+          one combination that tells you nothing: opaque skin over opaque muscle is just
+          skin. That is what <Ui>◐</Ui> is for.
+          <br />
+          <br />
+          The faint lines across the face, neck and chest are not a fault. The atlas has
+          no skin as a single organ — the surface is a sheet cut into 256 named regions,
+          and those lines are where it is cut. Each one is a structure you can click,
+          name and study.
+        </Callout>
+        <p>
+          Structures are coloured by tissue, the way a printed atlas is: bone ivory,
+          muscle deep red, nerves pale yellow, lymphatics green. Arteries are drawn red
+          and veins blue, so a vascular tree reads without clicking anything. The dot
+          beside each system in the left panel is the legend.
+        </p>
+        <p>
+          Tissue beats system where the two disagree — tendons and fascia are pearly
+          white rather than muscle red, cartilage is blue-white, fat is yellow, and the
+          liver, spleen, pancreas and gallbladder each keep their own colour instead of
+          sharing one for “digestive”.
+        </p>
+        <p>
+          <Ui>Label what I select</Ui> puts the names out in the margins with a leader
+          line to each structure, the way an atlas plate does it. Then{" "}
+          <Ui>Save this view as an image</Ui> writes the whole thing — labels, colours
+          and attribution — to a PNG you can put in a slide or a revision card.
+        </p>
+        <p>
+          <Ui>Take off the tendons &amp; fascia</Ui> lifts the 116 sheets the muscular
+          system carries — the pectoral fascia, the rectus sheath, the fascia lata.
+          They are drawn pale and thin because that is what they are, but they lie
+          directly on the muscles they wrap and still veil them. Off, you are looking
+          at a body before anyone has started; on, the bellies are bare. It is the
+          one preference here that changes the anatomy rather than the interface,
+          which is why it is a choice and not the default.
+        </p>
+        <p>
+          <Ui>Background</Ui> switches the 3D space between dark and light. Dark is
+          easier over a long session; light is for anything the figure has to leave in
+          — a handout, a slide, a document that is not itself dark. The image export
+          follows whichever you picked.
+        </p>
+        <p>
+          The <Ui>Colour key</Ui> in the corner names every colour that is on screen
+          right now, and nothing else — switch a system on and its tissues join the
+          list; isolate the heart and it shrinks to what the heart is made of. Drag it
+          anywhere, or collapse it with <Ui>▴</Ui>.
+        </p>
+
+        <Sub>The scanner</Sub>
+        <p>
+          <Ui>Scanner</Ui> brings a ring down onto the crown of the head and sweeps
+          a plane of light through the body, head to feet and back. It is not
+          decoration: every structure the plane reaches lights up whole while it
+          passes, and a panel names what it is crossing as it goes — the six largest,
+          with the rest counted, because a plane through the chest passes two hundred
+          structures and naming all of them would tell you nothing.
+        </p>
+        <p>
+          Switching it on turns the view a little, so the ring reads as a ring rather
+          than as a line across the body. It turns without moving you: whatever you
+          had zoomed in on, you are still that close to it.
+        </p>
+        <p>
+          Drag the slider beside it to put the light where you want it, and press{" "}
+          <Ui>Hold</Ui> to keep it there so you can look without keeping a finger
+          down. Let go, or release the hold, and it carries on from that height rather
+          than jumping back — move it to the diaphragm, look, and the sweep continues
+          downward from the diaphragm.
+        </p>
+        <Callout>
+          <strong>It also runs by itself while the assistant is writing.</strong> That
+          is the one moment here where you are waiting with nothing to look at, so the
+          atlas reads itself instead — and the ring is left out of that one, because a
+          solid ring passing across the body would hide the structure the answer is
+          about. The light alone passes through and covers nothing.
+          <br />
+          <br />
+          If your machine would rather not, the checkbox under the switch turns that
+          half off and is remembered. Everything else about the scanner stays.
+        </Callout>
+        <p>
+          The four swatches set the colour of the light, and it is not decoration: the
+          light is added to each tissue’s own colour, so the hue decides which
+          structures separate from their neighbours and which sink into them. Green
+          over muscle and amber over bone select different halves of the same body.{" "}
+          <Ui>Reveal colour, not light</Ui> inverts the idea — rather than throwing
+          light at what it passes, the plane gives each structure its own colour back.
+          That needs a body with the colour drained out of it, so it asks you to press{" "}
+          <Ui>Scan</Ui> or <Ui>Carbon</Ui> first; on a body already at full colour
+          there is nothing to reveal.
+        </p>
+        <p>
+          <Ui>Fade what it has passed</Ui> plays down everything behind the plane, so
+          the sweep reads as progress through a body rather than as a light moving over
+          one. <Ui>Sound when I let go</Ui> marks the moment of release with a short
+          tone; it is off by default, because a tool that makes a noise nobody chose is
+          a tool people close rather than configure.
+        </p>
+      </>
+    ),
+  },
+  {
+    id: "section",
+    nav: "Cross-sections",
+    title: "Reading a section",
+    body: (
+      <>
+        <p>
+          With <Ui>Cross-section where I let go</Ui> ticked, letting the light go draws
+          the body as it is at that exact height, in a panel beside the scanner, the
+          way every axial image you have seen is arranged: anterior at the top, and
+          the patient’s left on your right, as if looking up from the feet.
+        </p>
+        <p>
+          It is taken at the moment of release and not before, and that is a cost
+          decision rather than a stylistic one: a section is a second pass over the
+          whole body, and paying for it sixty times a second — to produce a picture
+          that only has to be right while the plane is still — would take the viewport
+          from fifty frames a second to thirty. Once, when you stop, it costs a frame
+          and then nothing at all.
+        </p>
+
+        <Sub>Two cuts, and they answer different questions</Sub>
+        <Rows
+          rows={[
+            ["Cut", "The body opened at the plane — solid, and easier to read"],
+            ["Slab", "Only what lies at that exact level — a true section"],
+          ]}
+        />
+        <p>
+          Neither is the better one. <Ui>Cut</Ui> keeps everything below the plane, so
+          you are looking down at the top surfaces of what is left and the shapes read
+          as solid volumes — a dissection, with depth behind what is at this level.{" "}
+          <Ui>Slab</Ui> keeps four millimetres and nothing else, which is the truthful
+          section and the harder picture: what survives of a structure in that band is
+          its wall, so it arrives as an outline rather than a filled shape.
+        </p>
+        <Callout>
+          <strong>The cut surfaces are open, and always will be.</strong> Clipping
+          removes the parts of a surface that fall outside the plane; it does not close
+          the hole that leaves. A clipped liver is a liver-shaped shell with its inside
+          showing, not a filled cross-section. Capping it would need a second pass of
+          its own, costing more than the section does.
+        </Callout>
+
+        <Sub>What the panel tells you</Sub>
+        <p>
+          The line above the picture names the vertebral level — <em>T8</em>,{" "}
+          <em>L4–L5</em> — whenever the plane is at one. That is the body’s own
+          coordinate system and the same on every patient whatever their height, which
+          is why every axial image a doctor has ever discussed was placed that way.
+          Where there is no vertebra — out in the limbs, above the atlas, below the
+          coccyx — it says nothing at all rather than naming the nearest one: a plane
+          through the ankle is not “at L5, roughly”, and a confident label there
+          would be a falsehood in the one place you have no way to check it.
+        </p>
+        <p>
+          Beside it are the width of the picture in centimetres, how many structures the
+          plane crossed, and six of them named with a swatch of the colour they are
+          drawn in. Six rather than all of them, because a slab through the chest holds
+          nearly three hundred, and a list of three hundred is the same nothing the
+          picture already shows.
+        </p>
+
+        <Sub>From the front, at a depth</Sub>
+        <Rows
+          rows={[
+            ["Axial", "Sweep head to feet, and section the body at a height"],
+            ["Front", "Sweep front to back, and section it at a depth, seen from the front"],
+          ]}
+        />
+        <p>
+          The choice sits above the handle, because it changes what the handle means.
+          In <Ui>Front</Ui> the plane stands upright and travels from the front of the
+          body to the back, and the section is arranged the way a coronal image is
+          read: the head at the top, and the patient’s left on your right. The line
+          above the picture says how deep the plane is — <em>12 cm deep</em> —
+          measured from the most anterior point of the body, and the wheel steps a
+          centimetre deeper or back towards you.
+        </p>
+        <p>
+          Everything else is the same instrument: <Ui>Cut</Ui> opens the body at the
+          plane and shows the surfaces behind it, <Ui>Slab</Ui> keeps the four
+          millimetres at it, and the torch, magnifying, the caliper and{" "}
+          <Ui>Save</Ui> all work as they do across the body. The ring stays where it
+          is, at the chest, and says <em>FRONT</em>; the light on the body is what marks
+          the plane, and what flashes when you let go.
+        </p>
+        <p>
+          Each plane keeps its own place. Go to <Ui>Front</Ui> and back, and the axial
+          plane is at the height you left it; a measurement stays on the section it
+          was drawn on and never appears on the other.
+        </p>
+
+        <Sub>Asking about what the scanner is on</Sub>
+        <p>
+          With nothing selected and the light held at a level — pinned, or stepped
+          there with the wheel — the assistant is told where the axial plane is and
+          what it crosses. <em>“What is in this part?”</em> is then a question about
+          that level, and a note above the box says so while you type. Select a
+          structure and the selection comes first; name somewhere else and your words
+          do. It is not sent while the light is travelling, for a frontal plane, or in
+          a case.
+        </p>
+        <p>
+          Ask for <em>a frontal section of the heart</em> and the assistant switches
+          the scanner to <Ui>Front</Ui> and puts the plane through it; ask for a level
+          and it goes back to <Ui>Axial</Ui>. A question about pain there is answered
+          with the anatomy of that level, never with an assessment of you.
+        </p>
+
+        <Sub>Stepping, and magnifying</Sub>
+        <Rows
+          rows={[
+            ["Wheel over the picture", "Step one centimetre through the body"],
+            ["Ctrl and the wheel", "Magnify, about the pointer"],
+            ["Drag", "Move the window"],
+            ["The button under the picture", "Back to the whole section"],
+            ["Measure", "Drag across the section for a distance"],
+            ["Save", "Write this section out as a PNG"],
+          ]}
+        />
+        <p>
+          The step is a fixed centimetre rather than proportional to how hard the wheel
+          is turned, and that is the point of it: regular increments are what make{" "}
+          <em>three levels above T7</em> a sentence one person can say and another can
+          reproduce. A picture reached by dragging until it looked right is a picture
+          nobody can return to.
+        </p>
+        <p>
+          Magnifying does not enlarge the picture — it renders the section again,
+          framed on the window you are looking at. Scaling an image cannot add anything
+          to it, and the section is read at about half a millimetre per pixel across the
+          whole body, so magnifying past that would be asking for detail nobody
+          measured. Framed on a ninth of the body instead, the same pixels are nine
+          times finer, for the same work and not one byte more memory. It stops at six
+          centimetres across, past which you would be magnifying the atlas’s own
+          triangles.
+        </p>
+        <Callout>
+          <strong>The button reports a width, not a magnification.</strong>{" "}
+          <em>9 cm</em> is a measurement you can use — it tells you how big the thing
+          on screen actually is. <em>5.4×</em> is a number about the software.
+          Pressing it gives the whole section back.
+          <br />
+          <br />
+          Magnified, you can still step. The window is remembered in centimetres of body
+          rather than as a fraction of the picture, so it stays over the same anatomy as
+          you travel through it — which is the whole reason for being able to do both
+          at once: find the mediastinum, then read up and down through it.
+        </Callout>
+
+        <Sub>Measuring one</Sub>
+        <p>
+          <Ui>Measure</Ui> puts a caliper on the picture: drag across it and the
+          length appears on the line. Both ends lie in the plane of the section, so
+          it is the true distance between those two points in space rather than a
+          projection of one, and it is held in the body’s own coordinates, so magnifying or moving the
+          picture leaves it on the anatomy it was drawn across. Draw as many as you
+          need — each drag adds another — and each belongs to the level it was
+          drawn on: step away and it waits there, coming back when you return. Click
+          a number to remove that one, or <Ui>Clear</Ui> for the ones on this level.
+        </p>
+        <Callout>
+          <strong>Measure in <Ui>Slab</Ui>, not in <Ui>Cut</Ui>.</strong> The
+          distance is always right about the two points; what changes is what is
+          under them. A slab holds four millimetres, so everything you can see is at
+          the level you are measuring. A cut shows the surfaces below the plane, so
+          the structure under an end may lie well beneath it and you would be
+          measuring across the level rather than across the thing.
+          <br />
+          <br />
+          And what is measured is the atlas, not a patient: one body, at one size,
+          modelled rather than imaged. It is a scale to learn proportions on, not a
+          number to put in a report.
+        </Callout>
+
+        <p>
+          <Ui>Save</Ui> writes the section out as a PNG — what is on screen, so a
+          magnified one saves the window you are looking at, with the caliper on it if
+          you drew one. The file is named after what it is: the level, the width and
+          which cut it was, so a folder of them can be read without opening any of
+          them. The disclaimer is part of the picture rather than part of the
+          interface, because a caption on screen does not travel with a screenshot.
+        </p>
+
+        <Sub>Asking to be taken somewhere</Sub>
+        <p>
+          The assistant can move the plane for you. Ask to be taken to T8, or to
+          the level where the renal arteries leave, and it puts the scanner there
+          — switching it on if it was off, because a plane nobody can see is not
+          an answer. It names a structure rather than a level, so asking for a
+          vertebra and asking for the aortic valve are the same request; the
+          panel then reports whichever level the plane landed on.
+        </p>
+
+        <Sub>Two switches with a cost, and what they buy</Sub>
+        <p>
+          <Ui>Aim the light with the pointer</Ui> makes the cursor the lamp while it is
+          over the enlarged section: the middle is overhead, and the edges lay the light
+          flat across the surfaces. It is the gesture anybody uses on a real specimen
+          — nobody moves a lamp in three numbers, they tilt the thing until the light
+          catches what they are chasing. It is the one control here whose cost repeats
+          rather than being paid once at release, which is why it is a switch and why it
+          is off until you ask.
+        </p>
+        <p>
+          <Ui>Quality</Ui> reads each section at four times the pixels. What it buys is
+          a finer picture of the whole section; what it costs is four times the readback
+          and about a quarter of a gigabyte held while it is on. On a modest machine,
+          leave it off and magnify instead — the two are different tools rather than
+          two settings of one.
+        </p>
+
+        <Callout>
+          <strong>This is not a radiograph, and does not pretend to be.</strong> A CT
+          slice is a map of densities. This is the atlas’s own geometry cut at a
+          height and drawn solid, so a structure that is see-through in the viewport
+          still arrives filled here, and nothing on it corresponds to a Hounsfield
+          number. It looks like a scan, which is exactly why it says what it is on every
+          picture it produces.
+        </Callout>
+      </>
+    ),
+  },
+  {
+    id: "heart",
+    nav: "The heart, beating",
+    title: "Watching and hearing the heart",
+    body: (
+      <>
+        <p>
+          <Ui>Heartbeat</Ui>, under the scanner, sets the atlas’s heart beating: the
+          atria draw in first, then after the pause at the AV node the ventricles, with
+          a schematic ECG sweeping under the panel in time with them. Tick{" "}
+          <Ui>Heart sounds</Ui> to hear the first and second sounds as each valve
+          closes; it stays off until you ask, and is remembered.
+        </p>
+        <Callout>
+          <strong>It is an illustration of the cycle, not a model of a heart.</strong>{" "}
+          The static surfaces of the atlas are drawn in towards each chamber on a
+          textbook schedule, at one representative rate. The trace is drawn from that
+          same schedule, not recorded. Nothing here reads, or stands in for, anyone’s
+          heart.
+        </Callout>
+
+        <Sub>Rhythms and murmurs</Sub>
+        <p>
+          The <Ui>Rhythms and murmurs</Ui> button opens nineteen textbook patterns, in
+          five groups: sinus rates; the conduction blocks, from first degree to
+          complete; atrial fibrillation and flutter; ventricular rhythms, down to
+          fibrillation and asystole; and the valve murmurs and extra heart sounds. Each
+          changes the movement, the ECG and the sounds together, so a Wenckebach
+          sequence can be watched lengthening on the trace and in the heart at once.
+          The murmurs are sound first — aortic stenosis swelling between S1 and S2,
+          the rumble of mitral stenosis — and are clearest with headphones.
+        </p>
+
+        <Sub>The blood, in a glass body</Sub>
+        <p>
+          With the heart beating and the body turned to glass, the chambers glow with
+          the blood they hold — blue on the right, red on the left — and each
+          contraction sends a pulse of light out along the arteries, measured along
+          the vessels rather than across the body. The veins carry a slow glow back.
+          The pulmonary arteries are blue and the pulmonary veins red, because that is
+          the blood in them. The pulse is slowed to be seen: a real one crosses the
+          body in about a fifth of a second. When a rhythm pumps nothing, there is no
+          pulse and the veins go dark.
+        </p>
+        <p>
+          Light that pulses fast can trigger seizures in people with photosensitive
+          epilepsy, so whenever a rhythm would make it flash more than two and a half
+          times a second — flutter, ventricular tachycardia, fibrillation — the light
+          holds steady and only the heart keeps moving. It is always steady if your
+          system asks for reduced motion.
+        </p>
+
+        <Sub>With the breathing on</Sub>
+        <p>
+          Switch on <Ui>Breathing</Ui> as well and the heart follows the breath: a
+          little faster as each breath comes in, a little slower as it goes out. That
+          is respiratory sinus arrhythmia — normal, largest in the young, and largest
+          of all with slow deep breaths, which is why <Ui>Deep</Ui> shows it best. The
+          ECG sweeps in real seconds, so the gaps between beats can be watched closing
+          and opening. Only a heart paced by its sinus node does this: in atrial
+          fibrillation, flutter, complete block or a ventricular rhythm the breath
+          does not reach the ventricles, and the panel says so.
+        </p>
+
+        <Sub>Asking about it</Sub>
+        <p>
+          While the heart beats, the assistant is told which pattern is playing, so{" "}
+          <em>“what is this, and how does it happen?”</em> is a question about it. It
+          can also set a rhythm itself: ask it to explain or compare Mobitz I and II,
+          or what aortic stenosis sounds like, and it plays each while it explains.
+        </p>
+      </>
+    ),
+  },
+  {
+    id: "breathing",
+    nav: "Breathing",
+    title: "Watching the body breathe",
+    body: (
+      <>
+        <p>
+          <Ui>Breathing</Ui>, under the heartbeat, makes the body breathe — quietly,
+          twelve breaths a minute, or <Ui>Deep</Ui> at six. The panel says at every
+          moment which half of the breath it is and what is doing it: breathing in is
+          the diaphragm’s work; breathing out at rest needs no muscle at all, because
+          the lungs and the chest wall spring back.
+        </p>
+        <p>
+          Each part moves as it does in a body, not as a chest that swells. The dome
+          of the diaphragm descends while its rim on the ribs stays; the lungs move
+          with the ribs and lengthen downwards over the dome; the ribs and sternum
+          swing up and forward, most at the front; the liver, kidneys and spleen are
+          pushed down, and the belly wall moves out to make room. The vessels go with
+          what they lie in — those inside the lung with the lung, those along the ribs
+          with the ribs, those inside the liver or a kidney with the organ, stretching
+          from the aorta, which stays still. Switched off, the breath is allowed to
+          finish going out before the body stops.
+        </p>
+        <Callout>
+          <strong>It is an illustration of a breath, not a model of one.</strong> The
+          right parts move the right way by about the right amount, on one
+          representative body; it is not a simulation of respiratory mechanics, and
+          nothing here reads, or stands in for, anyone’s breathing.
+        </Callout>
+        <p>
+          While the body breathes, the assistant is told so, and with the heart beating
+          too it is told what the breath is doing to it — so{" "}
+          <em>“why does the heart rate keep changing?”</em> is a question it can answer
+          about what is on the screen.
+        </p>
+      </>
+    ),
+  },
+  {
+    id: "choosing",
+    nav: "Choosing structures",
+    title: "Selecting, isolating, dissecting",
+    body: (
+      <>
+        <Rows
+          rows={[
+            ["Click", "Select one structure"],
+            ["Ctrl+click", "Add it to the selection, or take it out again"],
+            ["Double-click", "Open that structure with everything inside it"],
+            ["Right-click", "Choose which level to isolate"],
+          ]}
+        />
+        <p>
+          Ctrl+click is what makes comparison possible: pick four muscles, then ask the
+          assistant how they differ. The same gesture removes one added by mistake.
+        </p>
+        <Callout>
+          <strong>Ctrl+drag draws round a whole region.</strong> Hold Ctrl and trace a
+          loop — freehand, not a box, because a rectangle round a skull takes the
+          collarbones with it. Everything whose centre falls inside joins the
+          selection, including what is behind. Then <Ui>I</Ui> isolates it. Picking out
+          the bones of the head one click at a time is forty clicks; the tree cannot
+          help, because the grouping you want there is spatial and the tree is
+          taxonomic.
+        </Callout>
+        <Callout>
+          <strong>Right-click is worth knowing about.</strong> The atlas has no single
+          mesh called “Heart” — the heart is a collection of seventeen parts, so
+          clicking a chamber can only ever select that chamber. Right-clicking offers
+          the ancestry instead: the chamber, then the heart, then the whole
+          cardiovascular system, each with the number of structures it would show.
+        </Callout>
+        <Callout>
+          <strong>An organ is studied with its supply, or it is not studied.</strong>{" "}
+          The atlas files structures by system, so isolating the heart brings its
+          chambers and valves and leaves the coronary arteries behind under{" "}
+          <em>Systemic arteries</em> — a different branch entirely. While anything is
+          isolated, <Ui>+ vessels</Ui> folds in the arteries and veins that reach it,
+          and <Ui>+ nerves</Ui> does the same for its innervation. Both switch the
+          system on for you if it was off.
+          <br />
+          <br />
+          It works on whatever you are studying, not on a list of important organs:
+          the heart with its coronaries, the brain with the circle of Willis, one
+          muscle with the nerve that moves it. What comes in is what physically
+          reaches the structure, so a vessel that only passes close by will arrive
+          too — drop it with its <Ui>✕</Ui> and the rest stays.
+        </Callout>
+        <p>
+          While structures are isolated, the panel at the top lists every part in the
+          set. Click one to fly to it, hover to highlight it on the model, or press its
+          <Ui> ✕</Ui> to drop it — which is how you take the seventeen parts of the
+          heart and keep the four you are actually revising.
+        </p>
+        <p>
+          Drag that panel by its header to wherever it suits you; it stays there next
+          time. Double-click the header to put it back.
+        </p>
+        <p>
+          With a selection made, the bar at the bottom of the viewport offers two
+          verbs. <Ui>Isolate</Ui> shows only what you picked. <Ui>Hide</Ui> takes it
+          out of the way — the dissection move, peeling off what covers the thing you
+          actually want to see. They combine: hide the deltoid, then isolate what was
+          underneath.
+        </p>
+        <p>
+          <strong>The third verb is to take the group apart.</strong> Press <Ui>X</Ui>
+          and the parts move outwards away from their own shared centre — far enough
+          apart to see the faces that are normally pressed together. It acts on what you
+          have selected, or on what you are studying, or on the whole body when neither
+          applies; the bar that appears over the viewport always says which.
+        </p>
+        <p>
+          That bar carries a slider, and so does the panel. The key steps through four
+          fixed amounts, which is what you want for knocking a group open and shut; the
+          slider is for the times when one particular separation is the one that shows
+          the relationship, and you want to find it while watching the model rather than
+          the control.
+        </p>
+        <Callout>
+          Nothing is hidden and nothing is rearranged. Every part moves straight out
+          along the line it already stood on, by the same proportion, so what was medial
+          stays medial and you never lose track of which piece is which. Slide back to
+          zero — or press <Ui>Reassemble</Ui> — and the anatomy is exactly as it was.
+          The one thing it cannot do is separate structures that share a centre, such as
+          the tunics of the eyeball: there is no direction to move them in, and that is
+          what transparency is for.
+        </Callout>
+      </>
+    ),
+  },
+  {
+    id: "assistant",
+    nav: "The assistant",
+    title: "Asking, and being shown",
+    body: (
+      <>
+        <p>
+          The assistant needs a key from an AI provider — Anthropic, OpenAI or Google.
+          Open <Ui>Settings</Ui> in the assistant panel, paste one, and the app will
+          fetch the models that key can use. That same call is what proves the key
+          works, so there is no separate test to run. If you would rather talk to a
+          model on your own computer, with no key, see <em>Local model</em> below. It
+          can talk, but it cannot do what this section describes.
+        </p>
+        <Callout>
+          Your key is stored in your operating system's credential manager and is never
+          visible to the app's interface. It is read only when a question is on its way
+          out.
+        </Callout>
+        <Callout>
+          <strong>The model you pick sets the quality of the answers.</strong> This is
+          worth being blunt about, because it is the easiest thing to get wrong about
+          the app. Anatria3D supplies the anatomy, the tools that move the model, and
+          the rules the assistant works under — the <em>reasoning</em> is the model's,
+          and nothing here can improve it.
+          <br />
+          <br />
+          A small, fast, cheap model gives shallower explanations, misses the
+          connections between systems, and is likelier to mark the wrong structure
+          while naming the right one. A strong model on the same question is a
+          different experience entirely. If the assistant seems thin, try a better
+          model before concluding the atlas is thin — and see <Ui>Usage</Ui> for what
+          that costs.
+        </Callout>
+        <p>
+          Set your <Ui>profile</Ui> before asking. The same structure is explained
+          three different ways: everyday language for a layperson, terminology and
+          mechanism for a student, clinical density for a professional.
+        </p>
+        <p>
+          Then set the answer language. <Ui>BG</Ui>, <Ui>ES</Ui> and <Ui>EN</Ui> fix
+          it: every answer comes back in that language whatever you type, with the
+          Latin kept alongside so the term still travels to other sources.
+        </p>
+        <Callout>
+          <strong><Ui>Auto</Ui> answers in the language you write in.</strong> Ask in
+          Turkish and the answer is in Turkish; ask in Polish and it is in Polish. It
+          settles on your language from your first real question and stays there for
+          the rest of the conversation, so a follow-up of "and the artery?" does not
+          throw it off.
+          <br />
+          <br />
+          Three fixed buttons cannot list every reader, and the one they leave out is
+          exactly the one who cannot read the buttons. <Ui>Auto</Ui> is that reader's
+          setting. It is not the default, though, because a fixed choice is the
+          stronger promise: if you set Bulgarian and then type one question in English
+          out of habit, Bulgarian is what you wanted and Bulgarian is what you get.
+          <br />
+          <br />
+          Typing an anatomical term in Latin never switches the language under either
+          setting. <em>Arteria femoralis</em> is the atlas's nomenclature, not a
+          request.
+        </Callout>
+        <p>
+          Structure names in an answer carry a small numbered pin. Hover one to
+          highlight that structure in the viewport; click it to fly there. The full set
+          appears as a legend under the answer.
+        </p>
+        <p>
+          Under each answer, in small grey type, is the model that produced it and what
+          it cost in tokens. It is there so two answers can be compared honestly —
+          which is impossible if you cannot see that one came from a cheap model and
+          the other did not.
+        </p>
+        <p>
+          Where a provider served part of the question from its own cache, that reads{" "}
+          <em>16.1k of 418.9k tokens</em>: what was charged first, and the figure your
+          provider&apos;s dashboard will show second. The large number grows with how
+          much the assistant <em>did</em> rather than with what you asked — a question
+          answered with thirty scene commands re-sends the same context thirty times,
+          which is exactly what a provider caches. Hover it for the breakdown.
+        </p>
+        <p>
+          An answer that moved the model carries <Ui>Restore this view</Ui> beside{" "}
+          <Ui>Copy answer</Ui>. One question can isolate a region, take the body to
+          glass and light ten structures; five minutes of turning the model round
+          later, the arrangement those paragraphs describe is gone. That button puts
+          it back. Answers that moved nothing do not show it.
+        </p>
+        <p>
+          While an answer is being written, a plane of light sweeps the body and names
+          what it passes. It is the <Ui>Scanner</Ui> described under{" "}
+          <em>Moving around</em>, and the checkbox under that switch turns it off for
+          a machine that would rather not.
+        </p>
+        <p>
+          Your provider, model, profile and language are remembered. Set them once; the
+          next launch opens on them.
+        </p>
+        <p>
+          <Ui>New</Ui> at the top of the panel puts the conversation away and starts a
+          clean one. Nothing is lost — every exchange is already filed in{" "}
+          <Ui>Study</Ui> and can be reopened. It sits at the top, well away from{" "}
+          <Ui>Send</Ui>, on purpose.
+        </p>
+        <p>
+          The names on the model are always in Terminologia Anatomica Latin. That is
+          the profession's nomenclature and it does not change by country — translating
+          it for your level and language is the assistant's job, done per question.
+        </p>
+      </>
+    ),
+  },
+  {
+    id: "local",
+    nav: "Local model",
+    title: "A model on your own computer",
+    body: (
+      <>
+        <p>
+          <Ui>Local</Ui>, beside <Ui>Tutor</Ui> and <Ui>Case drill</Ui>, opens a
+          conversation with a model running on your own machine. It needs no key and
+          no account, costs nothing per question, and nothing you write leaves the
+          computer. <Ui>← Tutor</Ui> takes you back, and the tutor's conversation is
+          where you left it.
+        </p>
+        <Callout>
+          <strong>It is a conversation, not the assistant.</strong> Think of it as
+          someone to talk anatomy over, who has read a lot and remembers it imperfectly.
+          Everything that makes the assistant teach from the model — moving the camera,
+          isolating, cutting sections, marking a disease state, the heart and the
+          breath, case drills, the journal — belongs to the assistant in{" "}
+          <Ui>Tutor</Ui>.
+        </Callout>
+
+        <Sub>What you need first</Sub>
+        <p>
+          Anatria3D does not include a model and will not download one. The models run
+          in <strong>Ollama</strong>, a free program from another project that you
+          install yourself.
+        </p>
+        <Rows
+          rows={[
+            ["1. Install Ollama", "From ollama.com, for your system. It keeps running in the background and needs no account for this."],
+            ["2. Download a model", "In a terminal, for example: ollama pull gemma3:4b. This is the one download, from Ollama and not from us. After it, no internet is needed."],
+            ["3. Press Check", "Open Local and press Check. The models you have downloaded appear in the list at the top, and the last one you used is remembered."],
+          ]}
+        />
+        <Callout>
+          <strong>The model runs on your hardware, so your hardware sets the limit.</strong>{" "}
+          The size shown beside each model is its download, and it needs at least that
+          much free memory while it runs, on top of what the atlas uses. A graphics card
+          makes it much quicker; without one a model still works, more slowly. The first
+          question takes longest, because the model has to load.
+        </Callout>
+        <p>
+          Three models have been put through the same set of traps.{" "}
+          <Ui>qwen3.5:9b</Ui> (about 6.6 GB) kept to the rules best and is the one to
+          prefer. <Ui>llama3.1:8b</Ui> (about 4.9 GB) kept to them too, but writes the
+          poorest Bulgarian. <Ui>gemma3:4b</Ui> (about 3.3 GB) is the lightest and,
+          left to answer on its own, broke them most often. Any other chat model Ollama
+          has will appear in the list too, but it has not been tried. Models that
+          cannot hold a conversation, such as embedding models, are left out.
+        </p>
+
+        <Sub>What it cannot do</Sub>
+        <Rows
+          rows={[
+            ["Move the atlas", "It has no tools. Whatever it says, nothing on screen changes unless you press a button yourself. If it claims to have shown you something, it has not."],
+            ["Be kept", "Local conversations are not saved to your journal. New clears the conversation, and closing the app ends it."],
+            ["See the scene", "It knows what you have selected, so “this” works, and it is told your profile and which body is open. It does not know what else is on screen, the scanner, or the heart and breath."],
+            ["Count towards Usage", "It costs no tokens from a provider, so it does not appear in Usage."],
+            ["Remember a very long talk", "The oldest messages are dropped to keep the rules in reach. If Ollama ever drops the start of the conversation itself, the answer is not shown and you are asked to start a new one."],
+            ["Use Ollama's cloud", "Ollama also offers models that run on its servers. They are not listed here and are refused, because this screen promises that nothing leaves your computer. Only models you have downloaded can be used."],
+          ]}
+        />
+
+        <Sub>Show in the atlas</Sub>
+        <p>
+          When an answer names a structure by its exact Terminologia Anatomica Latin
+          name, and the atlas has that structure on a system you have switched on, a
+          button appears under the answer. Pressing it isolates the structure and flies
+          to it. Nothing happens until you press.
+        </p>
+        <Callout>
+          The Latin has to be exact, so a name the model got wrong or invented offers no
+          button. That keeps the button from pointing at the wrong structure. It says
+          nothing about the sentence around it: a button means the name is real, not
+          that what was said about it is true. A structure named only in Spanish or
+          Bulgarian offers no button either.
+        </Callout>
+
+        <Sub>The language of the answer</Sub>
+        <p>
+          The <Ui>BG</Ui>, <Ui>ES</Ui>, <Ui>EN</Ui> and <Ui>Auto</Ui> buttons do not
+          apply here. A local model answers in the language you ask in, so you can ask
+          in Bulgarian with the rest of the app in Spanish, and change language in the
+          middle of a conversation. A message that is only a Latin term, or too short to
+          tell, such as "ok", stays in the language you were using.
+        </p>
+        <Callout>
+          <strong>If it is not one of the languages it can be trusted with, it answers
+          in English and says so.</strong> A small model will happily write a language
+          it knows badly, fluently and wrongly, and it cannot tell that it is doing so.
+          So the list is fixed in the application: the main European and Asian
+          languages, with Arabic, Hebrew and Persian. A language being on it means the
+          model will write it, not that it will be right in it. Languages close to each
+          other are sometimes mistaken for one another, those written in Cyrillic above
+          all.
+        </Callout>
+
+        <Sub>How far to trust it</Sub>
+        <Callout>
+          <strong>Local models make more mistakes than the large ones.</strong> They
+          state wrong anatomy with the same confidence as right anatomy. In testing that
+          meant wrong structures, invented Latin and a ventricle pumping into the wrong
+          artery, in Bulgarian and Japanese among others. Use it to think aloud. Check
+          anything that matters against the atlas, or ask the assistant.
+        </Callout>
+        <Callout>
+          <strong>A question about a real person gets a fixed notice, not an
+          answer.</strong> Told the rules as plainly as they can be told, small models
+          still broke them: one worked out a dose for a child, one called the worst
+          headache of someone's life muscle tension, and all of them invented helpline
+          numbers. So before answering, the model is asked one thing only: is this about
+          the health of a real person, how much of a medicine to take, or someone who
+          wants to hurt themselves? If it is, the model writes nothing. You get a notice
+          written in advance, marked <Ui>Anatria3D notice</Ui>, that sends you to a
+          professional and says when to call your emergency number. It carries no phone
+          number, because the right one depends on where you are.
+        </Callout>
+        <Callout>
+          <strong>That check is made by the same small model, so it is not a
+          guarantee.</strong> In testing it stopped 133 of 135 such messages across three
+          models and three languages, and none of the study questions. What gets past it
+          meets the same rules the assistant has, kept less well: of the two that did,
+          one still named a medicine. It is a model on your computer, not a safeguard.
+          Never use it to decide anything about a real person, yourself included. If you
+          have symptoms, see a qualified professional, and in an emergency call your
+          emergency number.
+        </Callout>
+        <p>
+          If it stops something you meant as study, ask it in general terms, about no one
+          in particular. Disease mechanisms, how a drug works and differential lists are
+          all fine.
+        </p>
+      </>
+    ),
+  },
+  {
+    id: "cases",
+    nav: "Case drills",
+    title: "Practising instead of reading",
+    body: (
+      <>
+        <p>
+          Switch the assistant from <Ui>Tutor</Ui> to <Ui>Case drill</Ui> and it stops
+          answering questions and starts asking them. You get a patient, the relevant
+          anatomy marked on the model, and one question: what is happening, and what
+          would you do first?
+        </p>
+        <p>
+          Then it stops. It will not solve the case for you — that is the entire point.
+          Answer in your own words, and it grades what you wrote out of 100: what you
+          got right, what you missed, and the reasoning it was looking for. The score
+          goes into your journal, so the average across your drills means something.
+          It is feedback for your own study, written by an AI model — not a formal
+          assessment, and not meant to grade anyone for a course or a job.
+        </p>
+        <Callout>
+          <strong>The patient is invented.</strong> Every scenario is constructed for
+          teaching and says so in its opening line. If you describe someone real, the
+          drill ends and the assistant goes back to the rules above.
+        </Callout>
+        <p>
+          A drill on its own is one question and one answer. If you want a patient you
+          can follow — several visits, a presentation that develops, a record that
+          remembers — that is the next section.
+        </p>
+      </>
+    ),
+  },
+  {
+    id: "patients",
+    nav: "Virtual patients",
+    title: "A case you can follow across visits",
+    body: (
+      <>
+        <p>
+          A single drill is over when you answer it. A <em>virtual patient</em> is a case
+          you come back to: you write it, mark what it reports on the body, and work
+          through it over several visits. What you learned at visit 2 is still on the
+          file at visit 7, and the assistant reasons from the whole course rather than
+          from the last thing you typed.
+        </p>
+        <Callout>
+          <strong>Nobody here is real.</strong> There is no name field and nothing asks
+          who the patient is — you invent the case yourself, for teaching. It is not a
+          digital twin either: a twin is a model of a real person kept in step with data
+          from them, and nothing here is connected to anyone or ever will be. The
+          boundary in the first section applies to every word of it, so never write a
+          real person's details into a case. That is not what this is for, the
+          assistant will stop when it notices — and the whole file is sent to your AI
+          provider with every turn of the drill, so a real person's health details
+          would leave your machine.
+        </Callout>
+
+        <Sub>Opening one</Sub>
+        <p>
+          In <Ui>Case drill</Ui> mode, the bar under the header is where the patient
+          lives. <Ui>New patient</Ui> opens the composer. You give it a title, a sex, and
+          whichever of age, height and weight matter to the case — then two pieces of
+          writing that do very different jobs.
+        </p>
+        <Rows
+          rows={[
+            [
+              "On the record",
+              "Vitals, history, what the results said. You are told this from the start — a case with no findings cannot be reasoned about.",
+            ],
+            [
+              "The answer",
+              "What it actually turns out to be. Sealed the moment you press Seal and open.",
+            ],
+          ]}
+        />
+        <Callout>
+          <strong>The answer is written before anything has been attempted, and there
+          is no way to edit it afterwards.</strong> That is the whole discipline. An
+          answer decided once you have your reasoning in hand grades nothing — in the
+          same way a prediction recorded only on the occasions it turned out right
+          proves nothing. There is no button that changes it, and there is no column to
+          change it through.
+        </Callout>
+        <Callout>
+          <strong>Sex drives the reasoning; the body on screen does not follow
+          it.</strong> The patient's sex is a field on the case file, and changing it
+          does not change the atlas — that is the <em>Body</em> switch, and you set it
+          yourself. For a case that turns on the female pelvis, switch the body over
+          as well; for anything above it, the male atlas is what there is. The
+          assistant reasons from the sex on the file either way.
+        </Callout>
+
+        <Sub>Marking what the patient reports</Sub>
+        <p>
+          Right-click any structure with a patient open and choose{" "}
+          <Ui>Mark a complaint here</Ui>. Write what they report and how bad it is, from
+          0 to {MAX_SEVERITY}. The region lights up on the body and stays lit for the
+          whole case.
+        </p>
+        <Callout>
+          <strong>Mark it where it is felt, not where you think the cause is.</strong>{" "}
+          Nothing here quietly relocates a complaint to the organ it suggests, and that
+          is deliberate: pain down the left arm belonging to a heart is exactly the
+          reasoning a case exists to teach, and filing it under the heart would delete
+          the exercise before it started. The assistant is told the same thing, in the
+          same words.
+        </Callout>
+        <p>
+          The marks are the patient's, not the assistant's. Nothing it does to the
+          model while explaining — clearing overlays, isolating, cutting a section —
+          can erase them. Click a complaint in the patient record to fly to where it
+          was marked; press <Ui>✕</Ui> beside it in the right-click menu to remove one.
+        </p>
+
+        <Sub>The record keeps learning</Sub>
+        <p>
+          Cases develop. A weight comes down, a pressure does not, imaging comes back.{" "}
+          <Ui>+ Add to the record</Ui> in the patient record writes what is known now,
+          and the journal stamps it with the visit you are on.
+        </p>
+        <Callout>
+          <strong>Entries are added, never edited.</strong> What you had been told going
+          into visit 3 is part of what your answer at visit 3 should be judged against,
+          so the record only ever grows — the same reasoning the sealed answer rests on.
+          Where a later entry contradicts an earlier one, the assistant is required to
+          say what changed rather than quietly using the newer number. That ordering is
+          the clinical content: a figure that moved across four visits is a different
+          case from one that was always there.
+        </Callout>
+
+        <Sub>Visits</Sub>
+        <p>
+          Every conversation you have with a patient open is filed as a visit, numbered
+          in order. A patient holds {MAX_VISITS}; after that the case is marked complete
+          and can only be read and printed, not continued.
+        </p>
+        <Callout>
+          <strong>Starting a new visit is also how you keep the cost down.</strong> Each
+          question re-sends the whole conversation, so a long visit gets expensive —
+          the notice above the box says so once it is true. A new visit drops the
+          transcript and keeps the record, because the record is read from the journal
+          and costs nothing to carry. You lose the wording of what was said; you lose
+          none of the case.
+        </Callout>
+        <p>
+          In the <Ui>Study</Ui> tab, every session that belongs to a patient is badged
+          with which one and which visit, and <Ui>Virtual patients</Ui> lists them
+          above. Click a patient there to narrow the whole journal to their visits —
+          the search box and the structure filter still work inside it, so “what did we
+          cover about the aorta with this patient” is one question. Click a visit in
+          the patient record to reopen it with the structures it was about.
+        </p>
+
+        <Sub>Reading the case back</Sub>
+        <p>
+          <Ui>Review this case</Ui> starts a separate conversation whose only subject is
+          the file: what was presented, what has been reasoned, and where the gaps are.
+          It is not a drill — it asks you nothing and grades nothing — and it writes
+          nothing into the record.
+        </p>
+        <Callout>
+          <strong>While any visit is ungraded, the answer stays sealed — and so do the
+          verdicts.</strong> Not by asking the assistant to keep quiet: the sealed answer
+          is simply never sent, so a summary physically cannot contain it. Grade every
+          visit and a review is given both, because a written verdict already contains
+          the reasoning you should have reached and withholding the answer at that point
+          protects nothing.
+        </Callout>
+        <Callout>
+          <strong>And you can always open it yourself.</strong>{" "}
+          <Ui>Reveal the sealed answer</Ui> in the patient record shows what you wrote
+          when the case was opened. It asks first, because that is the only thing the
+          seal was ever for — not keeping you from your own writing, but stopping you
+          tripping over it while a question is still in front of you.
+          <br />
+          <br />
+          It is recorded rather than remembered: from then on the case reads as opened,
+          and a review of it may use the answer and the verdicts. That is deliberate —
+          a summary that included the answer today and withheld it tomorrow would be
+          worse than either. Nothing is deleted, and the answer itself still cannot be
+          edited by anything.
+        </Callout>
+        <p>
+          A review reads past visits as their grades and verdicts, <em>not</em> as their
+          transcripts — reopen a visit to read what was actually said. The panel tells
+          you before you spend a question what it will and will not have, so a thin
+          summary is never a mystery.
+        </p>
+
+        <Sub>Printing, deleting, carrying it</Sub>
+        <p>
+          <Ui>⎙</Ui> on a patient prints the whole case history: the parameters, the
+          findings, everything added to the record in visit order, every complaint, and
+          every visit with its transcript and its grade. <strong>The sealed answer is on
+          that page</strong>, under its own heading at the foot, so nobody hands the
+          sheet to a student without passing it on the way down.
+        </p>
+        <Callout>
+          <strong>Deleting a patient is not symmetrical, and the confirmation says
+          so.</strong> The case goes, the complaints go, and the sealed answer goes with
+          it — but the visits stay in your journal as ordinary sessions, with their
+          transcripts and their scores. Your own work is never destroyed to tidy up a
+          case. It cannot be undone.
+        </Callout>
+        <p>
+          <Ui>Leave</Ui> beside the patient chip only stops filing new drills against
+          them. Nothing is deleted, and you can pick them up again from the same list.
+          Patients travel in the journal export like everything else — see the next
+          section.
+        </p>
+      </>
+    ),
+  },
+  {
+    id: "journal",
+    nav: "Your journal",
+    title: "What you write down, and what you have done",
+    body: (
+      <>
+        <p>
+          The <Ui>Study</Ui> tab on the left is yours. Conversations are filed there
+          automatically as you have them — you never have to remember to save one — and
+          each is indexed by the structures that were selected when you asked. That is
+          what makes <em>“what have I already studied about the left ventricle?”</em> a
+          question with an answer.
+        </p>
+        <p>
+          Add a note at any time; if a structure is selected, the note is filed under
+          it. Any answer from the assistant can be kept with <Ui>Save as note</Ui>.
+          Press <Ui>⌕</Ui> on a note to narrow everything to that structure, and the
+          search box still works inside that — so “aorta” plus “dissection” is one
+          question, not two.
+        </p>
+        <p>
+          Reopening a session brings back its transcript and the structures it was
+          about — and <Ui>Restore this view</Ui> still works on its answers, so a
+          conversation from a month ago can put the model back the way it left it
+          rather than only describe it. All of it lives in a local file; nothing is
+          uploaded anywhere.
+        </p>
+        <p>
+          Because it is local, it is yours to carry. <Ui>Export</Ui> writes the whole
+          journal to one file — sessions, notes, and every virtual patient with its
+          complaints, its record and its sealed answer. <Ui>Import</Ui> on another
+          machine folds it back in. Importing <em>merges</em> — it adds to what is
+          already there, never overwrites a note you edited more recently, and doing it
+          twice does nothing the second time.
+        </p>
+        <Callout>
+          <strong>A case is sealed, so a restore only ever adds one back, never
+          rewrites one.</strong> If a patient is already here, the copy on this machine
+          is the one your grades were judged against and it wins. If you deleted one,
+          restoring brings back the case, its complaints and its record, and re-attaches
+          the visits that were left behind as ordinary sessions — a visit that already
+          belongs to a patient is never moved to another.
+        </Callout>
+        <Callout>
+          <strong>And you can see your revision on the body itself.</strong> Switch on{" "}
+          <Ui>Show what I have studied</Ui> in the left panel and the model is
+          coloured by your own journal: everything you have written about or worked
+          through lights up, and everything you have not stays grey. Forty notes on
+          the thorax and nothing on the pelvis is invisible in a list. It is
+          impossible to miss as a shape on a body.
+          <br />
+          <br />
+          The scale is relative to your own journal — the brightest is whatever you
+          have worked on most, not some standard — so it answers "where have I been",
+          not "how much is enough".
+        </Callout>
+        <p>
+          <strong>It also comes out on paper.</strong> <Ui>⎙</Ui> on a session prints
+          that conversation with the structures it covered and, for a case drill, the
+          score and how it went. <Ui>⎙ print</Ui> above the notes prints the notes you
+          are looking at — narrowed to one structure if you have narrowed them, and
+          filtered by your search if you have searched. What is on screen is what comes
+          out.
+        </p>
+        <Callout>
+          A preview opens first, so you can see the page before anything is printed.
+          From there your own print dialog can send it to a printer or save it as a
+          PDF. Nothing is generated for the occasion and nothing is sent anywhere — a
+          printed page is a record of work you already did, so the same journal always
+          produces the same page. The compliance notice sits at the foot of{" "}
+          <em>every</em> page, in your language and in English, because pages get
+          separated from each other.
+        </Callout>
+      </>
+    ),
+  },
+  {
+    id: "memory",
+    nav: "Study memory",
+    title: "Your journal, as a map of memories",
+    body: (
+      <>
+        <p>
+          <Ui>MEMORY</Ui>, at the top of the window, opens your journal as a
+          hologram: a brain with every study session, case visit and note laid on it
+          as a point of light — cyan, amber and violet — joined by a thread in the
+          order you made them, from the back of the brain forwards. It is the same
+          journal as the <Ui>Study</Ui> tab, seen as one sequence instead of a list.
+        </p>
+        <p>
+          Point at a memory to see what it is; click it to read it on the right, and{" "}
+          <Ui>⤢</Ui> to read it large. Drag to turn the brain. The strip along the
+          bottom is every memory in order, and <Ui>Memory index</Ui> opens the counts,
+          the months and the most recent. <Ui>←</Ui> and <Ui>→</Ui> walk from one
+          memory to the next, <Ui>Enter</Ui> reads the open one large, and{" "}
+          <Ui>Esc</Ui> steps back one thing at a time, and then leaves. <Ui>?</Ui>, in
+          the top corner or on the keyboard, lists every control on the screen itself.
+        </p>
+
+        <Sub>The figure beside it</Sub>
+        <p>
+          The body standing on its own projector lights, in amber, the structures the
+          open memory was about — the ones that were selected, and the ones the
+          assistant pointed to in its answers — and names them underneath. Point at a
+          name to see that structure alone, the others dimmed; click it to keep it
+          that way, and click it again to see them all. <Ui>More</Ui> unfolds the
+          rest of the list when it is longer than the screen has room for, and{" "}
+          <Ui>Zoom in</Ui> moves the figure in on the chosen structure — or on all of
+          them, if none is chosen — for the small ones. Up close the figure stops
+          turning by itself, so it holds still while you look; drag it to turn it,
+          and <Ui>Whole body</Ui> steps back. It is a
+          figure to look at: nothing you do here changes the atlas, and the atlas
+          waits, paused, until you leave.
+        </p>
+
+        <Sub>Erasing a memory</Sub>
+        <p>
+          Hold <Ui>Hold to erase</Ui> until the bar fills. The memory dissolves, and
+          for eight seconds <Ui>Restore</Ui> brings it back. After that it is deleted
+          from your journal for good — the same delete as in the <Ui>Study</Ui> tab.
+          Leaving the screen while one is counting down completes it.
+        </p>
+
+        <Sub>Reading comfortably</Sub>
+        <p>
+          <Ui>Focus</Ui> takes away the film texture that moves over the picture,
+          sets the panels flat and the text sharp, and leaves the hologram and all
+          its movement as they are. <Ui>Sound</Ui> turns off the tones that answer
+          what you do. Both are remembered.
+        </p>
+        <Callout>
+          <strong>It only reads what is already on this computer.</strong> Nothing
+          is sent anywhere. If the graphics card is slow to start it, has no
+          acceleration, or resets, the screen says so; on a machine that cannot keep
+          up it eases its own effects rather than stutter, and tells you. With no 3D
+          at all, the index and the reader still work.
+        </Callout>
+
+        <Sub>If the screen blinks</Sub>
+        <p>
+          Some monitors with a variable refresh rate (FreeSync, G-SYNC, “variable
+          refresh rate” in Windows) blink for an instant when a window’s frame rate
+          dips, and a dark screen with a bright hologram shows it most. Turning off
+          variable refresh for windowed apps — in Windows’ graphics settings or the
+          monitor’s own menu — cures it. <Ui>Stable display</Ui> in Settings is a
+          second remedy for other combinations of card and driver: it draws the
+          window by a slower, steadier route from the next launch, so leave it off
+          unless you see the blink.
+        </p>
+      </>
+    ),
+  },
+  {
+    id: "usage",
+    nav: "What it costs",
+    title: "Tokens, and where they went",
+    body: (
+      <>
+        <p>
+          Anatria3D is free and always will be. The <em>assistant</em> is not: it runs
+          on your own API key, and every answer is billed to you by your provider.
+          Nobody should have to find that out from a statement at the end of the month.
+          A <em>Local model</em> is the exception: it runs on your own machine, costs
+          nothing per question, and does not appear here.
+        </p>
+        <p>
+          The <Ui>Usage</Ui> tab on the left is the whole picture. <Ui>Daily</Ui> covers
+          the last fortnight, <Ui>Weekly</Ui> the last twelve weeks, <Ui>Monthly</Ui>{" "}
+          the last year. Each shows the total, the trend, and how the spend divides
+          between the models you have used.
+        </p>
+        <Callout>
+          <strong>That last part is the one to look at.</strong> Answer quality and
+          answer cost are the same dial, and this is where you can see both ends of it
+          — a strong model beside a cheap one, with what each actually cost you and how
+          many questions it answered. That is a decision you can make; "the assistant
+          feels expensive" is not.
+        </Callout>
+        <p>
+          It counts tokens and not money, deliberately. Rates change without notice and
+          differ by tier, by region and by whether a request hit a cache, so any figure
+          in euros here would be quietly wrong for somebody within the month. Being
+          silent about your bill is better than being confidently wrong about it — your
+          provider's own dashboard is the authority.
+        </p>
+        <Callout>
+          <strong>What makes a question expensive is the conversation, not the
+          anatomy.</strong>{" "}
+          The assistant is told what is loaded so it can only ever name structures
+          that exist, but that description is a summary and a search tool rather
+          than a list — the whole atlas, all three and a half thousand structures,
+          costs about the same to describe as a single one. Switching off systems
+          you are not studying still makes the model clearer to read; it no longer
+          makes the answers meaningfully cheaper.
+          <br />
+          <br />
+          What does grow is the transcript. Every question re-sends the whole
+          conversation, so the tenth question in a session costs several times the
+          first. Starting a fresh session is the way to put that back — and the
+          notice above the message box tells you when it is worth doing.
+        </Callout>
+        <p>
+          Providers charge less for context they recognise from a moment ago, and a
+          long conversation is exactly what they recognise. Where a provider says
+          how much of a question it served from its own cache, the{" "}
+          <Ui>Usage</Ui> tab reports it and the notice above the message box says so
+          too — a turn that looks alarming is often mostly re-read rather than
+          re-charged. Turns taken before this app recorded that figure are left
+          uncounted rather than guessed at, so the saving shown can only ever be an
+          understatement.
+        </p>
+        <p>
+          The record is local, like everything else, and it is a ledger rather than a
+          list you curate. Deleting a conversation from <Ui>Study</Ui> removes what was
+          said; it does not remove what it cost, because a total that shrank when you
+          tidied up would be a total you could never check against your provider.
+        </p>
+      </>
+    ),
+  },
+  {
+    id: "bridge",
+    nav: "Another agent",
+    title: "Letting a program you already pay for drive this one",
+    body: (
+      <>
+        <p>
+          The section above ends on a bill. This one is the other way round: if you
+          already pay for Claude Code, Codex or Gemini CLI, that agent can read this
+          atlas and move this window, and the reasoning is charged to the subscription
+          you already have rather than to an API key. What it buys you is narrower
+          than it sounds, and the next box says exactly how.
+        </p>
+        <p>
+          It works over the <em>Model Context Protocol</em>, which is how those
+          programs pick up tools. The conversation happens in their window; the
+          anatomy moves in this one. Anatria3D&apos;s own assistant is untouched and
+          keeps working the way it always did.
+        </p>
+        <Callout>
+          <strong>Reading costs you nothing to set up, and the server is already
+          here.</strong> It installs with Anatria3D — the panel names the file, under{" "}
+          <Ui>Writing your own client?</Ui> — so there is nothing to download. Point
+          an agent at it with a Python environment of its own and it can search
+          structures, read their Latin terms and walk the hierarchy with no
+          application running, no key and no network. Only <em>driving the
+          viewport</em> needs the steps below.
+        </Callout>
+        <Callout>
+          <strong>It moves the model and writes nothing down.</strong> Read this
+          before you choose between the two, because it is the whole difference. A
+          session driven from outside is never <em>filed</em> here: no saved
+          conversation, no note, no case, no coverage, nothing in <Ui>Usage</Ui>.
+          <br />
+          <br />
+          It can put words on your screen, and they are marked. An outside agent may
+          post a message into an <Ui>External messages</Ui> lane below the
+          conversation — every entry labelled <em>via the control bridge</em>, in its
+          own colour, never in the assistant&apos;s own bubbles. The last twenty are
+          kept, they vanish when you turn the switch off, and they are never saved to
+          your journal or sent to your AI provider. The labelling is the point: that
+          text was written by a program Anatria3D does not control and cannot hold to
+          its rules, so it must never be mistaken for the assistant.
+          <br />
+          <br />
+          Everything that makes this a place to study rather than a model to look at —
+          the journal, the case files, what you have covered and what you have not —
+          is built by the assistant in <em>this</em> window, on your own key. If you
+          are here to study, use the key. The bridge is for driving the atlas from an
+          agent you already have, and it is worth exactly that and no more.
+        </Callout>
+        <h3 className="pt-2 text-[13px] font-semibold text-slate-200">
+          Turning it on
+        </h3>
+        <p>
+          Open <Ui>Settings</Ui> in the assistant panel and scroll to{" "}
+          <Ui>Control bridge</Ui>. Press <Ui>Off</Ui> to turn it on. One line appears
+          with a <Ui>Copy</Ui> button. Paste it into the <Ui>env</Ui> block of the
+          other program&apos;s configuration — the file its own documentation calls{" "}
+          <Ui>mcpServers</Ui> — and restart it once.
+        </p>
+        <Callout>
+          <strong>That line never changes, so this is a once-only step.</strong> There
+          is nothing to copy again next week and nothing that quietly expires. The
+          other program finds this window by itself: the connection is named after
+          your own account, which it already knows.
+        </Callout>
+        <p>
+          For an agent that cannot be configured that way, open{" "}
+          <Ui>Writing your own client?</Ui> and press{" "}
+          <Ui>Copy instructions for an external agent</Ui>. It writes out everything
+          such a program needs — where the server is on this machine, and failing that
+          how to speak to the connection directly — and you paste it in as your first
+          message. It contains the connection&apos;s name, which identifies your
+          Windows account on this computer; that is worth knowing before you paste it
+          into a hosted model.
+        </p>
+        <Callout>
+          <strong>Off means off.</strong> Turning the switch off closes the
+          connection, so there is nothing left to connect to. Closing Anatria3D does
+          the same. Nothing reconnects on its own — the next time has to start with
+          you pressing this switch again.
+        </Callout>
+        <h3 className="pt-2 text-[13px] font-semibold text-slate-200">
+          How to tell it is on
+        </h3>
+        <p>
+          A <Ui>bridge</Ui> badge sits in the panel header next to <Ui>ready</Ui>, for
+          exactly as long as the bridge is running. It is there so you never have to
+          open a drawer to find out whether something outside this window is entitled
+          to move it — if the view changes and you did not do it, the badge tells you
+          whether that is possible.
+        </p>
+        <p>
+          The panel also counts what arrived: how many commands were accepted, and how
+          many were refused. A program that is connected but being ignored looks
+          exactly like one that never connected, and those two numbers are what tell
+          them apart.
+        </p>
+        <h3 className="pt-2 text-[13px] font-semibold text-slate-200">
+          What it can and cannot reach
+        </h3>
+        <p>
+          A connected agent gets the same fifteen tools this application&apos;s own
+          assistant has — isolating, lighting, ghosting a layer, cutting a section,
+          tracing a pathway — and one the assistant has no use for: posting a message
+          into the lane described above. That is the point of it: an agent working
+          from outside should be able to do what the one inside can do, not a reduced
+          version.
+        </p>
+        <Callout>
+          <strong>It cannot read what you have written.</strong> Your study journal,
+          your case files and your API keys are not reachable over the bridge — there
+          is no tool for any of them. What crosses is scene commands and nothing else,
+          and the connection admits only your own account on this computer.
+        </Callout>
+        <p>
+          One honest limit. The agent checks a structure against the atlas before
+          sending anything, so it cannot invent anatomy — but the atlas is not the
+          same thing as your screen. If you have the female trunk loaded, or have
+          switched a system off in the left panel, a command naming something real but
+          not currently loaded is accepted and simply does nothing. Nothing breaks; it
+          is just quiet.
+        </p>
+        <Callout>
+          <strong>The bridge itself never touches the network.</strong> It is a local
+          connection between two programs on this computer, so nothing leaves your
+          machine because you switched it on. What the <em>other</em> program does
+          with what it reads is between you and that program — an agent that sends
+          your questions to its own provider was already doing that before you
+          connected it here.
+        </Callout>
+        <p>
+          <strong>Windows only — but only the driving half.</strong> Moving the
+          viewport needs a Windows pipe, so on Linux and macOS the panel says so
+          rather than showing a switch that cannot work. The five reading tools are
+          ordinary Python and run everywhere, and the panel names the installed server
+          there too, so an agent on those machines can still search the atlas and read
+          it.
+        </p>
+      </>
+    ),
+  },
+  {
+    id: "keys",
+    nav: "Keyboard",
+    title: "Shortcuts",
+    body: (
+      <>
+        <Rows
+          rows={[
+            ["I", "Isolate the selection"],
+            ["H", "Hide the selection"],
+            ["C", "Let go of the selection"],
+            ["U", "Restore everything hidden"],
+            ["X", "Step the exploded view apart, and back together"],
+            ["F", "Frame the view — the body, or what you are studying"],
+            ["A P L R S", "The five anatomical viewpoints, as on the buttons"],
+            ["+ −", "Move closer in, or further away"],
+            ["M", "Show what the last frame cost — frame rate, draw calls, memory"],
+            ["Enter", "Send your question"],
+            ["Shift+Enter", "New line instead of sending"],
+            ["Ctrl+Enter", "Save the note you are writing"],
+            ["Esc", "Close a menu, or this guide"],
+          ]}
+        />
+        <p>
+          The viewport shortcuts stand down while you are typing — <Ui>I</Ui> belongs
+          to your sentence, not to the model.
+        </p>
+        <p>
+          <Ui>M</Ui> is there for one purpose: so that "the atlas is slow on my
+          machine" can be reported as numbers. The frame rate and the figure
+          beside it — the frame time nineteen frames in twenty come in under —
+          are what tell you whether a system you switched on is the reason.
+          Draw calls rise with the structures actually being drawn, which is why
+          isolating something is the fastest way to make a heavy scene light.
+        </p>
+      </>
+    ),
+  },
+  {
+    id: "regulations",
+    nav: "Regulations",
+    title: "Regulatory transparency",
+    body: (
+      <>
+        <p>
+          What Anatria3D is, set against the European rules that could apply to it.
+          Every statement below describes how the application is built and can be
+          checked in its source code. It is a statement by the developer, not a
+          certificate: no authority has assessed it, and a tool of this kind does not
+          require one.
+        </p>
+        <Callout>
+          <strong>Intended purpose.</strong> Anatria3D is for studying and teaching
+          human anatomy. A professional may also use it as a visual aid to explain
+          anatomy, and how conditions affect the body, in general terms and on a
+          generic model. It does not diagnose, triage, monitor or recommend treatment
+          for anyone. The explanation, and every clinical judgement, belong to the
+          professional.
+        </Callout>
+
+        <Sub>EU AI Act — Regulation (EU) 2024/1689</Sub>
+        <p>
+          <strong>Transparency (Article 50).</strong> The assistant is an AI model,
+          and the conversation says so before the first question. Every answer names
+          the model that wrote it, and a printed page that holds generated text says
+          so at its foot.
+        </p>
+        <p>
+          <strong>Not a high-risk system (Article 6, Annex III).</strong> Anatria3D is
+          not a safety component of a medical device, and it does not decide admission
+          to education or assess anyone formally. Case-drill scores are feedback for
+          your own study. Using them to grade students or staff for a course or a job
+          is outside the intended purpose.
+        </p>
+        <p>
+          <strong>The models.</strong> The assistant's answers come from a
+          general-purpose AI model by Anthropic, OpenAI or Google, which you choose and
+          reach with your own key. The obligations on those models (Articles 53 to 55)
+          rest with their providers. A <em>Local model</em> is one you chose and
+          installed yourself in Ollama. Anatria3D does not supply it, and whatever
+          obligations apply to it rest with whoever publishes it.
+        </p>
+
+        <Sub>Medical devices — Regulation (EU) 2017/745 (MDR)</Sub>
+        <p>
+          Under Rule 11, software intended to inform diagnostic or therapeutic
+          decisions about a patient is a medical device. Anatria3D is not intended
+          for that, is not a medical device, and carries no CE marking as one.
+        </p>
+        <Rows
+          rows={[
+            ["The assistant", "Declines every question about a specific person — you, a relative, a patient — and points to a qualified professional. The rule applies in every profile and language, and automated tests check that it is always present."],
+            ["A local model", "Is given the same rule, first and again last, and automated tests check that too. Because a small model keeps it less reliably, a message about a real person is first sorted out and answered with a fixed notice the model does not write. That sorting is done by the model and is not perfect, so a local model must not be used to decide anything about a person. It has no tools, so it cannot act on the atlas."],
+            ["The top bar", "Says “Educational use only — not a medical device” permanently. It cannot be closed."],
+            ["Case drills", "Every patient is invented for teaching, and says so. The drill stops if a real person is described."],
+          ]}
+        />
+
+        <Sub>Data protection — GDPR, Regulation (EU) 2016/679</Sub>
+        <Rows
+          rows={[
+            ["No collection", "No account, no server, no analytics, no telemetry. The developer receives nothing from your use of the application."],
+            ["Stored locally", "Your journal is a file on this computer. You can delete any entry, and nobody else holds a copy."],
+            ["Sent to your provider", "Only while you ask: your question, the recent conversation, what is on screen and, in a case drill, the invented patient's file — to the AI provider you chose, under your own key and your own agreement with them. Checking a key lists its models and sends nothing else."],
+            ["A local model", "Your question, the recent conversation and what you have selected go to Ollama on this computer, at its local address, and to nowhere else. Models that run on Ollama's servers are refused. Nothing is saved. Ollama is separate software with its own terms."],
+            ["Health data (Art. 9)", "There is no field for a real person anywhere. Do not type a patient's details into the assistant or a case: they would be sent to your provider. Staying on your computer does not make a local model the place for them either."],
+            ["Keys and voice", "API keys are kept in your system's keyring, never in the interface. Answers are read aloud only by voices installed on this computer."],
+          ]}
+        />
+
+        <Sub>How the assistant acts on the model</Sub>
+        <p>
+          The assistant can only call a fixed set of typed actions — move the camera,
+          isolate, highlight, section, mark a pathology — and every structure it names
+          is checked against the atlas before anything moves. It cannot run commands,
+          read your files or reach the network beyond your provider. Messages between
+          the assistant and the viewer are validated on both sides (Pydantic and Zod).
+          The optional control bridge for an agent on this computer is off until you
+          switch it on. A local model has none of these actions: only you can show what
+          it names, with a button that accepts an exact name from the atlas.
+        </p>
+
+        <Sub>Explaining anatomy to a patient</Sub>
+        <Rows
+          rows={[
+            ["Generic model", "The body on screen is a reference atlas, not the patient. Say so."],
+            ["No patient data", "Use the atlas directly, or ask general questions — “show how a disc herniation compresses a nerve root” — never about the person in front of you."],
+            ["The judgement", "Anatria3D shows anatomy. What it means for the patient is the professional's to say."],
+          ]}
+        />
+        <p className="text-[11px] text-slate-500">
+          Questions about any of this, or about use in an institution:{" "}
+          <span className="select-all text-slate-300">{CONTACT_EMAIL}</span>
+        </p>
+      </>
+    ),
+  },
+  {
+    id: "credits",
+    nav: "Credits",
+    title: "Who built this, and what it is made of",
+    body: (
+      <>
+        <Credit
+          role="Designed & built by"
+          name="Nurdzhan Kerimov"
+          badge="PYSBG"
+        >
+          Anatria3D was conceived, designed and engineered as a working instrument
+          for anatomy — the atlas, the assistant and the study journal alike.
+        </Credit>
+
+        <Credit role="Copyright & licence" name="Nurdzhan Kerimov (Digital Rose)" badge="digitalrose.org">
+          Anatria3D is developed by Nurdzhan Kerimov (Digital Rose) and distributed
+          under the <strong>Business Source License&nbsp;1.1</strong>.{" "}
+          <strong>Free</strong> for personal study, teaching, academic research and
+          non-commercial evaluation by healthcare professionals — you may read,
+          modify and redistribute the source on those terms. Deployment in a clinic,
+          a private practice or any other revenue-generating setting, and
+          redistribution inside a paid product, need a commercial agreement. Each
+          version converts automatically to the Apache&nbsp;2.0 licence four years
+          after its release, on the date its licence file states. The name and marks are separate
+          from any of that: a fork is welcome, a fork called Anatria3D is not.
+        </Credit>
+
+        <ContactCard />
+
+        <p>
+          It is free for students and for universities. That is not a slogan about
+          the licence — it <em>is</em> the licence, and it is why this page reads
+          the way it does rather than reserving all rights.
+        </p>
+
+        <h3 className="pt-2 text-[13px] font-semibold text-slate-200">
+          The anatomy is not ours
+        </h3>
+        <p>
+          Every mesh and every anatomical name in this application comes from work
+          other people gave away first, and it reaches you under the same terms it
+          reached us:
+        </p>
+        <Rows
+          rows={[
+            ["BodyParts3D", "The Database Center for Life Science (DBCLS), Japan — CC BY-SA 2.1 JP"],
+            ["Z-Anatomy", "The libre 3D atlas of anatomy, derived from BodyParts3D — CC BY-SA 4.0"],
+            ["Terminologia Anatomica 2", "The Latin nomenclature, by way of Z-Anatomy's TA2 data"],
+            ["Anatria3D", "Our adaptation: export, compression and stable identifiers — CC BY-SA 4.0"],
+          ]}
+        />
+        <Callout>
+          <strong>Share-alike, and it binds us too.</strong> The meshes and labels
+          are licensed under Creative Commons Attribution-ShareAlike 4.0
+          International. You may redistribute them, including commercially, so long
+          as this attribution chain travels with them and they stay under the same
+          licence. Nobody — us included — may relicense them or claim exclusive
+          rights over them.
+          <br />
+          <br />
+          The licences do not merge, and the application's licence does not reach the
+          anatomy: the meshes and labels stay CC BY-SA 4.0 whatever the code is under,
+          and their own licence allows commercial use by anyone. The full text of each
+          ships in the application folder, with the attribution in{" "}
+          <Ui>anatomy/NOTICE</Ui>.
+        </Callout>
+
+        <h3 className="pt-2 text-[13px] font-semibold text-slate-200">Built with</h3>
+        <p>
+          Built on open source the whole way down, and worth naming: <Ui>Tauri</Ui> for the
+          desktop shell, <Ui>React</Ui> and <Ui>React Three Fiber</Ui> over{" "}
+          <Ui>three.js</Ui> for the viewport, Google's <Ui>Draco</Ui> for mesh
+          compression, <Ui>Rust</Ui> and <Ui>SQLite</Ui> for the study journal, and{" "}
+          <Ui>Python</Ui> with <Ui>Pydantic AI</Ui> for the assistant. Each keeps its
+          own licence; none of them is ours.
+        </p>
+        <p className="pt-2 text-[11px] text-slate-500">
+          Anatria3D {APP_VERSION_LABEL}. © 2026 Nurdzhan Kerimov (Digital Rose).
+          Anatria3D is a trademark of Digital Rose. Application code under the
+          Business Source License 1.1, each version converting to Apache-2.0 four
+          years after its release;
+          anatomical assets under CC BY-SA 4.0 and CC BY 4.0.
+        </p>
+      </>
+    ),
+  },
+];
+
+export function GuideOverlay({ onClose }: { onClose: () => void }) {
+  const [active, setActive] = useState(SECTIONS[0]!.id);
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  // Which section the reader is actually in, so the nav tracks scrolling rather
+  // than only responding to clicks.
+  useEffect(() => {
+    const root = scrollRef.current;
+    if (!root) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const visible = entries
+          .filter((entry) => entry.isIntersecting)
+          .sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top)[0];
+        if (visible) setActive(visible.target.id);
+      },
+      { root, rootMargin: "0px 0px -70% 0px" },
+    );
+    for (const section of SECTIONS) {
+      const node = root.querySelector(`#${section.id}`);
+      if (node) observer.observe(node);
+    }
+    return () => observer.disconnect();
+  }, []);
+
+  return (
+    <div
+      className="absolute inset-0 z-50 flex items-center justify-center bg-slate-950/80 p-4 backdrop-blur-sm"
+      role="dialog"
+      aria-modal="true"
+      aria-label="How Anatria3D works"
+      onClick={onClose}
+    >
+      <div
+        // The backdrop closes; the card must not close when its own text is
+        // clicked, which is what selecting a sentence looks like to React.
+        onClick={(event) => event.stopPropagation()}
+        className="flex max-h-[86vh] w-full max-w-3xl overflow-hidden rounded-xl border border-slate-700 bg-slate-900 shadow-2xl"
+      >
+        <nav className="hidden w-44 shrink-0 flex-col gap-0.5 border-r border-slate-800 bg-slate-950/40 p-3 sm:flex">
+          <p className="px-2 pb-2 text-[10px] font-semibold uppercase tracking-wider text-slate-600">
+            Guide
+          </p>
+          {SECTIONS.map((section) => (
+            <button
+              key={section.id}
+              type="button"
+              onClick={() =>
+                scrollRef.current
+                  ?.querySelector(`#${section.id}`)
+                  ?.scrollIntoView({ behavior: "smooth", block: "start" })
+              }
+              className={`rounded px-2 py-1 text-left text-[11px] transition ${
+                active === section.id
+                  ? "bg-sky-600/15 text-sky-300"
+                  : "text-slate-500 hover:text-slate-300"
+              }`}
+            >
+              {section.nav}
+            </button>
+          ))}
+        </nav>
+
+        <div className="flex min-w-0 flex-1 flex-col">
+          <header className="flex shrink-0 items-center gap-2 border-b border-slate-800 px-5 py-3">
+            <h2 className="text-sm font-semibold tracking-tight text-slate-100">
+              How Anatria<span className="text-sky-400">3D</span> works
+            </h2>
+            <button
+              type="button"
+              onClick={onClose}
+              className="ml-auto rounded border border-slate-700 px-2 py-0.5 text-[11px] text-slate-400 transition hover:border-slate-600 hover:text-slate-200"
+            >
+              Start exploring
+            </button>
+          </header>
+
+          <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
+            {SECTIONS.map((section) => (
+              <section key={section.id} id={section.id} className="scroll-mt-4 pb-7">
+                <h3 className="mb-2 text-[13px] font-semibold text-slate-100">
+                  {section.title}
+                </h3>
+                <div className="space-y-2.5 text-[12px] leading-relaxed text-slate-400">
+                  {section.body}
+                </div>
+              </section>
+            ))}
+            <p className="border-t border-slate-800 pt-3 text-[10px] text-slate-600">
+              Reopen this any time with <Ui>?</Ui> at the top of the window. Anatomy
+              from Z-Anatomy, CC BY-SA 4.0 — see NOTICE.
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * A heading inside a section.
+ *
+ * `h4`, because the section's own title is already the `h3` on the page — and
+ * only the virtual-patient section is long enough to earn any: a walkthrough
+ * that needs subheadings to be followed is one, and the rest are not.
+ */
+function Sub({ children }: { children: React.ReactNode }) {
+  return <h4 className="pt-1.5 text-[12px] font-semibold text-slate-200">{children}</h4>;
+}
+
+function Callout({ children }: { children: React.ReactNode }) {
+  // A `div`, not a `p`. A callout is a box that holds prose, and one of them
+  // holds a list — which a paragraph may not contain. React reported it as a
+  // nesting error on every open of the guide, and a browser recovering from
+  // invalid markup closes the paragraph early and reparents what follows.
+  //
+  // Nothing moves: preflight zeroes a paragraph's margins, and the box's own
+  // padding and border come from these classes either way.
+  return (
+    <div className="rounded border border-slate-700/70 bg-slate-950/50 px-3 py-2 text-slate-300">
+      {children}
+    </div>
+  );
+}
+
+/** A gesture or key, and what it does. */
+function Rows({ rows }: { rows: [string, string][] }) {
+  return (
+    <div className="overflow-hidden rounded border border-slate-800">
+      {rows.map(([gesture, effect], index) => (
+        <div
+          key={gesture}
+          className={`flex gap-3 px-3 py-1.5 ${
+            index % 2 === 0 ? "bg-slate-950/40" : ""
+          }`}
+        >
+          <kbd className="w-28 shrink-0 font-sans text-[11px] font-medium text-sky-300">
+            {gesture}
+          </kbd>
+          <span className="text-[12px] text-slate-400">{effect}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/** Something the reader will see named exactly this way in the interface. */
+function Ui({ children }: { children: React.ReactNode }) {
+  return <span className="font-medium text-slate-200">{children}</span>;
+}
+
+/**
+ * The contact address, printed and copyable rather than a `mailto:` link, for
+ * the same reason as the domains below: opening it would need the webview's
+ * `opener:allow-open-url`, and one address is not worth widening that for.
+ */
+function ContactCard() {
+  const { copied, copy } = useCopy();
+  return (
+    <div className="rounded-lg border border-slate-700/70 bg-slate-950/50 px-4 py-3">
+      <p className="text-[10px] font-semibold uppercase tracking-[0.15em] text-slate-500">
+        Contact
+      </p>
+      <div className="mt-1 flex flex-wrap items-center gap-2">
+        <span className="select-all text-base font-semibold text-slate-100">{CONTACT_EMAIL}</span>
+        <button
+          type="button"
+          onClick={() => void copy(CONTACT_EMAIL)}
+          className="rounded border border-slate-700 px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-slate-400 transition hover:border-sky-600 hover:text-sky-300"
+        >
+          {copied ? "Copied" : "Copy"}
+        </button>
+      </div>
+      <p className="mt-2 text-[12px] leading-relaxed text-slate-400">
+        Support, custom features, and use in a university, a school or a clinical
+        training setting.
+      </p>
+    </div>
+  );
+}
+
+/**
+ * One party with a claim on this application.
+ *
+ * Domains are printed rather than linked. Opening a URL would mean granting the
+ * webview `opener:allow-open-url`, and the capability file is short on purpose —
+ * a credits panel in an offline application is not worth widening it for.
+ */
+function Credit({
+  role,
+  name,
+  badge,
+  children,
+}: {
+  role: string;
+  name: string;
+  badge: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="rounded-lg border border-slate-700/70 bg-slate-950/50 px-4 py-3">
+      <p className="text-[10px] font-semibold uppercase tracking-[0.15em] text-slate-500">
+        {role}
+      </p>
+      <p className="mt-1 text-base font-semibold text-slate-100">{name}</p>
+      <p className="text-[10px] font-medium uppercase tracking-wider text-sky-400">
+        {badge}
+      </p>
+      <p className="mt-2 text-[12px] leading-relaxed text-slate-400">{children}</p>
+    </div>
+  );
+}
