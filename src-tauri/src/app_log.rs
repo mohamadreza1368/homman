@@ -44,7 +44,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use serde::{Deserialize, Serialize};
 
 /// Filename inside the app data directory, beside the journal.
-pub const LOG_FILE: &str = "anatria3d.log";
+pub const LOG_FILE: &str = "hoomaan.log";
 
 /// How large the file is allowed to grow before its oldest half is dropped.
 ///
@@ -211,7 +211,7 @@ mod tests {
     fn temp_log() -> (AppLog, PathBuf) {
         static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
         let unique = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        let dir = std::env::temp_dir().join(format!("anatria-log-{}-{unique}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("hoomaan-log-{}-{unique}", std::process::id()));
         let path = dir.join(LOG_FILE);
         let _ = fs::remove_dir_all(&dir);
         (AppLog::open(&path), path)
@@ -296,7 +296,7 @@ mod tests {
     #[test]
     fn a_directory_it_cannot_create_disables_it_without_failing() {
         // A diagnostic that takes the application down is worse than none.
-        let log = AppLog::open(Path::new("\0invalid\0/anatria3d.log"));
+        let log = AppLog::open(Path::new("\0invalid\0/hoomaan.log"));
         log.append("error", "engine", "nowhere to put this");
 
         assert!(log.path().is_none());

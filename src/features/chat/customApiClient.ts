@@ -1,11 +1,17 @@
 import type {
   GenderModel,
   OrganContext,
+  SceneCommand,
   SessionMode,
   TokenUsage,
   UserProfile,
 } from "@/lib/schemas";
 import { normalizeBaseUrl } from "@/stores/customApiConfig";
+import {
+  convertToolCallToCommand,
+  HOOMAAN_ANATOMY_TOOLS,
+  HOOMAAN_CASE_TOOL,
+} from "./hoomaanTools";
 
 export interface CustomHistoryTurn {
   role: "user" | "assistant";
@@ -19,8 +25,13 @@ export interface CustomChatParams {
   systemPrompt: string;
   history: CustomHistoryTurn[];
   query: string;
+  mode?: SessionMode;
+  enableTools?: boolean;
   signal?: AbortSignal;
   onDelta?: (chunk: string) => void;
+  onToolStarted?: (tool: string) => void;
+  onSceneCommand?: (command: SceneCommand) => void;
+  onCaseVerdict?: (score: number, verdict: string) => void;
 }
 
 export interface CustomChatResult {
@@ -40,37 +51,49 @@ export function buildCustomSystemPrompt(input: {
 }): string {
   const level =
     input.profile === "layperson"
-      ? "general learner (clear, accessible explanations)"
+      ? "کاربر عمومی و علاقه‌مند (توضیحات روان، واضح و قابل درک بدون ابهام پزشکی)"
       : input.profile === "clinician"
-        ? "advanced clinical & anatomical depth"
-        : "medical / health sciences student";
+        ? "پزشک / متخصص بالینی (عمق علمی بالا، روابط پاتوفیزیولوژی، آناتومی کاربردی و جراحی)"
+        : "دانشجوی پزشکی و علوم زیستی (تمرکز بر کالبدشناسی تشریحی، نام‌گذاری لاتین و جزئیات دقیق)";
 
   const selectedList =
     input.selection.length > 0
       ? input.selection
           .map((o) => `${o.ta2_latin} (${o.name_en}, system: ${o.system})`)
           .join("; ")
-      : "none selected";
+      : "هیچ عضوی انتخاب نشده است";
 
   const modeNote =
     input.mode === "case"
-      ? "You are running a simulated educational anatomy/clinical case drill for practice (purely fictional scenario)."
+      ? "شما در حالت شبیه‌ساز کیس بالینی فرضی هستید (Case Drill). شرح حال، علائم و معاینات بالینی یک بیمار آموزشی را طرح کنید یا به استدلال دانشجو پاسخ دهید و در پایان ارزیابی، ابزار record_case_verdict را با نمره (0-100) و نظر نهایی فراخوانی کنید."
       : input.mode === "review"
-        ? "You are summarising key anatomical concepts and reasoning gaps for study review."
-        : "You are an interactive 3D human anatomy study tutor.";
+        ? "شما در حالت مرور و جمع‌بندی مفاهیم کلیدی آناتومی هستید."
+        : "شما دستیار و راهنمای تعاملی کالبدشناسی سه‌بعدی هوومان (HOOMAAN) هستید.";
 
   const languageRule = input.fa
-    ? "Respond clearly in natural Persian (فارسی) unless the user writes in another language, keeping official Terminologia Anatomica Latin terms in parentheses where helpful."
-    : "Respond in the user's language, including Terminologia Anatomica terms where helpful.";
+    ? [
+        "زبان پاسخ: کاملاً فارسی روان و علمی.",
+        "نام‌گذاری: اصطلاحات استاندارد بین‌المللی Terminologia Anatomica (لاتین) را داخل پرانتز ذکر کنید.",
+      ].join(" ")
+    : "Respond in the user's language, including official Terminologia Anatomica terms where helpful.";
+
+  const toolsGuidance = [
+    "دستورالعمل تعامل با صحنه سه‌بعدی هوومان:",
+    "۱. هنگام نام بردن یا توضیح هر ساختار آناتومیک مهم، ابزار مناسب (مانند focus_organ برای زوم دوربین یا illuminate_structures برای هایلایت) را فراخوانی کنید تا مدل سه‌بعدی همگام با توضیح شما حرکت کند.",
+    "۲. در متن پاسخ خود، همیشه شناسه هر عضو مهم را در براکت دوتایی [[organ_slug]] قرار دهید (مانند [[heart]]، [[liver]]، [[ventriculus_sinister]]، [[aorta]]). این کار باعث می‌شود واژه به صورت پین تعاملی سه‌بعدی در رابط کاربری درآید که کاربر با هاور یا کلیک روی آن مستقیماً به عضو مربوطه هدایت می‌شود.",
+    "۳. برای مسیرهای پیوسته (مانند مسیر گردش خون، دستگاه گوارش یا هدایت قلبی) از highlight_pathway استفاده کنید.",
+    "۴. برای بررسی مقاطع داخلی از set_cross_section و برای ریتم ضربان قلب از set_heart_rhythm استفاده کنید.",
+  ].join("\n");
 
   return [
-    `You are HOOMAAN (هومان), an educational 3D anatomy assistant. ${modeNote}`,
-    "Strict boundary: educational use only — you are NOT a medical device and must decline diagnosing or advising real patients.",
-    `Target depth: ${level}.`,
-    `Active atlas: ${input.genderModel} model (${input.organCount} loaded structures).`,
-    `Currently selected structures: ${selectedList}.`,
+    `شما هوومان (HOOMAAN) هستید؛ دستیار هوشمند و تعاملی اطلس سه‌بعدی کالبدشناسی انسان. ${modeNote}`,
+    "قانون ایمنی اکید: این نرم‌افزار صرفاً برای اهداف آموزشی و یادگیری کالبدشناسی است. شما وسیله پزشکی نیستید و نباید بیماران واقعی را تشخیص داده یا درمان تجویز کنید.",
+    `سطح مخاطب: ${level}.`,
+    `اطلس فعال: مدل ${input.genderModel} (شامل ${input.organCount} ساختار آناتومیک لود شده).`,
+    `اعضای در حال حاضر انتخاب شده: ${selectedList}.`,
     languageRule,
-  ].join("\n");
+    toolsGuidance,
+  ].join("\n\n");
 }
 
 function authHeaders(apiKey: string): Record<string, string> {
@@ -116,28 +139,75 @@ export async function fetchCustomModels(
   return [...new Set(list)];
 }
 
-/** Stream or fetch a chat completion from any OpenAI-compatible Custom API. */
+interface AccumulatedToolCall {
+  id: string;
+  name: string;
+  arguments: string;
+}
+
+/**
+ * Execute tool calls and dispatch them to the HOOMAAN scene store and callbacks.
+ */
+function dispatchToolCalls(
+  toolCalls: AccumulatedToolCall[],
+  params: CustomChatParams,
+): void {
+  for (const tc of toolCalls) {
+    if (!tc.name) continue;
+    let parsedArgs: Record<string, unknown> = {};
+    try {
+      if (tc.arguments.trim()) {
+        parsedArgs = JSON.parse(tc.arguments) as Record<string, unknown>;
+      }
+    } catch {
+      // If incomplete JSON, fall back to empty args
+    }
+
+    const conversion = convertToolCallToCommand(tc.name, parsedArgs);
+    if (conversion.command) {
+      params.onToolStarted?.(conversion.rawToolName);
+      params.onSceneCommand?.(conversion.command);
+    }
+    if (conversion.verdict) {
+      params.onCaseVerdict?.(conversion.verdict.score, conversion.verdict.verdict);
+    }
+  }
+}
+
+/** Stream or fetch a chat completion with full 3D Tool Calling from any OpenAI-compatible Custom API. */
 export async function streamCustomChat(params: CustomChatParams): Promise<CustomChatResult> {
   const root = normalizeBaseUrl(params.baseUrl);
   if (!root) throw new Error("آدرس Custom API تنظیم نشده است.");
   const modelId = params.model.trim();
   if (!modelId) throw new Error("نام مدل Custom API وارد نشده است.");
 
-  const messages = [
+  const tools =
+    params.enableTools !== false
+      ? [...HOOMAAN_ANATOMY_TOOLS, ...(params.mode === "case" ? [HOOMAAN_CASE_TOOL] : [])]
+      : undefined;
+
+  const messages: Array<{ role: string; content: string | null; tool_calls?: unknown; tool_call_id?: string }> = [
     { role: "system", content: params.systemPrompt },
     ...params.history.map((turn) => ({ role: turn.role, content: turn.content })),
     { role: "user", content: params.query },
   ];
 
+  const requestBody: Record<string, unknown> = {
+    model: modelId,
+    messages,
+    stream: true,
+  };
+
+  if (tools && tools.length > 0) {
+    requestBody.tools = tools;
+    requestBody.tool_choice = "auto";
+  }
+
   const response = await fetch(`${root}/chat/completions`, {
     method: "POST",
     headers: authHeaders(params.apiKey),
     ...(params.signal ? { signal: params.signal } : {}),
-    body: JSON.stringify({
-      model: modelId,
-      messages,
-      stream: true,
-    }),
+    body: JSON.stringify(requestBody),
   });
 
   if (!response.ok) {
@@ -149,15 +219,31 @@ export async function streamCustomChat(params: CustomChatParams): Promise<Custom
   let fullText = "";
   let resolvedModel = modelId;
   let usage: TokenUsage | null = null;
+  const accumulatedToolCalls: Map<number, AccumulatedToolCall> = new Map();
 
+  // Non-streaming fallback
   if (!contentType.includes("text/event-stream") || !response.body) {
     const json = (await response.json()) as {
       model?: string;
-      choices?: Array<{ message?: { content?: string }; text?: string }>;
+      choices?: Array<{
+        message?: {
+          content?: string;
+          tool_calls?: Array<{
+            id?: string;
+            function?: { name?: string; arguments?: string };
+          }>;
+        };
+        text?: string;
+      }>;
       usage?: { prompt_tokens?: number; completion_tokens?: number };
     };
-    const text = json.choices?.[0]?.message?.content ?? json.choices?.[0]?.text ?? "";
-    if (text) params.onDelta?.(text);
+
+    const choice = json.choices?.[0];
+    const text = choice?.message?.content ?? choice?.text ?? "";
+    if (text) {
+      fullText = text;
+      params.onDelta?.(text);
+    }
     resolvedModel = json.model || modelId;
     if (json.usage) {
       usage = {
@@ -166,9 +252,20 @@ export async function streamCustomChat(params: CustomChatParams): Promise<Custom
         cache_read_tokens: 0,
       };
     }
-    return { text, model: resolvedModel, usage };
+
+    if (choice?.message?.tool_calls && Array.isArray(choice.message.tool_calls)) {
+      const executed: AccumulatedToolCall[] = choice.message.tool_calls.map((tc, idx) => ({
+        id: tc.id || `call_${idx}`,
+        name: tc.function?.name || "",
+        arguments: tc.function?.arguments || "{}",
+      }));
+      dispatchToolCalls(executed, params);
+    }
+
+    return { text: fullText, model: resolvedModel, usage };
   }
 
+  // SSE Streaming
   const reader = response.body.getReader();
   const decoder = new TextDecoder("utf-8");
   let buffer = "";
@@ -186,18 +283,47 @@ export async function streamCustomChat(params: CustomChatParams): Promise<Custom
       if (!line || !line.startsWith("data:")) continue;
       const data = line.slice(5).trim();
       if (data === "[DONE]") continue;
+
       try {
         const chunk = JSON.parse(data) as {
           model?: string;
-          choices?: Array<{ delta?: { content?: string }; message?: { content?: string } }>;
+          choices?: Array<{
+            delta?: {
+              content?: string;
+              tool_calls?: Array<{
+                index?: number;
+                id?: string;
+                function?: { name?: string; arguments?: string };
+              }>;
+            };
+            message?: { content?: string };
+          }>;
           usage?: { prompt_tokens?: number; completion_tokens?: number };
         };
+
         if (chunk.model) resolvedModel = chunk.model;
-        const delta = chunk.choices?.[0]?.delta?.content ?? chunk.choices?.[0]?.message?.content ?? "";
-        if (delta) {
-          fullText += delta;
-          params.onDelta?.(delta);
+
+        const delta = chunk.choices?.[0]?.delta;
+        if (delta?.content) {
+          fullText += delta.content;
+          params.onDelta?.(delta.content);
         }
+
+        if (delta?.tool_calls && Array.isArray(delta.tool_calls)) {
+          for (const tc of delta.tool_calls) {
+            const idx = tc.index ?? 0;
+            const existing = accumulatedToolCalls.get(idx) ?? {
+              id: tc.id || `call_${idx}`,
+              name: tc.function?.name || "",
+              arguments: "",
+            };
+            if (tc.id) existing.id = tc.id;
+            if (tc.function?.name) existing.name = tc.function.name;
+            if (tc.function?.arguments) existing.arguments += tc.function.arguments;
+            accumulatedToolCalls.set(idx, existing);
+          }
+        }
+
         if (chunk.usage) {
           usage = {
             input_tokens: chunk.usage.prompt_tokens ?? 0,
@@ -207,6 +333,79 @@ export async function streamCustomChat(params: CustomChatParams): Promise<Custom
         }
       } catch {
         // Ignore partial or non-JSON keep-alive frames.
+      }
+    }
+  }
+
+  const toolCallsList = Array.from(accumulatedToolCalls.values());
+  if (toolCallsList.length > 0) {
+    dispatchToolCalls(toolCallsList, params);
+
+    // If the model produced tool calls but no natural language response,
+    // trigger a follow-up completion round so it generates its conversational explanation.
+    if (fullText.trim() === "") {
+      try {
+        const followUpMessages = [
+          ...messages,
+          {
+            role: "assistant",
+            content: null,
+            tool_calls: toolCallsList.map((tc) => ({
+              id: tc.id,
+              type: "function",
+              function: { name: tc.name, arguments: tc.arguments },
+            })),
+          },
+          ...toolCallsList.map((tc) => ({
+            role: "tool",
+            tool_call_id: tc.id,
+            content: JSON.stringify({ status: "success", executed: tc.name }),
+          })),
+        ];
+
+        const followUpResponse = await fetch(`${root}/chat/completions`, {
+          method: "POST",
+          headers: authHeaders(params.apiKey),
+          ...(params.signal ? { signal: params.signal } : {}),
+          body: JSON.stringify({
+            model: modelId,
+            messages: followUpMessages,
+            stream: true,
+          }),
+        });
+
+        if (followUpResponse.ok && followUpResponse.body) {
+          const followReader = followUpResponse.body.getReader();
+          let followBuffer = "";
+          while (true) {
+            const { done, value } = await followReader.read();
+            if (done) break;
+            followBuffer += decoder.decode(value, { stream: true });
+            const followLines = followBuffer.split(/\r?\n/);
+            followBuffer = followLines.pop() ?? "";
+
+            for (const rLine of followLines) {
+              const l = rLine.trim();
+              if (!l || !l.startsWith("data:")) continue;
+              const d = l.slice(5).trim();
+              if (d === "[DONE]") continue;
+              try {
+                const c = JSON.parse(d) as {
+                  choices?: Array<{ delta?: { content?: string } }>;
+                };
+                const chunkText = c.choices?.[0]?.delta?.content;
+                if (chunkText) {
+                  fullText += chunkText;
+                  params.onDelta?.(chunkText);
+                }
+              } catch {
+                // Ignore frame parse error
+              }
+            }
+          }
+        }
+      } catch (err) {
+        console.warn("Follow-up completion after tool calls failed:", err);
       }
     }
   }

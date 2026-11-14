@@ -16,7 +16,7 @@ import {
 } from "./schemas";
 
 /** Channel Rust forwards every engine frame on. Mirrors `sidecar::ENGINE_EVENT`. */
-const ENGINE_EVENT = "anatria://engine-event";
+const ENGINE_EVENT = "hoomaan://engine-event";
 
 // ---------------------------------------------------------------------------
 // Credentials

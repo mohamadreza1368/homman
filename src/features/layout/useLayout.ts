@@ -10,7 +10,7 @@ import { readLocal, writeLocal } from "@/lib/localStore";
  * default to the saved size.
  */
 
-const STORAGE_KEY = "anatria3d.layout.v1";
+const STORAGE_KEY = "hoomaan.layout.v1";
 
 export const TREE_LIMITS = { min: 200, max: 560, default: 280 } as const;
 export const CHAT_LIMITS = { min: 300, max: 720, default: 380 } as const;

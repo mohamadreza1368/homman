@@ -62,7 +62,7 @@ export function DisplaySettings() {
       </p>
       {pending && (
         <p className="mt-1 text-[10px] leading-snug text-amber-300/90">
-          Takes effect the next time Anatria3D starts.
+          Takes effect the next time HOOMAAN starts.
         </p>
       )}
       {error && (

@@ -5,7 +5,7 @@ import { useSceneStore } from "@/stores/sceneStore";
 import { anatomyConcepts } from "./concepts";
 import { HEART_PATH, HeartLearningPath } from "./HeartLearningPath";
 
-afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
+afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); localStorage.clear?.(); });
 
 it("shows the selected heart structure and explains the lung transition", () => {
   useInterfaceLanguage.setState({ language: "fa" });

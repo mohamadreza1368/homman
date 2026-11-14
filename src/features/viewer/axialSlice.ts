@@ -639,7 +639,7 @@ function drawMeasure(
  * A name for the file, made of what the picture actually is.
  *
  * Somebody saving one section is saving several, and a folder of
- * `anatria3d-view.png` and `anatria3d-view (1).png` is a folder nobody can
+ * `hoomaan-view.png` and `anatria3d-view (1).png` is a folder nobody can
  * read. The plane, where it was — the level, or the depth — and the width
  * are what tell them apart.
  *
@@ -653,7 +653,7 @@ export function sectionFileName(
   acrossCm: number,
   cut: boolean,
 ): string {
-  const parts = ["anatria3d", plane];
+  const parts = ["hoomaan", plane];
   const named = where?.replace(/[^A-Za-z0-9]+/g, "-").replace(/^-|-$/g, "");
   if (named) parts.push(named);
   if (acrossCm > 0) parts.push(`${Math.round(acrossCm)}cm`);

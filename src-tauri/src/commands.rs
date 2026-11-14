@@ -412,7 +412,7 @@ pub fn token_usage(db: State<'_, StudyDb>, days: i64) -> CommandResult<Vec<Usage
 // where the body runs, not for what it awaits.
 // ---------------------------------------------------------------------------
 
-const JOURNAL_EXTENSION: &str = "anatria-journal.json";
+const JOURNAL_EXTENSION: &str = "hoomaan-journal.json";
 
 #[tauri::command]
 pub async fn export_journal(
@@ -429,7 +429,7 @@ pub async fn export_journal(
         .dialog()
         .file()
         .set_file_name(JOURNAL_EXTENSION)
-        .add_filter("Anatria3D journal", &["json"])
+        .add_filter("HOOMAAN journal", &["json"])
         .blocking_save_file()
     else {
         // Cancelled. Not an error — `None` lets the UI stay quiet.
@@ -490,7 +490,7 @@ pub async fn save_view_image(
         .as_deref()
         .map(suggested_file_name)
         .filter(|name| !name.is_empty())
-        .unwrap_or_else(|| "anatria3d-view.png".to_string());
+        .unwrap_or_else(|| "hoomaan-view.png".to_string());
 
     let Some(path) = app
         .dialog()
@@ -522,7 +522,7 @@ pub async fn import_journal(
     let Some(path) = app
         .dialog()
         .file()
-        .add_filter("Anatria3D journal", &["json"])
+        .add_filter("HOOMAAN journal", &["json"])
         .blocking_pick_file()
     else {
         return Ok(None);
@@ -533,7 +533,7 @@ pub async fn import_journal(
 
     let body = std::fs::read_to_string(&path).map_err(|e| CommandError::Invalid(e.to_string()))?;
     let journal: JournalExport = serde_json::from_str(&body).map_err(|_| {
-        CommandError::Invalid("That file is not an Anatria3D study journal.".into())
+        CommandError::Invalid("That file is not a HOOMAAN study journal.".into())
     })?;
 
     Ok(Some(db.import(journal)?))
@@ -649,7 +649,7 @@ pub async fn save_log_copy(
     let Some(path) = app
         .dialog()
         .file()
-        .set_file_name("anatria3d-log.txt")
+        .set_file_name("hoomaan-log.txt")
         .add_filter("Text file", &["txt"])
         .blocking_save_file()
     else {
@@ -744,7 +744,7 @@ mod tests {
 
     #[test]
     fn keeps_a_reasonable_name() {
-        assert_eq!(suggested_file_name("anatria3d-axial-T8-13cm-cut.png"), "anatria3d-axial-T8-13cm-cut.png");
+        assert_eq!(suggested_file_name("hoomaan-axial-T8-13cm-cut.png"), "hoomaan-axial-T8-13cm-cut.png");
     }
 
     #[test]

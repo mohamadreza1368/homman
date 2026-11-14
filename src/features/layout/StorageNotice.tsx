@@ -41,7 +41,7 @@ export function StorageNotice() {
       title={failure}
       className="shrink-0 border-t border-amber-700/50 bg-amber-500/10 px-4 py-2 text-[10px] leading-snug text-amber-300"
     >
-      This machine is not letting Anatria3D remember anything. Your provider,
+      This machine is not letting HOOMAAN remember anything. Your provider,
       model, systems and layout will be back to their defaults next time you
       open it. Your notes and your API keys are unaffected — those are kept
       elsewhere.

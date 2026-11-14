@@ -54,7 +54,7 @@ it("folds away without stopping the scanner, and leaves the way back", () => {
   expect(useScanStore.getState().enabled).toBe(true);
   expect(screen.queryByLabelText(/drag to hold the light/i)).toBeNull();
 
-  const pill = screen.getByText(/light · show/);
+  const pill = screen.getByText(/Scanner controls|light · show/i);
   fireEvent.click(pill);
   expect(screen.getByLabelText(/drag to hold the light/i)).toBeTruthy();
 });

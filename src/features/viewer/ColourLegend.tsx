@@ -6,8 +6,8 @@ import { useSceneStore } from "@/stores/sceneStore";
 import { tissueFamily, type TissueFamily } from "./palette";
 import { useDraggablePanel, useRememberedFlag } from "./useDraggablePanel";
 
-const POSITION_KEY = "anatria3d.legend.v1";
-const COLLAPSED_KEY = "anatria3d.legend.collapsed.v1";
+const POSITION_KEY = "hoomaan.legend.v1";
+const COLLAPSED_KEY = "hoomaan.legend.collapsed.v1";
 
 export function ColourLegend() {
   const fa = useInterfaceLanguage((s) => s.language === "fa");

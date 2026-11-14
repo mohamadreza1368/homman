@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 /**
- * Wire format for the Anatria3D IPC chain: React -> Rust -> Python sidecar.
+ * Wire format for the HOOMAAN IPC chain: React -> Rust -> Python sidecar.
  *
  * Two rules govern this file and its Pydantic mirror in
  * `engine/anatria_engine/protocol.py`:

@@ -5,7 +5,7 @@ import { organLabel, useSceneStore } from "@/stores/sceneStore";
 import { useDraggablePanel } from "./useDraggablePanel";
 
 /** Where the pathway badge sits, remembered between sessions. */
-const POSITION_KEY = "anatria3d.pathwayBar.v1";
+const POSITION_KEY = "hoomaan.pathwayBar.v1";
 
 /**
  * Systems a route needs that are currently switched off.

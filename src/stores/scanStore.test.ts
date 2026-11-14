@@ -102,13 +102,13 @@ describe("sweeping while the assistant answers", () => {
   it("remembers being turned off, because that was a decision about a machine", () => {
     store().setSweepOnAnswer(false);
     expect(store().sweepOnAnswer).toBe(false);
-    expect(localStorage.getItem("anatria3d.scan.sweepOnAnswer.v1")).toBe("off");
+    expect(localStorage.getItem("hoomaan.scan.sweepOnAnswer.v1")).toBe("off");
   });
 
   it("writes nothing when the setting has not changed", () => {
     localStorage.clear();
     store().setSweepOnAnswer(true);
-    expect(localStorage.getItem("anatria3d.scan.sweepOnAnswer.v1")).toBeNull();
+    expect(localStorage.getItem("hoomaan.scan.sweepOnAnswer.v1")).toBeNull();
   });
 });
 
@@ -116,13 +116,13 @@ describe("the colour of the light", () => {
   it("remembers the choice, because it is a way of reading and not a theme", () => {
     store().setTint("amber");
     expect(store().tint).toBe("amber");
-    expect(localStorage.getItem("anatria3d.scan.tint.v1")).toBe("amber");
+    expect(localStorage.getItem("hoomaan.scan.tint.v1")).toBe("amber");
   });
 
   it("writes nothing when the colour has not changed", () => {
     localStorage.clear();
     store().setTint("cyan");
-    expect(localStorage.getItem("anatria3d.scan.tint.v1")).toBeNull();
+    expect(localStorage.getItem("hoomaan.scan.tint.v1")).toBeNull();
   });
 });
 
@@ -136,13 +136,13 @@ describe("revealing colour instead of lighting", () => {
   it("remembers being turned on", () => {
     store().setReveal(true);
     expect(store().reveal).toBe(true);
-    expect(localStorage.getItem("anatria3d.scan.reveal.v1")).toBe("on");
+    expect(localStorage.getItem("hoomaan.scan.reveal.v1")).toBe("on");
   });
 
   it("writes nothing when it has not changed", () => {
     localStorage.clear();
     store().setReveal(false);
-    expect(localStorage.getItem("anatria3d.scan.reveal.v1")).toBeNull();
+    expect(localStorage.getItem("hoomaan.scan.reveal.v1")).toBeNull();
   });
 });
 
@@ -157,11 +157,11 @@ describe("the panel that names what is being crossed", () => {
     // the next launch with no way to tell why.
     store().toggleReadout();
     expect(store().readout).toBe(false);
-    expect(localStorage.getItem("anatria3d.scan.readout.v1")).toBe("off");
+    expect(localStorage.getItem("hoomaan.scan.readout.v1")).toBe("off");
 
     store().toggleReadout();
     expect(store().readout).toBe(true);
-    expect(localStorage.getItem("anatria3d.scan.readout.v1")).toBe("on");
+    expect(localStorage.getItem("hoomaan.scan.readout.v1")).toBe("on");
   });
 });
 
@@ -173,10 +173,10 @@ describe("the scanner's own controls", () => {
   it("remember being folded, in both directions", () => {
     store().togglePanel();
     expect(store().panel).toBe(false);
-    expect(localStorage.getItem("anatria3d.scan.panel.v1")).toBe("off");
+    expect(localStorage.getItem("hoomaan.scan.panel.v1")).toBe("off");
 
     store().togglePanel();
-    expect(localStorage.getItem("anatria3d.scan.panel.v1")).toBe("on");
+    expect(localStorage.getItem("hoomaan.scan.panel.v1")).toBe("on");
   });
 
   it("folding is not switching the scanner off", () => {
@@ -196,7 +196,7 @@ describe("fading what the plane has passed", () => {
 
   it("remembers being turned on", () => {
     store().setGhost(true);
-    expect(localStorage.getItem("anatria3d.scan.ghost.v1")).toBe("on");
+    expect(localStorage.getItem("hoomaan.scan.ghost.v1")).toBe("on");
   });
 });
 
@@ -209,7 +209,7 @@ describe("the tone when the light is let go", () => {
 
   it("remembers being turned on", () => {
     store().setSound(true);
-    expect(localStorage.getItem("anatria3d.scan.sound.v1")).toBe("on");
+    expect(localStorage.getItem("hoomaan.scan.sound.v1")).toBe("on");
   });
 });
 
@@ -309,7 +309,7 @@ describe("the plane it reads", () => {
   it("remembers frontal, because it is a way of reading the body", () => {
     store().setPlane("front");
     expect(store().plane).toBe("front");
-    expect(localStorage.getItem("anatria3d.scan.plane.v1")).toBe("front");
+    expect(localStorage.getItem("hoomaan.scan.plane.v1")).toBe("front");
   });
 
   it("keeps a height and a depth apart", () => {
@@ -335,6 +335,6 @@ describe("the plane it reads", () => {
   it("writes nothing when the plane has not changed", () => {
     localStorage.clear();
     store().setPlane("axial");
-    expect(localStorage.getItem("anatria3d.scan.plane.v1")).toBeNull();
+    expect(localStorage.getItem("hoomaan.scan.plane.v1")).toBeNull();
   });
 });

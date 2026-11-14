@@ -5,7 +5,7 @@ import * as THREE from "three";
  *
  * Small numbers on purpose. The brain is a hundred-odd overlapping shells drawn
  * with added light, so every value is paid once per layer the eye looks
- * through — what is gentle on one surface is white on forty. Anatria3D's idle
+ * through — what is gentle on one surface is white on forty. HOOMAAN's idle
  * screen learned that first; these start from its numbers.
  */
 export const LOOK = {

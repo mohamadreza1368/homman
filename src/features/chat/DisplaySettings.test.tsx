@@ -46,7 +46,7 @@ describe("DisplaySettings", () => {
     fireEvent.click(await screen.findByRole("switch"));
     await waitFor(() => expect(screen.getByRole("switch").getAttribute("aria-checked")).toBe("true"));
     expect(ipc.setStableDisplay).toHaveBeenCalledWith(true);
-    expect(screen.getByText(/next time Anatria3D starts/)).toBeTruthy();
+    expect(screen.getByText(/next time HOOMAAN starts/)).toBeTruthy();
   });
 
   it("stops saying so once the window started with it", async () => {

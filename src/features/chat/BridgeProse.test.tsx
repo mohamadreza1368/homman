@@ -86,7 +86,7 @@ it("renders Markdown without active structure pins, HTML, links or remote images
     system: "nervous", path: [], mesh_file: "nervous.glb", node: "corpus_callosum",
   } } });
   useBridgeStore.getState().receiveProse("bridge-1", [
-    "**External** [[corpus_callosum]] [pin](anatria-ref:corpus_callosum)",
+    "**External** [[corpus_callosum]] [pin](hoomaan-ref:corpus_callosum)",
     "[unsafe](javascript:alert(1)) [link](https://example.invalid)",
     '<script>alert(1)</script><button>fake action</button>',
     "![remote](https://example.invalid/tracker.png)",

@@ -516,15 +516,15 @@ describe("the caliper", () => {
 
 describe("sectionFileName", () => {
   it("names the file after what the picture is", () => {
-    expect(sectionFileName("axial", "T8", 13, true)).toBe("anatria3d-axial-T8-13cm-cut.png");
+    expect(sectionFileName("axial", "T8", 13, true)).toBe("hoomaan-axial-T8-13cm-cut.png");
     expect(sectionFileName("axial", "T8", 108, false)).toBe(
-      "anatria3d-axial-T8-108cm-slab.png",
+      "hoomaan-axial-T8-108cm-slab.png",
     );
   });
 
   it("names a frontal one after its depth", () => {
     expect(sectionFileName("front", depthLabel(0.12), 60, true)).toBe(
-      "anatria3d-front-12-cm-deep-60cm-cut.png",
+      "hoomaan-front-12-cm-deep-60cm-cut.png",
     );
   });
 
@@ -532,17 +532,17 @@ describe("sectionFileName", () => {
     // A file name is not the place to find out how a file system feels about
     // punctuation the interface uses freely.
     expect(sectionFileName("axial", "L4–L5", 9, false)).toBe(
-      "anatria3d-axial-L4-L5-9cm-slab.png",
+      "hoomaan-axial-L4-L5-9cm-slab.png",
     );
   });
 
   it("says nothing about a level where there is none", () => {
-    expect(sectionFileName("axial", null, 40, true)).toBe("anatria3d-axial-40cm-cut.png");
+    expect(sectionFileName("axial", null, 40, true)).toBe("hoomaan-axial-40cm-cut.png");
   });
 
   it("leaves the width out rather than writing a nonsense one", () => {
     // Before the first section has been taken there is no width to report.
-    expect(sectionFileName("axial", "T8", -1, true)).toBe("anatria3d-axial-T8-cut.png");
+    expect(sectionFileName("axial", "T8", -1, true)).toBe("hoomaan-axial-T8-cut.png");
   });
 });
 

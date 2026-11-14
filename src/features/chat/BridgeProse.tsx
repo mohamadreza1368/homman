@@ -14,7 +14,7 @@ export function BridgeProse() {
     >
       <h2 className="text-xs font-semibold text-amber-200">External messages</h2>
       <p className="text-[11px] text-amber-200/80">
-        Not the Anatria3D assistant. Not saved or sent to your provider.
+        Not the HOOMAAN assistant. Not saved or sent to your provider.
         Latest 20 messages; cleared when the bridge is turned off.
       </p>
       {entries.map((entry) => (

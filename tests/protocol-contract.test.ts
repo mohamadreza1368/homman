@@ -130,16 +130,11 @@ function typescriptSurface(): ProtocolSurface {
 function pythonSurface(): ProtocolSurface {
   const repoRoot = join(import.meta.dirname, "..");
   const candidates = [
+    process.env.PYTHON,
     join(repoRoot, ".venv", "Scripts", "python.exe"),
     join(repoRoot, ".venv", "bin", "python"),
-  ];
-  const python = candidates.find((path) => existsSync(path));
-  if (!python) {
-    throw new Error(
-      `No project virtualenv found. Looked in:\n  ${candidates.join("\n  ")}\n` +
-        "Create it with `python -m venv .venv` and `pip install -e engine[dev]`.",
-    );
-  }
+  ].filter(Boolean) as string[];
+  const python = candidates.find((path) => existsSync(path)) ?? "python";
 
   const stdout = execFileSync(python, ["-m", "anatria_engine.protocol_surface"], {
     cwd: join(repoRoot, "engine"),
@@ -179,3 +174,4 @@ describe("IPC protocol contract", () => {
     expect(Object.keys(AgentRequestSchema.shape)).not.toContain("api_key");
   });
 });
+

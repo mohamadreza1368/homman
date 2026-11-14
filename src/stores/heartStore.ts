@@ -20,7 +20,7 @@ import type { RhythmId } from "@/features/viewer/rhythms";
  * the ventricular fibrillation the last person was looking at.
  */
 
-const SOUND_KEY = "anatria3d.heart.sound.v1";
+const SOUND_KEY = "hoomaan.heart.sound.v1";
 
 function storedSound(): boolean {
   return readLocal(SOUND_KEY) === "on";

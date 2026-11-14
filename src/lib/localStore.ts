@@ -65,7 +65,7 @@ function note(error: unknown): void {
  */
 export function readLocal(key: string): string | null {
   try {
-    return localStorage.getItem(key);
+    const val = localStorage.getItem(key); if (val !== null) return val; if (key.startsWith("hoomaan.")) { const legacy = localStorage.getItem(key.replace(/^hoomaan\./, "anatria3d.")); if (legacy !== null) { try { localStorage.setItem(key, legacy); localStorage.removeItem(key.replace(/^hoomaan\./, "anatria3d.")); } catch {} return legacy; } } return null;
   } catch (error) {
     note(error);
     return null;
@@ -93,7 +93,7 @@ export function removeLocal(key: string): void {
 }
 
 /** A value written on every launch, read back on the next one. */
-const STAMP = "anatria3d.storage.stamp";
+const STAMP = "hoomaan.storage.stamp";
 
 /**
  * Prove the store accepts a write at all.
@@ -103,7 +103,7 @@ const STAMP = "anatria3d.storage.stamp";
  * one key on one launch.
  */
 export function checkStorage(): void {
-  const key = "anatria3d.storage.probe";
+  const key = "hoomaan.storage.probe";
   if (!writeLocal(key, "1")) return;
   removeLocal(key);
 }
@@ -160,7 +160,7 @@ function anythingStored(): boolean {
   try {
     for (let index = 0; index < localStorage.length; index += 1) {
       const key = localStorage.key(index);
-      if (key !== null && key !== STAMP && key.startsWith("anatria3d.")) {
+      if (key !== null && key !== STAMP && (key.startsWith("hoomaan.") || key.startsWith("anatria3d."))) {
         return true;
       }
     }

@@ -1,5 +1,5 @@
 [package]
-name = "anatria3d"
+name = "hoomaan"
 version = "0.7.0"
 description = "Interactive anatomy and AI insights"
 authors = ["Nurdzhan Kerimov (Digital Rose)"]
@@ -8,7 +8,7 @@ rust-version = "1.82"
 license = "BUSL-1.1"
 
 [lib]
-name = "anatria3d_lib"
+name = "hoomaan_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]

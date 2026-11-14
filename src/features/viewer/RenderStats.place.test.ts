@@ -28,11 +28,11 @@ it("refuses a stored value that is not a place", () => {
   // localStorage is a text file a person can edit and an older build may have
   // written something else entirely. A NaN here would position the panel at
   // `left: NaN` and it would simply not appear.
-  localStorage.setItem("anatria3d.stats.place.v1", "left,top");
+  localStorage.setItem("hoomaan.stats.place.v1", "left,top");
   expect(storedPlace()).toBeNull();
 });
 
 it("clamps what it reads, not just what it is given", () => {
-  localStorage.setItem("anatria3d.stats.place.v1", "9999,9999");
+  localStorage.setItem("hoomaan.stats.place.v1", "9999,9999");
   expect(storedPlace()).toEqual({ x: 1160, y: 680 });
 });

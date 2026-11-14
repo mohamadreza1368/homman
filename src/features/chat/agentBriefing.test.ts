@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { agentBriefing } from "./agentBriefing";
 
-const NAME = "anatria3d-control-S-1-5-21-000-000-000-1001";
+const NAME = "hoomaan-control-S-1-5-21-000-000-000-1001";
 const PIPE = `\\\\.\\pipe\\${NAME}`;
 const SERVER = "C:\\Program Files\\Anatria3D\\resources\\anatria-mcp";
 
@@ -40,7 +40,7 @@ describe("agentBriefing", () => {
     // and a model handed two ways in often takes the one it can start now.
     const text = agentBriefing(PIPE, null);
     expect(text.indexOf("BEST —")).toBeLessThan(text.indexOf("OTHERWISE —"));
-    expect(text).toContain("ANATRIA3D_BRIDGE");
+    expect(text).toContain("HOOMAAN_BRIDGE");
   });
 
   it("writes without a byte order mark rather than relying on tolerance", () => {
@@ -77,7 +77,7 @@ describe("agentBriefing, when the server ships with the application", () => {
   });
 
   it("falls back to the source path when this build carries no server", () => {
-    expect(agentBriefing(PIPE, null)).toContain("in the Anatria3D source");
+    expect(agentBriefing(PIPE, null)).toContain("in the HOOMAAN source");
   });
 
   it("never tells the reader to install into the application's folder", () => {

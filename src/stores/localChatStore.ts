@@ -17,7 +17,7 @@ import type { LocalModelInfo } from "@/lib/schemas";
  * That is not something an experiment gets to do.
  */
 
-const MODEL_KEY = "anatria.localChat.model";
+const MODEL_KEY = "hoomaan.localChat.model";
 
 export interface LocalMessage {
   id: string;

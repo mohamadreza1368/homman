@@ -2,7 +2,7 @@ import { useCallback, useState } from "react";
 import { readLocal, writeLocal } from "@/lib/localStore";
 
 /**
- * Whether this is the first time this machine has opened Anatria3D.
+ * Whether this is the first time this machine has opened HOOMAAN.
  *
  * Kept in `localStorage` for the same reason the panel widths are: it must be
  * readable synchronously on the very first render. An async round-trip would
@@ -14,7 +14,7 @@ import { readLocal, writeLocal } from "@/lib/localStore";
  * not know the app has a right-click menu.
  */
 
-const STORAGE_KEY = "anatria3d.guide.v1";
+const STORAGE_KEY = "hoomaan.guide.v1";
 
 function hasSeenGuide(): boolean {
   try {

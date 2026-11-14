@@ -27,7 +27,7 @@ describe("confirmStoragePersists", () => {
   it("says nothing when the settings are there and only the stamp is new", () => {
     // The upgrade case. Every reader arriving into this feature has no stamp,
     // and telling them their machine forgets would be false for all of them.
-    writeLocal("anatria3d.view.v1", '{"hiddenSystems":[]}');
+    writeLocal("hoomaan.view.v1", '{"hiddenSystems":[]}');
 
     confirmStoragePersists(true);
 
@@ -36,14 +36,14 @@ describe("confirmStoragePersists", () => {
 
   it("leaves a stamp behind for the next launch", () => {
     confirmStoragePersists(false);
-    expect(readLocal("anatria3d.storage.stamp")).not.toBeNull();
+    expect(readLocal("hoomaan.storage.stamp")).not.toBeNull();
   });
 
   it("ignores its own stamp when deciding whether anything was kept", () => {
     // A stamp from a previous launch is proof on its own, so this reaches the
     // quiet path by the first condition rather than the third — but a stamp
     // must never be mistaken for a *setting* having survived.
-    writeLocal("anatria3d.storage.stamp", "1");
+    writeLocal("hoomaan.storage.stamp", "1");
 
     confirmStoragePersists(true);
 

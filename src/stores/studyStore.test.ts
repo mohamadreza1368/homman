@@ -201,10 +201,10 @@ describe("studyStore", () => {
   });
 
   it("reports where an export landed", async () => {
-    db.exportJournal.mockResolvedValue("D:/notes/anatria-journal.json");
+    db.exportJournal.mockResolvedValue("D:/notes/hoomaan-journal.json");
     await store().exportJournal();
 
-    expect(store().transfer).toContain("anatria-journal.json");
+    expect(store().transfer).toContain("hoomaan-journal.json");
   });
 
   it("reloads after an import, so the merged rows appear", async () => {
@@ -239,11 +239,11 @@ describe("studyStore", () => {
 
   it("surfaces a rejected file as an error, not as a merge report", async () => {
     db.importJournal.mockRejectedValue(
-      new Error("That file is not an Anatria3D study journal."),
+      new Error("That file is not a HOOMAAN study journal."),
     );
     await store().importJournal();
 
-    expect(store().error).toContain("not an Anatria3D study journal");
+    expect(store().error).toContain("not a HOOMAAN study journal");
     expect(store().transfer).toBeNull();
   });
 

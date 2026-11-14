@@ -6,7 +6,7 @@ import { APP_VERSION_LABEL } from "@/lib/appVersion";
 import { MAX_SEVERITY, MAX_VISITS } from "@/lib/studyDb";
 
 /** Where to write for support, custom work or institutional use. */
-const CONTACT_EMAIL = "anatria@digitalrose.org";
+const CONTACT_EMAIL = "info@hoomaan.app";
 
 /**
  * How the app works, for someone opening it for the first time.
@@ -35,13 +35,13 @@ const SECTIONS: Section[] = [
     body: (
       <>
         <p>
-          Anatria3D is a 3D human anatomy atlas with an assistant that teaches from
+          HOOMAAN is a 3D human anatomy atlas with an assistant that teaches from
           it. Ask a question and it answers while moving the model — isolating the
           structure, cutting a section, marking a disease state — so the explanation
           and the thing being explained are on screen together.
         </p>
         <Callout>
-          <strong>It is study material, and only that.</strong> Anatria3D is not a
+          <strong>It is study material, and only that.</strong> HOOMAAN is not a
           medical device and gives no advice about any real person. If you describe
           symptoms — yours or anyone's — the assistant will decline and point you to a
           qualified professional. That boundary is deliberate and cannot be switched
@@ -50,7 +50,7 @@ const SECTIONS: Section[] = [
         <p>
           Everything stays on your machine except what the assistant needs to answer.
           The anatomy ships with the app and your journal lives in a local file. When
-          you ask, Anatria3D sends the AI provider whose key you supplied your
+          you ask, HOOMAAN sends the AI provider whose key you supplied your
           question, the recent conversation, what is on screen — the structures
           selected, the scanner and the heart — and, in a case drill, the invented
           patient's file. Nothing goes anywhere else. Apart from checking your key,
@@ -792,7 +792,7 @@ const SECTIONS: Section[] = [
         <Callout>
           <strong>The model you pick sets the quality of the answers.</strong> This is
           worth being blunt about, because it is the easiest thing to get wrong about
-          the app. Anatria3D supplies the anatomy, the tools that move the model, and
+          the app. HOOMAAN supplies the anatomy, the tools that move the model, and
           the rules the assistant works under — the <em>reasoning</em> is the model's,
           and nothing here can improve it.
           <br />
@@ -907,7 +907,7 @@ const SECTIONS: Section[] = [
 
         <Sub>What you need first</Sub>
         <p>
-          Anatria3D does not include a model and will not download one. The models run
+          HOOMAAN does not include a model and will not download one. The models run
           in <strong>Ollama</strong>, a free program from another project that you
           install yourself.
         </p>
@@ -997,7 +997,7 @@ const SECTIONS: Section[] = [
           numbers. So before answering, the model is asked one thing only: is this about
           the health of a real person, how much of a medicine to take, or someone who
           wants to hurt themselves? If it is, the model writes nothing. You get a notice
-          written in advance, marked <Ui>Anatria3D notice</Ui>, that sends you to a
+          written in advance, marked <Ui>HOOMAAN notice</Ui>, that sends you to a
           professional and says when to call your emergency number. It carries no phone
           number, because the right one depends on where you are.
         </Callout>
@@ -1390,7 +1390,7 @@ const SECTIONS: Section[] = [
     body: (
       <>
         <p>
-          Anatria3D is free and always will be. The <em>assistant</em> is not: it runs
+          HOOMAAN is free and always will be. The <em>assistant</em> is not: it runs
           on your own API key, and every answer is billed to you by your provider.
           Nobody should have to find that out from a statement at the end of the month.
           A <em>Local model</em> is the exception: it runs on your own machine, costs
@@ -1467,12 +1467,12 @@ const SECTIONS: Section[] = [
         <p>
           It works over the <em>Model Context Protocol</em>, which is how those
           programs pick up tools. The conversation happens in their window; the
-          anatomy moves in this one. Anatria3D&apos;s own assistant is untouched and
+          anatomy moves in this one. HOOMAAN&apos;s own assistant is untouched and
           keeps working the way it always did.
         </p>
         <Callout>
           <strong>Reading costs you nothing to set up, and the server is already
-          here.</strong> It installs with Anatria3D — the panel names the file, under{" "}
+          here.</strong> It installs with HOOMAAN — the panel names the file, under{" "}
           <Ui>Writing your own client?</Ui> — so there is nothing to download. Point
           an agent at it with a Python environment of its own and it can search
           structures, read their Latin terms and walk the hierarchy with no
@@ -1492,7 +1492,7 @@ const SECTIONS: Section[] = [
           own colour, never in the assistant&apos;s own bubbles. The last twenty are
           kept, they vanish when you turn the switch off, and they are never saved to
           your journal or sent to your AI provider. The labelling is the point: that
-          text was written by a program Anatria3D does not control and cannot hold to
+          text was written by a program HOOMAAN does not control and cannot hold to
           its rules, so it must never be mistaken for the assistant.
           <br />
           <br />
@@ -1530,7 +1530,7 @@ const SECTIONS: Section[] = [
         </p>
         <Callout>
           <strong>Off means off.</strong> Turning the switch off closes the
-          connection, so there is nothing left to connect to. Closing Anatria3D does
+          connection, so there is nothing left to connect to. Closing HOOMAAN does
           the same. Nothing reconnects on its own — the next time has to start with
           you pressing this switch again.
         </Callout>
@@ -1639,14 +1639,14 @@ const SECTIONS: Section[] = [
     body: (
       <>
         <p>
-          What Anatria3D is, set against the European rules that could apply to it.
+          What HOOMAAN is, set against the European rules that could apply to it.
           Every statement below describes how the application is built and can be
           checked in its source code. It is a statement by the developer, not a
           certificate: no authority has assessed it, and a tool of this kind does not
           require one.
         </p>
         <Callout>
-          <strong>Intended purpose.</strong> Anatria3D is for studying and teaching
+          <strong>Intended purpose.</strong> HOOMAAN is for studying and teaching
           human anatomy. A professional may also use it as a visual aid to explain
           anatomy, and how conditions affect the body, in general terms and on a
           generic model. It does not diagnose, triage, monitor or recommend treatment
@@ -1662,7 +1662,7 @@ const SECTIONS: Section[] = [
           so at its foot.
         </p>
         <p>
-          <strong>Not a high-risk system (Article 6, Annex III).</strong> Anatria3D is
+          <strong>Not a high-risk system (Article 6, Annex III).</strong> HOOMAAN is
           not a safety component of a medical device, and it does not decide admission
           to education or assess anyone formally. Case-drill scores are feedback for
           your own study. Using them to grade students or staff for a course or a job
@@ -1673,14 +1673,14 @@ const SECTIONS: Section[] = [
           general-purpose AI model by Anthropic, OpenAI or Google, which you choose and
           reach with your own key. The obligations on those models (Articles 53 to 55)
           rest with their providers. A <em>Local model</em> is one you chose and
-          installed yourself in Ollama. Anatria3D does not supply it, and whatever
+          installed yourself in Ollama. HOOMAAN does not supply it, and whatever
           obligations apply to it rest with whoever publishes it.
         </p>
 
         <Sub>Medical devices — Regulation (EU) 2017/745 (MDR)</Sub>
         <p>
           Under Rule 11, software intended to inform diagnostic or therapeutic
-          decisions about a patient is a medical device. Anatria3D is not intended
+          decisions about a patient is a medical device. HOOMAAN is not intended
           for that, is not a medical device, and carries no CE marking as one.
         </p>
         <Rows
@@ -1721,7 +1721,7 @@ const SECTIONS: Section[] = [
           rows={[
             ["Generic model", "The body on screen is a reference atlas, not the patient. Say so."],
             ["No patient data", "Use the atlas directly, or ask general questions — “show how a disc herniation compresses a nerve root” — never about the person in front of you."],
-            ["The judgement", "Anatria3D shows anatomy. What it means for the patient is the professional's to say."],
+            ["The judgement", "HOOMAAN shows anatomy. What it means for the patient is the professional's to say."],
           ]}
         />
         <p className="text-[11px] text-slate-500">
@@ -1742,12 +1742,12 @@ const SECTIONS: Section[] = [
           name="Nurdzhan Kerimov"
           badge="PYSBG"
         >
-          Anatria3D was conceived, designed and engineered as a working instrument
+          HOOMAAN was conceived, designed and engineered as a working instrument
           for anatomy — the atlas, the assistant and the study journal alike.
         </Credit>
 
         <Credit role="Copyright & licence" name="Nurdzhan Kerimov (Digital Rose)" badge="digitalrose.org">
-          Anatria3D is developed by Nurdzhan Kerimov (Digital Rose) and distributed
+          HOOMAAN is developed by Nurdzhan Kerimov (Digital Rose) and distributed
           under the <strong>Business Source License&nbsp;1.1</strong>.{" "}
           <strong>Free</strong> for personal study, teaching, academic research and
           non-commercial evaluation by healthcare professionals — you may read,
@@ -1756,7 +1756,7 @@ const SECTIONS: Section[] = [
           redistribution inside a paid product, need a commercial agreement. Each
           version converts automatically to the Apache&nbsp;2.0 licence four years
           after its release, on the date its licence file states. The name and marks are separate
-          from any of that: a fork is welcome, a fork called Anatria3D is not.
+          from any of that: a fork is welcome, a fork called HOOMAAN is not.
         </Credit>
 
         <ContactCard />
@@ -1780,7 +1780,7 @@ const SECTIONS: Section[] = [
             ["BodyParts3D", "The Database Center for Life Science (DBCLS), Japan — CC BY-SA 2.1 JP"],
             ["Z-Anatomy", "The libre 3D atlas of anatomy, derived from BodyParts3D — CC BY-SA 4.0"],
             ["Terminologia Anatomica 2", "The Latin nomenclature, by way of Z-Anatomy's TA2 data"],
-            ["Anatria3D", "Our adaptation: export, compression and stable identifiers — CC BY-SA 4.0"],
+            ["HOOMAAN", "Our adaptation: export, compression and stable identifiers — CC BY-SA 4.0"],
           ]}
         />
         <Callout>
@@ -1809,8 +1809,8 @@ const SECTIONS: Section[] = [
           own licence; none of them is ours.
         </p>
         <p className="pt-2 text-[11px] text-slate-500">
-          Anatria3D {APP_VERSION_LABEL}. © 2026 Nurdzhan Kerimov (Digital Rose).
-          Anatria3D is a trademark of Digital Rose. Application code under the
+          HOOMAAN {APP_VERSION_LABEL}. © 2026 Nurdzhan Kerimov (Digital Rose).
+          HOOMAAN is a trademark of Digital Rose. Application code under the
           Business Source License 1.1, each version converting to Apache-2.0 four
           years after its release;
           anatomical assets under CC BY-SA 4.0 and CC BY 4.0.

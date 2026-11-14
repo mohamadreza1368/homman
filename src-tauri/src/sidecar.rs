@@ -39,7 +39,7 @@ const ENGINE_EXE: &str = "anatria-engine";
 /// Single channel carrying every engine frame to the frontend. The frontend
 /// validates each one with Zod and routes on `type`, so Rust does not need to
 /// model the event union — one fewer place for the protocol to drift.
-pub const ENGINE_EVENT: &str = "anatria://engine-event";
+pub const ENGINE_EVENT: &str = "hoomaan://engine-event";
 
 #[derive(Debug, thiserror::Error)]
 pub enum EngineError {

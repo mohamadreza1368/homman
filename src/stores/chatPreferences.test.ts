@@ -129,7 +129,7 @@ describe("the stored snapshot", () => {
   });
 
   it("falls back to the defaults when the stored value is not JSON", () => {
-    localStorage.setItem("anatria3d.chat.v1", "{not json");
+    localStorage.setItem("hoomaan.chat.v1", "{not json");
     reloadChatPreferences();
     expect(chatPreferences()).toEqual(DEFAULT_CHAT_PREFERENCES);
   });

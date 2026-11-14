@@ -14,7 +14,7 @@
  *
  * # Why it must stand alone
  *
- * The first version of this text sent the agent to `tools/anatria_mcp/atlas.py`.
+ * The first version of this text sent the agent to `tools/hoomaan_mcp/atlas.py`.
  * That worked in testing and would have failed for every real reader: the
  * installer bundled the frozen sidecar and nothing else, so on a machine where
  * somebody installed the `.exe` the file did not exist. The test only passed
@@ -45,16 +45,16 @@ export function agentBriefing(pipe: string, server: string | null): string {
   // nothing, and fell back to guessing at the transport.
   const serverPath = server
     ? `${server}\\atlas.py`
-    : "tools/anatria_mcp/atlas.py (in the Anatria3D source)";
+    : "tools/hoomaan_mcp/atlas.py (in the HOOMAAN source)";
 
-  return `You are driving Anatria3D, a 3D anatomy atlas already running on this
+  return `You are driving HOOMAAN, a 3D anatomy atlas already running on this
 computer. It offers twenty tools: five that read the atlas and fifteen that move
 what is on screen. The control bridge switch is on, or you would not have been
 given this.
 
 BEST — configure the MCP server and restart your client.
   server: ${serverPath}
-  env:    {"ANATRIA3D_BRIDGE": "1"}
+  env:    {"HOOMAAN_BRIDGE": "1"}
 It needs Python 3.10+ and one package. Build an environment of your own — do
 not install anything into the application's folder:
   python -m venv <somewhere>/mcpenv
@@ -98,6 +98,6 @@ WHAT WILL SURPRISE YOU OTHERWISE
   Ask the reader, or take the MCP route above, which can search. Inventing one
   produces a command that is accepted and does nothing.
 - Your text appears in a separate lane marked "via the control bridge". It is
-  not the Anatria3D assistant, it is not saved, and it is never sent to the
+  not the HOOMAAN assistant, it is not saved, and it is never sent to the
   reader's AI provider. Write accordingly.`;
 }

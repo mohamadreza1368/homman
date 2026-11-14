@@ -7,7 +7,7 @@ import { SUPPLY_LABEL, type SupplyKind } from "./supply";
 import { useDraggablePanel } from "./useDraggablePanel";
 
 /** Where the study panel sits, remembered between sessions. */
-const POSITION_KEY = "anatria3d.studyPanel.v1";
+const POSITION_KEY = "hoomaan.studyPanel.v1";
 
 /**
  * Study mode: the panel shown while structures are isolated.

@@ -24,14 +24,14 @@ it("is silent until sound is asked for", () => {
 
 it("remembers the sound being turned on, and off again", () => {
   useHeartStore.getState().setSound(true);
-  expect(localStorage.getItem("anatria3d.heart.sound.v1")).toBe("on");
+  expect(localStorage.getItem("hoomaan.heart.sound.v1")).toBe("on");
   useHeartStore.getState().setSound(false);
-  expect(localStorage.getItem("anatria3d.heart.sound.v1")).toBe("off");
+  expect(localStorage.getItem("hoomaan.heart.sound.v1")).toBe("off");
 });
 
 it("writes nothing when the sound setting has not changed", () => {
   useHeartStore.getState().setSound(false);
-  expect(localStorage.getItem("anatria3d.heart.sound.v1")).toBeNull();
+  expect(localStorage.getItem("hoomaan.heart.sound.v1")).toBeNull();
 });
 
 it("starts on a normal rhythm, and shows the one chosen", () => {

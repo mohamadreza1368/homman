@@ -39,10 +39,7 @@ export function logEvent(
   source: string,
   message: string,
 ): void {
-  void invoke("log_event", { level, source, message }).catch(() => {
-    // Nowhere left to report this, which is the one case where silence is the
-    // only option available.
-  });
+  try { const p = invoke("log_event", { level, source, message }); p?.catch?.(() => {}); } catch {}
 }
 
 export function readLog(): Promise<LogEntry[]> {

@@ -15,7 +15,7 @@
 const MARKER = /\[\[([a-z0-9_]+)\]\]/gi;
 
 /** Custom href scheme; the Markdown renderer branches on it. */
-export const REF_SCHEME = "anatria-ref:";
+export const REF_SCHEME = "hoomaan-ref:";
 
 export interface OrganReference {
   organId: string;

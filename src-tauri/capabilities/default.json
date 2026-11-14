@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Capabilities granted to the Anatria3D main window.",
+  "description": "Capabilities granted to the HOOMAAN main window.",
   "windows": ["main"],
   "permissions": [
     "core:default",

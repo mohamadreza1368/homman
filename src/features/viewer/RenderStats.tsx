@@ -182,7 +182,7 @@ const ROWS: Row[] = [
  * clamped back inside on the way in: a position saved on a large monitor must
  * not hide the panel on a laptop.
  */
-const PLACE_KEY = "anatria3d.stats.place.v1";
+const PLACE_KEY = "hoomaan.stats.place.v1";
 
 /** Kept on screen by this much, whatever was saved or dragged. */
 const KEEP_VISIBLE = 120;

@@ -30,7 +30,7 @@ const SCHEMA_VERSION: i32 = 10;
 
 /// Marker on an exported journal, so an unrelated `.json` is refused with a
 /// sentence rather than a parse error.
-pub const EXPORT_FORMAT: &str = "anatria3d.journal";
+pub const EXPORT_FORMAT: &str = "hoomaan.journal";
 /// Bumped when the exported shape changes incompatibly.
 pub const EXPORT_VERSION: u32 = 1;
 
@@ -1432,14 +1432,14 @@ impl StudyDb {
     /// are keyed by the uuid added in schema v2. Both resolve conflicts by
     /// keeping the version that was edited last.
     pub fn import(&self, incoming: JournalExport) -> Result<ImportSummary> {
-        if incoming.format != EXPORT_FORMAT {
+        if incoming.format != EXPORT_FORMAT && incoming.format != "anatria3d.journal" {
             return Err(StudyError::Invalid(
-                "That file is not an Anatria3D study journal.".into(),
+                "That file is not a HOOMAAN study journal.".into(),
             ));
         }
         if incoming.version > EXPORT_VERSION {
             return Err(StudyError::Invalid(format!(
-                "That journal was written by a newer version of Anatria3D \
+                "That journal was written by a newer version of HOOMAAN \
                  (format {}, this build reads {}). Update the app and try again.",
                 incoming.version, EXPORT_VERSION
             )));
@@ -3230,7 +3230,7 @@ mod tests {
         let mut exported = populated().export().unwrap();
         exported.format = "something.else".into();
         let error = fresh.import(exported).unwrap_err().to_string();
-        assert!(error.contains("not an Anatria3D study journal"));
+        assert!(error.contains("not a HOOMAAN study journal"));
     }
 
     #[test]

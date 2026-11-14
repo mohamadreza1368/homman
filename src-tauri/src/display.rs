@@ -44,7 +44,7 @@ const STABLE_ARG: &str = "--disable-direct-composition";
 const WEBKIT_DMABUF: &str = "WEBKIT_DISABLE_DMABUF_RENDERER";
 
 /// The platform's identifier folder name, as Tauri derives the data directory.
-const IDENTIFIER: &str = "com.pysbg.anatria3d";
+const IDENTIFIER: &str = "com.hoomaan.app";
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -143,7 +143,7 @@ mod tests {
     use super::*;
 
     fn scratch(name: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!("anatria3d-display-{name}-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("hoomaan-display-{name}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         dir
     }

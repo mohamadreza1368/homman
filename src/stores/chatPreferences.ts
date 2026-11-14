@@ -43,7 +43,7 @@ import { readLocal, writeLocal } from "@/lib/localStore";
  * the presence of the app.
  */
 
-const STORAGE_KEY = "anatria3d.chat.v1";
+const STORAGE_KEY = "hoomaan.chat.v1";
 
 export interface ChatPreferences {
   provider: AiProvider;

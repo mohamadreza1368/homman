@@ -56,7 +56,7 @@ const SOURCES = [
     file: "src-tauri/Cargo.lock",
     // Anchored to our own package entry, for the same reason.
     find: (text) =>
-      /^name = "anatria3d"\r?\nversion = "([^"]+)"/m.exec(text)?.[1],
+      /^name = "hoomaan"\r?\nversion = "([^"]+)"/m.exec(text)?.[1],
   },
   {
     file: "CITATION.cff",

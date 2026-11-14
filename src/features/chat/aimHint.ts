@@ -30,7 +30,7 @@ import { readLocal, writeLocal } from "@/lib/localStore";
  * who already works this way ever sees it.
  */
 
-const STORAGE_KEY = "anatria3d.aimHint.v1";
+const STORAGE_KEY = "hoomaan.aimHint.v1";
 
 function hasLearned(): boolean {
   try {

@@ -21,7 +21,7 @@ const POLL_MS = 2000;
  * is already running as. That is what turns setup from a per-session ritual
  * into one line pasted once.
  */
-const MCP_ENV = '"ANATRIA3D_BRIDGE": "1"';
+const MCP_ENV = '"HOOMAAN_BRIDGE": "1"';
 
 /**
  * The control bridge's switch.
@@ -128,7 +128,7 @@ export function BridgeSettings() {
       <p className="text-[10px] leading-snug text-slate-600">
         Lets another program on this computer control the view and display
         external messages in the assistant panel. These messages are attributed
-        to the control bridge, not the Anatria3D assistant. They are not saved
+        to the control bridge, not the HOOMAAN assistant. They are not saved
         to the journal or sent to your provider. Only your own
         account can open the connection, and only while this switch is on.
       </p>
@@ -138,7 +138,7 @@ export function BridgeSettings() {
           <CopyRow label="Add this to your MCP client" value={MCP_ENV} />
           <p className="text-[10px] leading-snug text-slate-600">
             Paste it into the <span className="text-slate-400">env</span> block of
-            the Anatria3D entry, then restart that client. It never changes, so this
+            the HOOMAAN entry, then restart that client. It never changes, so this
             is a once-only step — the server finds this window by itself.
           </p>
 

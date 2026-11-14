@@ -40,7 +40,7 @@ function drawName(text: string): THREE.CanvasTexture {
   return texture;
 }
 
-export function nameplate(text = "ANATRIA 3D"): THREE.Mesh<THREE.PlaneGeometry, THREE.ShaderMaterial> {
+export function nameplate(text = "HOOMAAN"): THREE.Mesh<THREE.PlaneGeometry, THREE.ShaderMaterial> {
   const material = new THREE.ShaderMaterial({
     transparent: true,
     depthWrite: false,

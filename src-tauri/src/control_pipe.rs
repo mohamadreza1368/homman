@@ -505,7 +505,7 @@ mod tests {
     fn unique_name() -> String {
         static NEXT: AtomicU32 = AtomicU32::new(0);
         format!(
-            "anatria3d-test-{}-{}",
+            "hoomaan-test-{}-{}",
             std::process::id(),
             NEXT.fetch_add(1, Ordering::Relaxed)
         )
@@ -578,7 +578,7 @@ mod tests {
         // It must fail, and it must fail rather than wait: `connect` only waits
         // on ERROR_PIPE_BUSY, so a name with no listener behind it has to come
         // back promptly with something else.
-        assert!(ControlClient::connect("anatria3d-no-listener-here").is_err());
+        assert!(ControlClient::connect("hoomaan-no-listener-here").is_err());
     }
 
     #[test]

@@ -1,5 +1,9 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+vi.mock("@tauri-apps/api/core", () => ({
+  invoke: vi.fn().mockResolvedValue(undefined),
+}));
 import type { AiProvider, EngineEvent, Language, UserProfile } from "@/lib/schemas";
 import { PROTOCOL_VERSION } from "@/lib/schemas";
 import { useChatStore } from "@/stores/chatStore";

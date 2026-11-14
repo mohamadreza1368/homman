@@ -119,7 +119,7 @@ impl fmt::Display for BridgeError {
             Self::NoIdentity(why) => write!(f, "could not identify this account: {why}"),
             Self::AlreadyOpen => write!(
                 f,
-                "another Anatria3D window signed in as you already has the bridge on. \
+                "another HOOMAAN window signed in as you already has the bridge on. \
                  Turn it off there, or use that window."
             ),
             Self::Pipe(why) => write!(f, "{why}"),
@@ -143,7 +143,7 @@ mod platform {
 
     /// The stem every instance's pipe name is built on. The account's SID is
     /// appended — see the module note on why it is per user.
-    const PIPE_STEM: &str = "anatria3d-control";
+    const PIPE_STEM: &str = "hoomaan-control";
 
     /// What one running bridge owns. Dropping this stops the accept loop, so
     /// there is no way to lose the listener while believing it stopped.

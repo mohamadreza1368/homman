@@ -58,7 +58,7 @@ export const KIND_CHORD: Record<MemoryKind, readonly number[]> = {
 
 /** Overall level with sound on. The compressor after it only catches peaks. */
 const MASTER = 0.55;
-const SOUND_KEY = "anatria3d.memory.sound.v1";
+const SOUND_KEY = "hoomaan.memory.sound.v1";
 
 export function storedLabSound(): boolean {
   try {

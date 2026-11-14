@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 
 /// Service name under which credentials are filed. Shows up as the entry name
 /// in Windows Credential Manager / macOS Keychain, so it is user-facing.
-const SERVICE: &str = "Anatria3D";
+const SERVICE: &str = "HOOMAAN";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]

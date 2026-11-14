@@ -158,7 +158,7 @@ pub fn run() {
             }
         })
         .build(tauri::generate_context!())
-        .expect("error while building Anatria3D")
+        .expect("error while building HOOMAAN")
         .run(|app, event| {
             // Belt and braces: `Destroyed` covers the normal close, this covers
             // the paths that skip it. Leaving a Python process behind after the

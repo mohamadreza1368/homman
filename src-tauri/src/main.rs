@@ -2,5 +2,5 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 fn main() {
-    anatria3d_lib::run()
+    hoomaan_lib::run()
 }

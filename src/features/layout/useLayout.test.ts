@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 
 import { CHAT_LIMITS, TREE_LIMITS, clamp, useLayout } from "./useLayout";
 
-const STORAGE_KEY = "anatria3d.layout.v1";
+const STORAGE_KEY = "hoomaan.layout.v1";
 
 beforeEach(() => localStorage.clear());
 

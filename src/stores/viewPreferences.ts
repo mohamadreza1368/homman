@@ -25,7 +25,7 @@ import { readLocal, writeLocal } from "@/lib/localStore";
  * widths: it reads synchronously, so the first frame is already correct.
  */
 
-const STORAGE_KEY = "anatria3d.view.v1";
+const STORAGE_KEY = "hoomaan.view.v1";
 
 export interface ViewPreferences {
   hiddenSystems: AnatomicalSystem[];

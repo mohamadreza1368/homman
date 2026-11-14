@@ -39,11 +39,11 @@ function status(overrides: Partial<BridgeStatus> = {}): BridgeStatus {
 
 const RUNNING = status({
   running: true,
-  pipe: String.raw`\\.\pipe\anatria3d-control-S-1-5-21-9-9-9-1001`,
+  pipe: String.raw`\\.\pipe\hoomaan-control-S-1-5-21-9-9-9-1001`,
 });
 
 /** The one line the panel exists to hand over. */
-const CONFIG = '"ANATRIA3D_BRIDGE": "1"';
+const CONFIG = '"HOOMAAN_BRIDGE": "1"';
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -55,7 +55,7 @@ describe("the switch", () => {
     ipc.bridgeStatus.mockResolvedValue(status());
     render(<BridgeSettings />);
     await screen.findByRole("switch");
-    expect(screen.getByText(/external messages in the assistant panel/).textContent).toContain("not the Anatria3D assistant");
+    expect(screen.getByText(/external messages in the assistant panel/).textContent).toContain("not the HOOMAAN assistant");
     expect(screen.getByText(/external messages in the assistant panel/).textContent).toContain("not saved to the journal or sent to your provider");
   });
   it("offers no switch on a platform with no bridge", async () => {
@@ -139,7 +139,7 @@ describe("the switch", () => {
     // state — "Win32 231" would tell them nothing they could act on.
     ipc.bridgeStatus.mockResolvedValue(status());
     ipc.startBridge.mockRejectedValue(
-      "another Anatria3D window signed in as you already has the bridge on.",
+      "another HOOMAAN window signed in as you already has the bridge on.",
     );
     render(<BridgeSettings />);
 
@@ -148,7 +148,7 @@ describe("the switch", () => {
       fireEvent.click(control);
     });
 
-    expect(await screen.findByText(/another anatria3d window/i)).toBeTruthy();
+    expect(await screen.findByText(/another HOOMAAN window/i)).toBeTruthy();
     expect(screen.getByRole("switch").getAttribute("aria-checked")).toBe("false");
   });
 

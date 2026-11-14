@@ -27,18 +27,18 @@ import type { SectionPlaneName } from "@/features/viewer/axialSlice";
  * frame.
  */
 
-const SWEEP_ON_ANSWER_KEY = "anatria3d.scan.sweepOnAnswer.v1";
-const TINT_KEY = "anatria3d.scan.tint.v1";
-const REVEAL_KEY = "anatria3d.scan.reveal.v1";
-const READOUT_KEY = "anatria3d.scan.readout.v1";
-const PANEL_KEY = "anatria3d.scan.panel.v1";
-const GHOST_KEY = "anatria3d.scan.ghost.v1";
-const SOUND_KEY = "anatria3d.scan.sound.v1";
-const AXIAL_KEY = "anatria3d.scan.axial.v1";
-const CUT_KEY = "anatria3d.scan.cut.v1";
-const TORCH_KEY = "anatria3d.scan.torch.v1";
-const DETAIL_KEY = "anatria3d.scan.detail.v1";
-const PLANE_KEY = "anatria3d.scan.plane.v1";
+const SWEEP_ON_ANSWER_KEY = "hoomaan.scan.sweepOnAnswer.v1";
+const TINT_KEY = "hoomaan.scan.tint.v1";
+const REVEAL_KEY = "hoomaan.scan.reveal.v1";
+const READOUT_KEY = "hoomaan.scan.readout.v1";
+const PANEL_KEY = "hoomaan.scan.panel.v1";
+const GHOST_KEY = "hoomaan.scan.ghost.v1";
+const SOUND_KEY = "hoomaan.scan.sound.v1";
+const AXIAL_KEY = "hoomaan.scan.axial.v1";
+const CUT_KEY = "hoomaan.scan.cut.v1";
+const TORCH_KEY = "hoomaan.scan.torch.v1";
+const DETAIL_KEY = "hoomaan.scan.detail.v1";
+const PLANE_KEY = "hoomaan.scan.plane.v1";
 
 /**
  * Which way the scanner reads the body: across it at a height, or through it

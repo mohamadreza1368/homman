@@ -44,7 +44,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "anatria3d"
+name = "hoomaan"
 version = "0.7.0"
 dependencies = [
  "base64 0.23.1",

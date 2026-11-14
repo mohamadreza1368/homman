@@ -52,7 +52,7 @@ impl Listener {
 
         let flag = Arc::clone(&stopping);
         let thread = std::thread::Builder::new()
-            .name("anatria-control".into())
+            .name("hoomaan-control".into())
             .spawn(move || {
                 while !flag.load(Ordering::SeqCst) {
                     // A failed accept is not worth a retry loop: the pipe is
@@ -145,7 +145,7 @@ mod tests {
     fn unique_name() -> String {
         static NEXT: AtomicU32 = AtomicU32::new(0);
         format!(
-            "anatria3d-listener-{}-{}",
+            "hoomaan-listener-{}-{}",
             std::process::id(),
             NEXT.fetch_add(1, Ordering::Relaxed)
         )
@@ -257,7 +257,7 @@ mod tests {
     fn a_client_leaving_does_not_end_the_listener() {
         // The property that makes this a listener rather than a one-shot. A
         // reader closing their agent and opening another must not have to
-        // restart Anatria3D.
+        // restart HOOMAAN.
         let (listener, seen) = running();
 
         let first = connected(&listener);

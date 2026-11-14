@@ -37,7 +37,7 @@ it("remembers being hidden, and shows nothing at all once the sweep stops", asyn
   render(<ScanReadout />);
   await waitFor(() => expect(screen.getByText("Crossing now")).toBeTruthy());
   fireEvent.click(screen.getByText("hide"));
-  expect(localStorage.getItem("anatria3d.scan.readout.v1")).toBe("off");
+  expect(localStorage.getItem("hoomaan.scan.readout.v1")).toBe("off");
 
   // The chip belongs to the sweep, not to the screen: with the scanner off
   // there is nothing being crossed, so an offer to name it would be a lie.

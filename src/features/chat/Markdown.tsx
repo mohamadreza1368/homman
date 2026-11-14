@@ -134,7 +134,7 @@ export const Markdown = memo(function Markdown({ children, structurePins = true 
          * check.
          */
         urlTransform={(url) =>
-          structurePins && url.startsWith(REF_SCHEME) ? url : defaultUrlTransform(url)
+          structurePins && (url.startsWith(REF_SCHEME) || url.startsWith("anatria-ref:")) ? url : defaultUrlTransform(url)
         }
         components={{
           // External prose is text-only: no remote images or structure actions.
@@ -167,14 +167,7 @@ export const Markdown = memo(function Markdown({ children, structurePins = true 
             </blockquote>
           ),
           a: ({ children, href }) => {
-            if (structurePins && href?.startsWith(REF_SCHEME)) {
-              return (
-                <OrganPin
-                  organId={href.slice(REF_SCHEME.length)}
-                  label={String(children)}
-                />
-              );
-            }
+            if (structurePins && href && (href.startsWith(REF_SCHEME) || href.startsWith("anatria-ref:"))) { const prefix = href.startsWith(REF_SCHEME) ? REF_SCHEME : "anatria-ref:"; return <OrganPin organId={href.slice(prefix.length)} label={String(children)} />; }
             // Any other model-authored link must not navigate the app shell
             // away from itself; render it as inert text.
             return (

@@ -648,6 +648,7 @@ export function ChatPanel() {
   const isolatedOrganIds = useSceneStore((s) => s.isolatedOrganIds);
   const hiddenSystems = useSceneStore((s) => s.hiddenSystems);
   const genderModel = useSceneStore((s) => s.genderModel);
+  const applyCommand = useSceneStore((s) => s.applyCommand);
   const customBaseUrl = useCustomApiConfig((s) => s.baseUrl);
   const customApiKey = useCustomApiConfig((s) => s.apiKey);
   const customModel = useCustomApiConfig((s) => s.model);
@@ -702,7 +703,7 @@ export function ChatPanel() {
     verdictRef.current.delete(id);
     customAbortRef.current?.abort();
     customAbortRef.current = null;
-    if (sent && engineReady) void cancelRequest(id).catch((error: unknown) => {
+    if (sent) void cancelRequest(id).catch((error: unknown) => {
       setTransportError(`The previous request was detached, but the engine could not confirm cancellation: ${String(error)}`);
     });
   }));
@@ -836,7 +837,7 @@ export function ChatPanel() {
     }
     setEngineReady(false);
     setTransportError(
-      `This build of Anatria3D speaks protocol ${PROTOCOL_VERSION}, but the ` +
+      `This build of HOOMAAN speaks protocol ${PROTOCOL_VERSION}, but the ` +
         `engine bundled with it speaks ${protocolVersion}. That is a broken ` +
         `installation rather than anything you did — reinstall from a single ` +
         `release, and if it persists please report it.`,
@@ -1081,9 +1082,25 @@ export function ChatPanel() {
           }),
           history: chat.history(),
           query: prompt,
+          mode,
           signal: controller.signal,
           onDelta: (chunk) => {
             if (turns.accepts(requestId)) appendDelta(requestId, chunk);
+          },
+          onToolStarted: (tool) => {
+            if (turns.accepts(requestId)) noteTool(requestId, tool);
+          },
+          onSceneCommand: (command) => {
+            if (turns.accepts(requestId)) {
+              noteCommand(requestId, command);
+              applyCommand(command);
+            }
+          },
+          onCaseVerdict: (score, verdict) => {
+            if (turns.accepts(requestId)) {
+              noteScore(requestId, score);
+              verdictRef.current.set(requestId, { score, verdict });
+            }
           },
         });
         customAbortRef.current = null;

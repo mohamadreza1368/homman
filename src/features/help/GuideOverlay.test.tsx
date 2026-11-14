@@ -48,7 +48,7 @@ describe("GuideOverlay, the local model", () => {
   it("says what has to be installed, and that the app does not do it", () => {
     render(<GuideOverlay onClose={() => {}} />);
     expect(screen.getByRole("heading", { name: "A model on your own computer" })).toBeTruthy();
-    expect(text()).toContain("Anatria3D does not include a model and will not download one");
+    expect(text()).toContain("HOOMAAN does not include a model and will not download one");
     expect(text()).toContain("ollama pull gemma3:4b");
   });
 
@@ -81,9 +81,9 @@ describe("GuideOverlay, contact", () => {
     const writeText = vi.fn().mockResolvedValue(undefined);
     Object.assign(navigator, { clipboard: { writeText } });
     render(<GuideOverlay onClose={() => {}} />);
-    expect(screen.getAllByText("anatria@digitalrose.org").length).toBeGreaterThanOrEqual(2);
+    expect(screen.getAllByText("info@hoomaan.app").length).toBeGreaterThanOrEqual(2);
     fireEvent.click(screen.getByRole("button", { name: "Copy" }));
-    await waitFor(() => expect(writeText).toHaveBeenCalledWith("anatria@digitalrose.org"));
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith("info@hoomaan.app"));
     expect(await screen.findByRole("button", { name: "Copied" })).toBeTruthy();
   });
 });

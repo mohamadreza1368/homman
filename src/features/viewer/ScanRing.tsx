@@ -144,7 +144,7 @@ const NAMEPLATE_REPEATS = 5;
 export function nameplateText(byAssistant: boolean, plane: SectionPlaneName = "axial"): string {
   // And which way it is reading, because the same ring serves both planes and
   // the picture beside it is a different kind of picture.
-  return ["HOMMAN", byAssistant ? "AI" : null, plane === "front" ? "FRONT" : null]
+  return ["HOOMAAN", byAssistant ? "AI" : null, plane === "front" ? "FRONT" : null]
     .filter(Boolean)
     .join(" ");
 }
@@ -162,7 +162,7 @@ function nameplateTexture(glow: string, label: string): THREE.CanvasTexture {
     context.clearRect(0, 0, canvas.width, canvas.height);
     context.textAlign = "center";
     context.textBaseline = "middle";
-    // Shrunk until it fits rather than clipped: "ANATRIA 3D AI FRONT" is half
+    // Shrunk until it fits rather than clipped: "HOOMAAN AI FRONT" is half
     // as long again as the name the plate was sized for, and a name cut off at
     // both ends reads as a fault in the instrument. The spacing shrinks with
     // the letters so the plate keeps its look.

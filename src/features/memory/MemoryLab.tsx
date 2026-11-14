@@ -52,7 +52,7 @@ function sizeFor(width: number, height: number): Size {
 /** Hair is drawn as strands, which the hologram turns into noise; the figure is better bare. */
 const NOT_SURFACE = /^(Hairs of|Eyelashes|Pubic hairs)/;
 
-const FOCUS_KEY = "anatria3d.memory.focus.v1";
+const FOCUS_KEY = "hoomaan.memory.focus.v1";
 
 /** Focus is remembered: someone who reads with it on will want it on next time. */
 function storedFocus(): boolean {

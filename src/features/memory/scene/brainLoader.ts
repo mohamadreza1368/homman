@@ -42,7 +42,7 @@ export interface Brain {
 }
 
 export interface BrainSource {
-  /** The GLB holding the brain (Anatria3D's `nervous_male.glb`). */
+  /** The GLB holding the brain (HOOMAAN's `nervous_male.glb`). */
   meshUrl: string;
   /** Which nodes are brain, and what they are called. */
   structures: readonly BrainStructure[];
@@ -84,7 +84,7 @@ export function releaseDraco(path: string): void {
  *
  * GLTFLoader passes every node name through `sanitizeNodeName`, so a node is
  * looked up both as the manifest spells it and sanitised — the same lookup
- * Anatria3D's own viewer does.
+ * HOOMAAN's own viewer does.
  */
 export async function loadBrain(source: BrainSource): Promise<Brain> {
   const loader = new GLTFLoader().setDRACOLoader(acquireDraco(source.dracoPath));
