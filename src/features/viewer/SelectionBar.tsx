@@ -36,7 +36,7 @@ export function SelectionBar() {
 
   return (
     <div className="pointer-events-none absolute inset-x-0 bottom-16 flex justify-center">
-      <div className="pointer-events-auto flex max-w-[85%] items-center gap-2 rounded-full border border-slate-700 bg-slate-900/95 px-3 py-1.5 shadow-lg backdrop-blur">
+      <div className="pointer-events-auto flex max-w-[85%] items-center gap-2 rounded-full border border-teal-500/30 bg-slate-900/90 px-3.5 py-1.5 shadow-2xl backdrop-blur-xl ring-1 ring-white/10">
         {chosen.length > 0 && (
           <>
             <span className="shrink-0 rounded-full bg-slate-700/60 px-2 py-0.5 text-[10px] font-semibold text-slate-200">

@@ -42,10 +42,10 @@ export function LeftPanel() {
   const fa = language === 'fa';
 
   return (
-    <div dir={fa ? "rtl" : "ltr"} className="flex h-full min-h-0 flex-col bg-[#09151c]">
+    <div dir={fa ? "rtl" : "ltr"} className="flex h-full min-h-0 flex-col bg-slate-900/95 backdrop-blur-2xl">
       <div className="flex items-center gap-3 border-b border-teal-900/50 px-4 py-4">
         <BrandLogo variant="mark-dark" className="h-9 w-9" decorative />
-        <div className="min-w-0"><div className="text-sm font-bold tracking-[0.18em] text-white" dir="ltr">HOMMAN</div><div className="mt-0.5 text-[10px] text-teal-300/80">{fa ? "فضای یادگیری بدن انسان" : "Explore the human body"}</div></div>
+        <div className="min-w-0"><div className="text-sm font-bold tracking-[0.18em] text-white" dir="ltr">HOOMAAN STUDIO</div><div className="mt-0.5 text-[10px] text-teal-300/80">{fa ? "فضای یادگیری بدن انسان" : "Explore the human body"}</div></div>
       </div>
       <div className="flex shrink-0 border-b border-slate-800 px-1">
         <TabButton active={tab === "atlas"} onClick={() => setTab("atlas")}>

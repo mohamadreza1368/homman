@@ -289,7 +289,7 @@ function MessageBubble({ message }: { message: ChatMessage }) {
   if (message.role === "user") {
     return (
       <div className="group flex flex-col items-end gap-1">
-        <div className="max-w-[85%] whitespace-pre-wrap rounded-lg rounded-br-sm bg-sky-600/20 px-3 py-2 text-[13px] text-slate-100">
+        <div className="max-w-[85%] whitespace-pre-wrap rounded-2xl rounded-br-sm border border-teal-500/30 bg-gradient-to-br from-teal-700/25 via-slate-800/40 to-sky-700/20 px-3.5 py-2.5 text-[13px] text-slate-100 shadow-md backdrop-blur-md">
           {message.content}
         </div>
         <div className="opacity-0 transition group-hover:opacity-100">
@@ -303,7 +303,7 @@ function MessageBubble({ message }: { message: ChatMessage }) {
 
   return (
     <div className="group flex flex-col gap-1">
-      <div className="rounded-lg rounded-bl-sm bg-slate-900/70 px-3 py-2">
+      <div className="rounded-2xl rounded-bl-sm border border-slate-700/60 bg-slate-900/80 px-3.5 py-2.5 shadow-xl backdrop-blur-xl ring-1 ring-white/5">
         {message.score !== undefined && <ScoreBadge score={message.score} />}
         {empty && message.status === "streaming" ? (
           <span className="inline-flex gap-1 py-1" aria-label="Thinking">
@@ -1141,7 +1141,7 @@ export function ChatPanel() {
   }
 
   return (
-    <div dir={fa ? "rtl" : "ltr"} className="relative flex h-full min-h-0 flex-col">
+    <div dir={fa ? "rtl" : "ltr"} className="relative flex h-full min-h-0 flex-col bg-slate-900/95 backdrop-blur-2xl">
       <header className="flex items-center gap-2 border-b border-slate-800 px-3 py-2">
         <h1 className="flex items-center gap-1.5" aria-label="HOOMAAN"><BrandLogo variant="mark-dark" className="h-6 w-auto shrink-0" decorative /><BrandLogo variant="wordmark" className="h-4 w-auto shrink-0" alt="HOOMAAN — هومان" /></h1>
         <span

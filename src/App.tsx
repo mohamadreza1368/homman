@@ -91,7 +91,7 @@ export default function App() {
   };
 
   return (
-    <div className="flex h-full bg-slate-950 text-slate-200">
+    <div className="relative h-full w-full overflow-hidden bg-slate-950 text-slate-200">
       {splash.visible && <SplashScreen leaving={splash.leaving} />}
       {!splash.visible && !authenticated && <LoginScreen />}
       {idle.showing && <IdleScreen onDismiss={idle.dismiss} />}
@@ -107,62 +107,82 @@ export default function App() {
           only thing allowed to interrupt a print preview is a question about
           destroying something. */}
       <ConfirmDialog />
-        <>
-          <aside
-            hidden={layout.treeCollapsed}
-            inert={layout.treeCollapsed}
-            className="min-h-0 shrink-0 overflow-hidden"
-            style={{ width: layout.treeWidth }}
-          >
-            <LeftPanel />
-          </aside>
-          {!layout.treeCollapsed && <ResizeHandle
-            width={layout.treeWidth}
-            onResize={setTreeWidth}
-            side="left"
-            min={TREE_LIMITS.min}
-            max={TREE_LIMITS.max}
-            defaultWidth={TREE_LIMITS.default}
-            label="Resize the anatomy panel"
-          />}
-        </>
 
-      <main className="relative min-h-0 min-w-0 flex-1">
+      {/* Modern Studio HUD: Full-Bleed 3D Viewport canvas as the primary canvas */}
+      <main className="absolute inset-0 z-0">
         <AnatomyViewer paused={memoryOpen} />
-        <TopBar
-          treeCollapsed={layout.treeCollapsed}
-          chatCollapsed={layout.chatCollapsed}
-          userName={userName}
-          onToggleTree={toggleTree}
-          onToggleChat={toggleChat}
-          onOpenGuide={() => setGuideOpen(true)}
-          onOpenMemory={() => setMemoryOpen(true)}
-          onSignOut={signOut}
-        />
         {/* Scoped to the viewport rather than the window: the panels stay
             reachable, so the guide can be read next to the thing it describes. */}
         {guideOpen && authenticated && <GuideOverlay onClose={closeGuide} />}
       </main>
 
-        <>
-          {!layout.chatCollapsed && <ResizeHandle
-            width={layout.chatWidth}
-            onResize={setChatWidth}
-            side="right"
-            min={CHAT_LIMITS.min}
-            max={CHAT_LIMITS.max}
-            defaultWidth={CHAT_LIMITS.default}
-            label="Resize the assistant panel"
-          />}
-          <aside
-            hidden={layout.chatCollapsed}
-            inert={layout.chatCollapsed}
-            className="min-h-0 shrink-0 overflow-hidden"
-            style={{ width: layout.chatWidth }}
+      {/* Floating Studio HUD Top Capsule */}
+      <TopBar
+        treeCollapsed={layout.treeCollapsed}
+        chatCollapsed={layout.chatCollapsed}
+        userName={userName}
+        onToggleTree={toggleTree}
+        onToggleChat={toggleChat}
+        onOpenGuide={() => setGuideOpen(true)}
+        onOpenMemory={() => setMemoryOpen(true)}
+        onSignOut={signOut}
+      />
+
+      {/* Floating Left Drawer: Anatomy Tree, Diseases, Study, Education, and View controls */}
+      <>
+        <aside
+          hidden={layout.treeCollapsed}
+          inert={layout.treeCollapsed}
+          className="pointer-events-auto absolute top-14 bottom-3 left-3 z-20 flex min-h-0 flex-col overflow-hidden rounded-2xl border border-slate-700/60 bg-[#09151c]/90 shadow-2xl backdrop-blur-2xl ring-1 ring-white/10"
+          style={{ width: layout.treeWidth }}
+        >
+          <LeftPanel />
+        </aside>
+        {!layout.treeCollapsed && (
+          <div
+            className="pointer-events-auto absolute top-14 bottom-3 z-20"
+            style={{ left: `calc(12px + ${layout.treeWidth}px)` }}
           >
-            <ChatPanel />
-          </aside>
-        </>
+            <ResizeHandle
+              width={layout.treeWidth}
+              onResize={setTreeWidth}
+              side="left"
+              min={TREE_LIMITS.min}
+              max={TREE_LIMITS.max}
+              defaultWidth={TREE_LIMITS.default}
+              label="Resize the anatomy panel"
+            />
+          </div>
+        )}
+      </>
+
+      {/* Floating Right Drawer: Clinical Co-Pilot, Case Drills, Settings */}
+      <>
+        {!layout.chatCollapsed && (
+          <div
+            className="pointer-events-auto absolute top-14 bottom-3 z-20"
+            style={{ right: `calc(12px + ${layout.chatWidth}px)` }}
+          >
+            <ResizeHandle
+              width={layout.chatWidth}
+              onResize={setChatWidth}
+              side="right"
+              min={CHAT_LIMITS.min}
+              max={CHAT_LIMITS.max}
+              defaultWidth={CHAT_LIMITS.default}
+              label="Resize the assistant panel"
+            />
+          </div>
+        )}
+        <aside
+          hidden={layout.chatCollapsed}
+          inert={layout.chatCollapsed}
+          className="pointer-events-auto absolute top-14 bottom-3 right-3 z-20 flex min-h-0 flex-col overflow-hidden rounded-2xl border border-slate-700/60 bg-[#071318]/90 shadow-2xl backdrop-blur-2xl ring-1 ring-white/10"
+          style={{ width: layout.chatWidth }}
+        >
+          <ChatPanel />
+        </aside>
+      </>
     </div>
   );
 }
@@ -196,64 +216,73 @@ function TopBar({
 }) {
   const fa = useInterfaceLanguage((s) => s.language === 'fa');
   return (
-    <div className="absolute inset-x-0 top-0 flex items-center gap-2 border-b border-teal-900/40 bg-[#091a20]/90 px-3 py-2 shadow-lg backdrop-blur">
-      <PanelToggle
-        active={!treeCollapsed}
-        onClick={onToggleTree}
-        title={
-          treeCollapsed
-            ? (fa ? "نمایش پنل آناتومی" : "Show the anatomy panel")
-            : (fa ? "پنهان کردن پنل آناتومی" : "Hide the anatomy panel")
-        }
-      >
-        ▌▍
-      </PanelToggle>
+    <div className="pointer-events-none absolute inset-x-0 top-3 z-30 flex justify-center px-4">
+      <header className="pointer-events-auto flex max-w-[95vw] items-center gap-2 rounded-full border border-teal-500/30 bg-[#091a20]/90 px-3.5 py-1.5 shadow-2xl backdrop-blur-xl ring-1 ring-white/10">
+        <PanelToggle
+          active={!treeCollapsed}
+          onClick={onToggleTree}
+          title={
+            treeCollapsed
+              ? (fa ? "نمایش پنل آناتومی" : "Show the anatomy panel")
+              : (fa ? "پنهان کردن پنل آناتومی" : "Hide the anatomy panel")
+          }
+        >
+          ▌▍
+        </PanelToggle>
 
-      <BrandLogo variant="mark-dark" className="h-5 w-auto shrink-0" decorative />
+        <div className="flex items-center gap-1.5">
+          <BrandLogo variant="mark-dark" className="h-5 w-auto shrink-0" decorative />
+          <span className="text-[11px] font-bold tracking-[0.2em] text-teal-300 hidden md:inline" dir="ltr">HOOMAAN</span>
+        </div>
 
-      <p className="flex-1 text-center text-[11px] text-slate-400">
-        {fa ? 'صرفاً برای آموزش؛ ابزار پزشکی یا وسیلهٔ تشخیص و درمان نیست.' : 'Educational use only — not a medical device, and not for diagnosis or treatment.'}
-      </p>
+        <span aria-hidden className="mx-1 h-3.5 w-px bg-slate-700/60" />
 
-      <button
-        type="button"
-        onClick={onOpenMemory}
-        title={fa ? "دفترچهٔ یادداشت شما به صورت نقشهٔ حافظه" : "Your study journal, as a map of memories"}
-        className="rounded border border-slate-700 px-1.5 text-[10px] leading-[17px] tracking-[0.2em] text-slate-500 transition hover:border-cyan-600 hover:text-cyan-300"
-      >
-        {fa ? 'حافظه' : 'MEMORY'}
-      </button>
+        <p className="max-w-[420px] truncate text-center text-[10.5px] text-slate-300/80">
+          {fa ? 'صرفاً برای آموزش؛ ابزار پزشکی یا تشخیص نیست.' : 'Educational use only — not a medical device, and not for diagnosis or treatment.'}
+        </p>
 
-      <button
-        type="button"
-        onClick={onOpenGuide}
-        title={fa ? "راهنمای کاربری هومان" : "How HOOMAAN works"}
-        aria-label={fa ? "راهنمای کاربری هومان" : "How HOOMAAN works"}
-        className="rounded-full border border-slate-700 px-[7px] text-[11px] leading-[17px] text-slate-500 transition hover:border-sky-600 hover:text-sky-300"
-      >
-        ?
-      </button>
+        <span aria-hidden className="mx-1 h-3.5 w-px bg-slate-700/60" />
 
-      <button
-        type="button"
-        onClick={onSignOut}
-        title={userName ? `${userName} — ${fa ? 'خروج از حساب' : 'Sign out'}` : fa ? 'خروج' : 'Sign out'}
-        className="rounded border border-slate-700 px-1.5 text-[10px] leading-[17px] text-slate-400 transition hover:border-amber-500/60 hover:text-amber-300"
-      >
-        {fa ? 'خروج' : 'Sign out'}
-      </button>
+        <button
+          type="button"
+          onClick={onOpenMemory}
+          title={fa ? "دفترچهٔ یادداشت شما به صورت نقشهٔ حافظه" : "Your study journal, as a map of memories"}
+          className="rounded-full border border-teal-700/60 bg-teal-950/40 px-2.5 py-0.5 text-[10px] leading-[17px] tracking-[0.15em] text-teal-300 transition hover:border-cyan-400 hover:text-cyan-200"
+        >
+          {fa ? 'حافظه' : 'MEMORY'}
+        </button>
 
-      <PanelToggle
-        active={!chatCollapsed}
-        onClick={onToggleChat}
-        title={
-          chatCollapsed
-            ? (fa ? "نمایش دستیار" : "Show the assistant")
-            : (fa ? "پنهان کردن دستیار" : "Hide the assistant")
-        }
-      >
-        ▍▌
-      </PanelToggle>
+        <button
+          type="button"
+          onClick={onOpenGuide}
+          title={fa ? "راهنمای کاربری هومان" : "How HOOMAAN works"}
+          aria-label={fa ? "راهنمای کاربری هومان" : "How HOOMAAN works"}
+          className="flex h-5 w-5 items-center justify-center rounded-full border border-slate-700 bg-slate-800/80 text-[11px] font-semibold text-slate-300 transition hover:border-sky-500 hover:text-sky-200"
+        >
+          ?
+        </button>
+
+        <button
+          type="button"
+          onClick={onSignOut}
+          title={userName ? `${userName} — ${fa ? 'خروج از حساب' : 'Sign out'}` : fa ? 'خروج' : 'Sign out'}
+          className="rounded-full border border-slate-700 bg-slate-800/40 px-2 py-0.5 text-[10px] leading-[17px] text-slate-400 transition hover:border-amber-500/60 hover:text-amber-300"
+        >
+          {fa ? 'خروج' : 'Sign out'}
+        </button>
+
+        <PanelToggle
+          active={!chatCollapsed}
+          onClick={onToggleChat}
+          title={
+            chatCollapsed
+              ? (fa ? "نمایش دستیار" : "Show the assistant")
+              : (fa ? "پنهان کردن دستیار" : "Hide the assistant")
+          }
+        >
+          ▍▌
+        </PanelToggle>
+      </header>
     </div>
   );
 }

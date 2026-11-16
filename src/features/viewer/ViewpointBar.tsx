@@ -1,7 +1,7 @@
 import { useEffect } from "react";
 
 import { useInterfaceLanguage } from "@/stores/interfaceLanguage";
-import { useSceneStore } from "@/stores/sceneStore";
+import { GLASS_OPACITY, useSceneStore } from "@/stores/sceneStore";
 
 import {
   DOLLY_IN,
@@ -38,8 +38,18 @@ export function ViewpointBar() {
   const orientView = useSceneStore((s) => s.orientView);
   const dollyView = useSceneStore((s) => s.dollyView);
   const isolatedOrganIds = useSceneStore((s) => s.isolatedOrganIds);
+  const glassBody = useSceneStore((s) => s.glassBody);
+  const manifest = useSceneStore((s) => s.manifest);
+  const systemOpacity = useSceneStore((s) => s.systemOpacity);
+  const explode = useSceneStore((s) => s.explode);
+  const cycleExplode = useSceneStore((s) => s.cycleExplode);
 
   const studying = isolatedOrganIds !== null && isolatedOrganIds.length > 0;
+  const isGlass =
+    (manifest?.systems.length ?? 0) > 0 &&
+    (manifest?.systems ?? []).every(
+      (entry) => systemOpacity[entry.system] === GLASS_OPACITY,
+    );
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -69,8 +79,8 @@ export function ViewpointBar() {
   }, [dollyView, fitView, orientView]);
 
   return (
-    <div className="pointer-events-none absolute bottom-3 right-3">
-      <div className="pointer-events-auto flex items-center gap-1 rounded-full border border-slate-700 bg-slate-900/95 px-2 py-1 shadow-lg backdrop-blur">
+    <div className="pointer-events-none absolute bottom-4 left-1/2 -translate-x-1/2 z-20 flex items-center justify-center">
+      <div className="pointer-events-auto flex items-center gap-1 rounded-full border border-teal-500/30 bg-slate-900/90 px-3 py-1.5 shadow-2xl backdrop-blur-xl ring-1 ring-white/10">
         <Key
           onClick={fitView}
           title={
@@ -84,29 +94,52 @@ export function ViewpointBar() {
           }
           wide
         >
-          {fa ? "تنظیم کادر" : "Fit"}
+          {fa ? "کادر" : "Fit"}
         </Key>
 
-        <span aria-hidden className="mx-0.5 h-4 w-px bg-slate-700" />
+        <span aria-hidden className="mx-0.5 h-4 w-px bg-slate-700/60" />
 
-        {VIEW_ORDER.map((view) => (
-          <Key
-            key={view}
-            onClick={() => orientView(view)}
-            title={fa ? VIEW_HINT_FA[view] : `${VIEW_HINT[view]} — key ${VIEW_LABEL[view]}`}
-            wide={fa}
-          >
-            {fa ? VIEW_LABEL_FA[view] : VIEW_LABEL[view]}
-          </Key>
-        ))}
+        <div className="flex items-center gap-0.5">
+          {VIEW_ORDER.map((view) => (
+            <Key
+              key={view}
+              onClick={() => orientView(view)}
+              title={fa ? VIEW_HINT_FA[view] : `${VIEW_HINT[view]} — key ${VIEW_LABEL[view]}`}
+              wide={fa}
+            >
+              {fa ? VIEW_LABEL_FA[view] : VIEW_LABEL[view]}
+            </Key>
+          ))}
+        </div>
 
-        <span aria-hidden className="mx-0.5 h-4 w-px bg-slate-700" />
+        <span aria-hidden className="mx-0.5 h-4 w-px bg-slate-700/60" />
 
         <Key onClick={() => dollyView(DOLLY_OUT)} title={fa ? "دور شدن — کلید −" : "Move further away — key −"}>
           −
         </Key>
         <Key onClick={() => dollyView(DOLLY_IN)} title={fa ? "نزدیک شدن — کلید +" : "Move closer in — key +"}>
           +
+        </Key>
+
+        <span aria-hidden className="mx-0.5 h-4 w-px bg-slate-700/60" />
+
+        {/* Quick studio dissection tools */}
+        <Key
+          onClick={glassBody}
+          title={fa ? "حالت بافت شفاف (شیشه‌ای) برای دیدن اعضای عمقی" : "Glass body mode"}
+          active={isGlass}
+          wide
+        >
+          {fa ? "شفاف" : "Glass"}
+        </Key>
+
+        <Key
+          onClick={cycleExplode}
+          title={fa ? `انفجار قطعات آناتومیک (${Math.round(explode * 100)}%) — کلید X` : `Explode anatomy (${Math.round(explode * 100)}%) — key X`}
+          active={explode > 0}
+          wide
+        >
+          {fa ? "انفجار" : "Explode"}
         </Key>
       </div>
     </div>
@@ -118,20 +151,24 @@ function Key({
   onClick,
   title,
   wide = false,
+  active = false,
 }: {
   children: React.ReactNode;
   onClick: () => void;
   title: string;
   wide?: boolean;
+  active?: boolean;
 }) {
   return (
     <button
       type="button"
       onClick={onClick}
       title={title}
-      className={`h-6 rounded-full text-[11px] font-medium text-slate-300 transition hover:bg-slate-800 hover:text-sky-300 ${
-        wide ? "px-2" : "w-6"
-      }`}
+      className={`h-6 rounded-full text-[11px] font-medium transition ${
+        active
+          ? "bg-teal-500/20 text-teal-300 ring-1 ring-teal-400/40"
+          : "text-slate-300 hover:bg-slate-800 hover:text-sky-300"
+      } ${wide ? "px-2" : "w-6"}`}
     >
       {children}
     </button>

@@ -53,16 +53,14 @@ function HoverLabel() {
   if (!organ) return null;
 
   return (
-    <div className="pointer-events-none absolute bottom-4 left-1/2 -translate-x-1/2 max-w-[70%] rounded-lg border border-slate-700 bg-slate-900/90 px-4 py-2 text-center shadow-lg backdrop-blur">
+    <div className="pointer-events-none absolute bottom-16 left-1/2 -translate-x-1/2 z-20 max-w-[70%] rounded-xl border border-teal-500/30 bg-slate-900/90 px-4 py-2 text-center shadow-2xl backdrop-blur-xl ring-1 ring-white/10">
       {organ.path.length > 0 && (
-        // Where this sits in the body. A name alone leaves the reader to work
-        // out whether they are looking at part of the heart or part of a rib.
-        <div className="truncate text-[10px] text-slate-500">
+        <div className="truncate text-[10px] text-teal-300/80">
           {organ.path.join(" › ")}
         </div>
       )}
-      <div className="text-sm font-medium italic text-slate-100">{organLabel(organ)}</div>
-      <div className="text-xs text-slate-400">{organSubtitle(organ)}</div>
+      <div className="text-sm font-semibold italic text-slate-100">{organLabel(organ)}</div>
+      <div className="text-xs text-slate-300">{organSubtitle(organ)}</div>
     </div>
   );
 }

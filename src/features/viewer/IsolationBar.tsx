@@ -62,7 +62,7 @@ export function IsolationBar() {
             ? { left: position.x, top: position.y }
             : { left: "50%", top: 36, transform: "translateX(-50%)" }
         }
-        className="pointer-events-auto absolute w-full max-w-2xl overflow-hidden rounded-lg border border-sky-800/70 bg-slate-900/95 shadow-lg backdrop-blur"
+        className="pointer-events-auto absolute w-full max-w-2xl overflow-hidden rounded-2xl border border-teal-500/30 bg-slate-900/90 shadow-2xl backdrop-blur-xl ring-1 ring-white/10"
       >
         <div
           {...handleProps}
