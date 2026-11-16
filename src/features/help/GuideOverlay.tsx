@@ -3,6 +3,8 @@ import { useEffect, useRef, useState } from "react";
 import { BrandLogo } from "@/components/BrandLogo";
 import { useCopy } from "@/features/chat/useCopy";
 import { APP_VERSION_LABEL } from "@/lib/appVersion";
+import { useInterfaceLanguage } from "@/stores/interfaceLanguage";
+import { FA_SECTIONS } from "./guideSectionsFa";
 import { MAX_SEVERITY, MAX_VISITS } from "@/lib/studyDb";
 
 /** Where to write for support, custom work or institutional use. */
@@ -20,7 +22,7 @@ const CONTACT_EMAIL = "info@hoomaan.app";
  * gesture changes, this changes with it.
  */
 
-interface Section {
+export interface Section {
   id: string;
   nav: string;
   title: string;
@@ -1821,7 +1823,9 @@ const SECTIONS: Section[] = [
 ];
 
 export function GuideOverlay({ onClose }: { onClose: () => void }) {
-  const [active, setActive] = useState(SECTIONS[0]!.id);
+  const fa = useInterfaceLanguage((s) => s.language === "fa");
+  const sections = fa ? FA_SECTIONS : SECTIONS;
+  const [active, setActive] = useState(sections[0]!.id);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -1846,7 +1850,7 @@ export function GuideOverlay({ onClose }: { onClose: () => void }) {
       },
       { root, rootMargin: "0px 0px -70% 0px" },
     );
-    for (const section of SECTIONS) {
+    for (const section of sections) {
       const node = root.querySelector(`#${section.id}`);
       if (node) observer.observe(node);
     }
@@ -1855,10 +1859,11 @@ export function GuideOverlay({ onClose }: { onClose: () => void }) {
 
   return (
     <div
+      dir={fa ? "rtl" : "ltr"}
       className="absolute inset-0 z-50 flex items-center justify-center bg-slate-950/80 p-4 backdrop-blur-sm"
       role="dialog"
       aria-modal="true"
-      aria-label="How HOOMAAN works"
+      aria-label={fa ? "راهنمای کارکرد هومان" : "How HOOMAAN works"}
       onClick={onClose}
     >
       <div
@@ -1867,11 +1872,11 @@ export function GuideOverlay({ onClose }: { onClose: () => void }) {
         onClick={(event) => event.stopPropagation()}
         className="flex max-h-[86vh] w-full max-w-3xl overflow-hidden rounded-xl border border-slate-700 bg-slate-900 shadow-2xl"
       >
-        <nav className="hidden w-44 shrink-0 flex-col gap-0.5 border-r border-slate-800 bg-slate-950/40 p-3 sm:flex">
+        <nav className={`hidden w-44 shrink-0 flex-col gap-0.5 ${fa ? "border-l" : "border-r"} border-slate-800 bg-slate-950/40 p-3 sm:flex`}>
           <p className="px-2 pb-2 text-[10px] font-semibold uppercase tracking-wider text-slate-600">
-            Guide
+            {fa ? "راهنما" : "Guide"}
           </p>
-          {SECTIONS.map((section) => (
+          {sections.map((section) => (
             <button
               key={section.id}
               type="button"
@@ -1880,7 +1885,7 @@ export function GuideOverlay({ onClose }: { onClose: () => void }) {
                   ?.querySelector(`#${section.id}`)
                   ?.scrollIntoView({ behavior: "smooth", block: "start" })
               }
-              className={`rounded px-2 py-1 text-left text-[11px] transition ${
+              className={`rounded px-2 py-1 ${fa ? "text-right" : "text-left"} text-[11px] transition ${
                 active === section.id
                   ? "bg-sky-600/15 text-sky-300"
                   : "text-slate-500 hover:text-slate-300"
@@ -1893,20 +1898,22 @@ export function GuideOverlay({ onClose }: { onClose: () => void }) {
 
         <div className="flex min-w-0 flex-1 flex-col">
           <header className="flex shrink-0 items-center gap-2 border-b border-slate-800 px-5 py-3">
-            <h2 className="flex items-center gap-2 text-sm font-semibold tracking-tight text-slate-100"><BrandLogo variant="mark-dark" className="h-5 w-auto shrink-0" decorative /> How HOOMAAN works</h2>
-
+            <h2 className="flex items-center gap-2 text-sm font-semibold tracking-tight text-slate-100">
+              <BrandLogo variant="mark-dark" className="h-5 w-auto shrink-0" decorative />
+              {fa ? "راهنمای کارکرد هومان" : "How HOOMAAN works"}
+            </h2>
 
             <button
               type="button"
               onClick={onClose}
-              className="ml-auto rounded border border-slate-700 px-2 py-0.5 text-[11px] text-slate-400 transition hover:border-slate-600 hover:text-slate-200"
+              className={`${fa ? "mr-auto" : "ml-auto"} rounded border border-slate-700 px-2 py-0.5 text-[11px] text-slate-400 transition hover:border-slate-600 hover:text-slate-200`}
             >
-              Start exploring
+              {fa ? "شروع کاوش" : "Start exploring"}
             </button>
           </header>
 
           <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
-            {SECTIONS.map((section) => (
+            {sections.map((section) => (
               <section key={section.id} id={section.id} className="scroll-mt-4 pb-7">
                 <h3 className="mb-2 text-[13px] font-semibold text-slate-100">
                   {section.title}
@@ -1917,8 +1924,9 @@ export function GuideOverlay({ onClose }: { onClose: () => void }) {
               </section>
             ))}
             <p className="border-t border-slate-800 pt-3 text-[10px] text-slate-600">
-              Reopen this any time with <Ui>?</Ui> at the top of the window. Anatomy
-              from Z-Anatomy, CC BY-SA 4.0 — see NOTICE.
+              {fa
+                ? <>این پنجره را در هر زمان با زدن روی علامت <Ui>؟</Ui> در بالای صفحه باز کنید. داده‌های آناتومی از Z-Anatomy تحت مجوز CC BY-SA 4.0.</>
+                : <>Reopen this any time with <Ui>?</Ui> at the top of the window. Anatomy from Z-Anatomy, CC BY-SA 4.0 — see NOTICE.</>}
             </p>
           </div>
         </div>
@@ -1934,11 +1942,11 @@ export function GuideOverlay({ onClose }: { onClose: () => void }) {
  * only the virtual-patient section is long enough to earn any: a walkthrough
  * that needs subheadings to be followed is one, and the rest are not.
  */
-function Sub({ children }: { children: React.ReactNode }) {
+export function Sub({ children }: { children: React.ReactNode }) {
   return <h4 className="pt-1.5 text-[12px] font-semibold text-slate-200">{children}</h4>;
 }
 
-function Callout({ children }: { children: React.ReactNode }) {
+export function Callout({ children }: { children: React.ReactNode }) {
   // A `div`, not a `p`. A callout is a box that holds prose, and one of them
   // holds a list — which a paragraph may not contain. React reported it as a
   // nesting error on every open of the guide, and a browser recovering from
@@ -1954,7 +1962,7 @@ function Callout({ children }: { children: React.ReactNode }) {
 }
 
 /** A gesture or key, and what it does. */
-function Rows({ rows }: { rows: [string, string][] }) {
+export function Rows({ rows }: { rows: [string, string][] }) {
   return (
     <div className="overflow-hidden rounded border border-slate-800">
       {rows.map(([gesture, effect], index) => (
@@ -1975,7 +1983,7 @@ function Rows({ rows }: { rows: [string, string][] }) {
 }
 
 /** Something the reader will see named exactly this way in the interface. */
-function Ui({ children }: { children: React.ReactNode }) {
+export function Ui({ children }: { children: React.ReactNode }) {
   return <span className="font-medium text-slate-200">{children}</span>;
 }
 
@@ -1984,7 +1992,7 @@ function Ui({ children }: { children: React.ReactNode }) {
  * the same reason as the domains below: opening it would need the webview's
  * `opener:allow-open-url`, and one address is not worth widening that for.
  */
-function ContactCard() {
+export function ContactCard() {
   const { copied, copy } = useCopy();
   return (
     <div className="rounded-lg border border-slate-700/70 bg-slate-950/50 px-4 py-3">
@@ -2016,7 +2024,7 @@ function ContactCard() {
  * webview `opener:allow-open-url`, and the capability file is short on purpose —
  * a credits panel in an offline application is not worth widening it for.
  */
-function Credit({
+export function Credit({
   role,
   name,
   badge,

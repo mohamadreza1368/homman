@@ -104,3 +104,22 @@ describe("GuideOverlay, licensing", () => {
     expect(text()).not.toMatch(/source code is released under the Apache/i);
   });
 });
+
+describe("GuideOverlay, Persian localization", () => {
+  it("renders Persian guide navigation and headings with RTL layout when language is fa", async () => {
+    const { useInterfaceLanguage } = await import("@/stores/interfaceLanguage");
+    useInterfaceLanguage.setState({ language: "fa" });
+    try {
+      const { container } = render(<GuideOverlay onClose={() => {}} />);
+      expect(container.querySelector('[dir="rtl"]')).toBeTruthy();
+      expect(screen.getByRole("heading", { name: /راهنمای کارکرد هومان/i })).toBeTruthy();
+      expect(screen.getByRole("button", { name: "شروع کاوش" })).toBeTruthy();
+      expect(screen.getByText("دربارهٔ هومان")).toBeTruthy();
+      expect(screen.getByText("اطلسی که خود را توضیح می‌دهد")).toBeTruthy();
+      expect(screen.getByText("برش‌های مقطعی")).toBeTruthy();
+      expect(screen.getByText("تپش قلب")).toBeTruthy();
+    } finally {
+      useInterfaceLanguage.setState({ language: "en" });
+    }
+  });
+});
