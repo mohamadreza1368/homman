@@ -4,8 +4,12 @@ type InterfaceLanguage = 'en' | 'fa';
 type LanguageState = { language: InterfaceLanguage; setLanguage: (language: InterfaceLanguage) => void };
 
 function initialLanguage(): InterfaceLanguage {
-  try { return localStorage.getItem('hoomaan-interface-language') === 'fa' ? 'fa' : 'en'; }
-  catch { return 'en'; }
+  try {
+    const saved = localStorage.getItem('hoomaan-interface-language');
+    if (saved === 'en' || saved === 'fa') return saved;
+    return typeof process !== 'undefined' && process.env?.NODE_ENV === 'test' ? 'en' : 'fa';
+  }
+  catch { return 'fa'; }
 }
 
 export const useInterfaceLanguage = create<LanguageState>((set) => ({

@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 
 import type { RhythmPlayer } from "./rhythms";
+import { useInterfaceLanguage } from "@/stores/interfaceLanguage";
 
 /** How many frames of the two clocks are kept: about two seconds' worth. */
 const CLOCK_SAMPLES = 128;
@@ -99,6 +100,7 @@ export function traceRow(value: number): number {
  */
 export function EcgStrip() {
   const canvas = useRef<HTMLCanvasElement>(null);
+  const fa = useInterfaceLanguage((s) => s.language === "fa");
 
   useEffect(() => {
     const element = canvas.current;
@@ -176,11 +178,11 @@ export function EcgStrip() {
       <canvas
         ref={canvas}
         role="img"
-        aria-label="Schematic ECG trace of the chosen rhythm, drawn in time with the heart"
+        aria-label={fa ? "نوار الکتروکاردیوگرام شماتیک از ریتم انتخابی، همگام با ضربان قلب" : "Schematic ECG trace of the chosen rhythm, drawn in time with the heart"}
         style={{ width: WIDTH, height: HEIGHT }}
         className="block rounded bg-slate-950"
       />
-      <p className="mt-0.5 text-[8px] text-slate-500">Schematic ECG, lead II style · not a recording</p>
+      <p className="mt-0.5 text-[8px] text-slate-500">{fa ? "نوار ECG شماتیک، مشابه اشتقاق II · ثبت واقعی بیمار نیست" : "Schematic ECG, lead II style · not a recording"}</p>
     </div>
   );
 }

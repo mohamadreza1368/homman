@@ -1,4 +1,5 @@
 import { organLabel, organSubtitle, useSceneStore } from "@/stores/sceneStore";
+import { useInterfaceLanguage } from "@/stores/interfaceLanguage";
 
 import { depthReadingState, DISMISS_HINT, HEADING, SUBHEADING } from "./depthReading";
 import { MAX_STACK } from "./depthStack";
@@ -43,6 +44,7 @@ export function DepthProbe() {
   const applyCommand = useSceneStore((s) => s.applyCommand);
   const selectedOrganIds = useSceneStore((s) => s.selectedOrganIds);
   const selectOrgan = useSceneStore((s) => s.selectOrgan);
+  const fa = useInterfaceLanguage((s) => s.language === "fa");
 
   // The pinned reading wins over whatever the pointer is crossing now. That
   // is the whole point of it: the journey to this panel goes over the model.
@@ -78,14 +80,22 @@ export function DepthProbe() {
             true — a list that says it while pointing at nothing is the kind of
             small lie that costs an interface its credibility.
           */}
-          {HEADING[state]}
+          {fa
+            ? (state === "live" ? "لایه‌های زیر مکان‌نما" : "مسیر ساختار کلیک‌شده")
+            : HEADING[state]}
           <span className="font-normal normal-case tracking-normal text-slate-600">
-            {SUBHEADING[state]}
+            {fa
+              ? (state === "live" ? "از سطح به عمق" : "ثابت‌شده — جابه‌جایی آزاد")
+              : SUBHEADING[state]}
           </span>
           <button
             type="button"
             onClick={dismiss}
-            title={DISMISS_HINT[state]}
+            title={
+              fa
+                ? (state === "live" ? "بستن این سنجش" : "رهاسازی این سنجش")
+                : DISMISS_HINT[state]
+            }
             className="ml-auto rounded px-1 text-slate-600 transition hover:text-slate-200"
           >
             ✕
@@ -119,7 +129,11 @@ export function DepthProbe() {
                     }
                     applyCommand({ action: "focus_organ", organ_id: organ.organ_id });
                   }}
-                  title={`${organSubtitle(organ)} — Ctrl-click to add it to the selection`}
+                  title={
+                    fa
+                      ? `${organSubtitle(organ)} — با Ctrl+کلیک به انتخاب اضافه کنید`
+                      : `${organSubtitle(organ)} — Ctrl-click to add it to the selection`
+                  }
                   className={`flex min-w-0 flex-1 items-center gap-2 py-1 pl-2.5 pr-1 text-left transition ${
                     hovered === organ.organ_id
                       ? "bg-sky-600/20"
@@ -174,10 +188,14 @@ export function DepthProbe() {
                       organ_ids: [organ.organ_id],
                     })
                   }
-                  title={`Show only ${organLabel(organ)} — Esc restores`}
+                  title={
+                    fa
+                      ? `نمایش فقط ${organLabel(organ)} — با Esc برمی‌گردد`
+                      : `Show only ${organLabel(organ)} — Esc restores`
+                  }
                   className="shrink-0 px-1.5 text-[8px] uppercase tracking-wide text-slate-700 opacity-0 transition group-hover:opacity-100 hover:text-sky-300 focus-visible:opacity-100"
                 >
-                  solo
+                  {fa ? "تک" : "solo"}
                 </button>
               </li>
             );
@@ -192,16 +210,14 @@ export function DepthProbe() {
         */}
         <p className="border-t border-slate-800 px-2.5 py-1 text-[9px] text-slate-600">
           {pickedHere > 0
-            ? `${pickedHere} of these selected — press I to isolate`
-            : "Ctrl-click a line to add it to the selection"}
+            ? (fa
+                ? `${pickedHere} مورد انتخاب شده — برای جداسازی کلید I را بزنید`
+                : `${pickedHere} of these selected — press I to isolate`)
+            : (fa
+                ? "با Ctrl+کلیک سطر مورد نظر را به انتخاب اضافه کنید"
+                : "Ctrl-click a line to add it to the selection")}
         </p>
 
-        {/*
-          The whole crossing, which is the thing this panel is actually about.
-          A ray through the shoulder is a surgical approach written down, and
-          isolating it leaves exactly that on screen with the rest of the body
-          out of the way.
-        */}
         {layers.length > 1 && (
           <button
             type="button"
@@ -211,19 +227,18 @@ export function DepthProbe() {
                 organ_ids: layers.map((organ) => organ.organ_id),
               })
             }
-            title="Leave only what the ray crosses — Esc restores"
+            title={fa ? "فقط ساختارهای واقع در مسیر شعاع باقی می‌مانند — با Esc برمی‌گردد" : "Leave only what the ray crosses — Esc restores"}
             className="w-full border-t border-slate-800 px-2.5 py-1 text-left text-[9px] uppercase tracking-wide text-slate-500 transition hover:bg-slate-800/60 hover:text-sky-300"
           >
-            Isolate these {layers.length}
+            {fa ? `جداسازی این ${layers.length} ساختار` : `Isolate these ${layers.length}`}
           </button>
         )}
 
         {layers.length >= MAX_STACK && (
-          // Said out loud rather than left as a silent truncation: a ray
-          // through the abdomen crosses far more than a dozen things, and a
-          // list that simply stops looks like an answer that ended.
           <p className="border-t border-slate-800 px-2.5 py-1 text-[9px] text-slate-600">
-            Nearest {MAX_STACK} — the ray goes deeper than this.
+            {fa
+              ? `نزدیک‌ترین ${MAX_STACK} لایه — شعاع به عمق بیشتری نفوذ کرده است.`
+              : `Nearest ${MAX_STACK} — the ray goes deeper than this.`}
           </p>
         )}
       </div>

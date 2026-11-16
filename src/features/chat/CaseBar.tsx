@@ -16,6 +16,7 @@ import {
 import { useChatStore } from "@/stores/chatStore";
 import { askToConfirm } from "@/stores/confirmStore";
 import { useSceneStore } from "@/stores/sceneStore";
+import { useInterfaceLanguage } from "@/stores/interfaceLanguage";
 
 /**
  * Which virtual patient the next drill belongs to.
@@ -46,6 +47,7 @@ export function CaseBar({ profile, language }: { profile: UserProfile; language:
    * is a feature nobody has.
    */
   const [writingRecord, setWritingRecord] = useState(false);
+  const fa = useInterfaceLanguage((s) => s.language === "fa");
 
   const open = cases.filter((entry) => !isFull(entry));
   // The box only earns its place once the list is longer than the box. Below
@@ -78,9 +80,9 @@ export function CaseBar({ profile, language }: { profile: UserProfile; language:
               {current.title}
             </span>
             <span className="shrink-0 text-slate-500">
-              {current.sex === "female" ? "female" : "male"}
+              {current.sex === "female" ? (fa ? "زن" : "female") : (fa ? "مرد" : "male")}
               {current.age_years !== null && `, ${current.age_years}`} ·{" "}
-              {visitLabel(current)}
+              {fa ? (isFull(current) ? "تکمیل‌شده" : `ویزیت ${current.visit_count + 1}`) : visitLabel(current)}
             </span>
             <span className="shrink-0 text-slate-500">{showRecord ? "▴" : "▾"}</span>
           </button>
@@ -90,18 +92,18 @@ export function CaseBar({ profile, language }: { profile: UserProfile; language:
               setShowRecord(true);
               setWritingRecord(true);
             }}
-            title="Add what is known now — a weight, a pressure, what the imaging said"
+            title={fa ? "ثبت اطلاعات فعلی — وزن، فشار، نتایج تصویربرداری" : "Add what is known now — a weight, a pressure, what the imaging said"}
             className="ml-auto rounded border border-slate-700 px-1.5 py-0.5 text-slate-400 transition hover:border-sky-600 hover:text-sky-200"
           >
-            + record
+            {fa ? "+ پرونده" : "+ record"}
           </button>
           <button
             type="button"
             onClick={() => select(null)}
-            title="Stop filing drills against this patient. Nothing is deleted."
+            title={fa ? "خروج از پرونده این بیمار. داده‌ای پاک نمی‌شود." : "Stop filing drills against this patient. Nothing is deleted."}
             className="rounded px-1 text-slate-500 transition hover:text-slate-200"
           >
-            leave
+            {fa ? "خروج" : "leave"}
           </button>
           {showRecord && (
             <PatientRecord
@@ -113,12 +115,12 @@ export function CaseBar({ profile, language }: { profile: UserProfile; language:
         </>
       ) : (
         <>
-          <span className="text-slate-500">One-off drill</span>
+          <span className="text-slate-500">{fa ? "تمرین موردی" : "One-off drill"}</span>
           {searchable && (
             <input
               value={filter}
               onChange={(event) => setFilter(event.target.value)}
-              placeholder="Find a patient…"
+              placeholder={fa ? "یافتن بیمار…" : "Find a patient…"}
               className="w-28 rounded border border-slate-700 bg-slate-950 px-1.5 py-0.5 text-[10px] text-slate-300 outline-none placeholder:text-slate-600 focus:border-sky-600"
             />
           )}
@@ -129,11 +131,11 @@ export function CaseBar({ profile, language }: { profile: UserProfile; language:
               className="min-w-0 max-w-[11rem] rounded border border-slate-700 bg-slate-950 px-1 py-0.5 text-[10px] text-slate-300 outline-none focus:border-sky-600"
             >
               <option value="">
-                {shown.length === 0 ? "No patient matches" : "Continue a patient…"}
+                {shown.length === 0 ? (fa ? "بیماری یافت نشد" : "No patient matches") : (fa ? "ادامهٔ پرونده بیمار…" : "Continue a patient…")}
               </option>
               {shown.map((entry) => (
                 <option key={entry.id} value={entry.id}>
-                  {entry.title} — {visitLabel(entry)}
+                  {entry.title} — {fa ? (isFull(entry) ? "تکمیل‌شده" : `ویزیت ${entry.visit_count + 1}`) : visitLabel(entry)}
                 </option>
               ))}
             </select>
@@ -143,7 +145,7 @@ export function CaseBar({ profile, language }: { profile: UserProfile; language:
             onClick={() => setComposing(true)}
             className="ml-auto rounded border border-slate-700 px-1.5 py-0.5 text-slate-300 transition hover:border-slate-600 hover:text-slate-100"
           >
-            New patient
+            {fa ? "بیمار جدید" : "New patient"}
           </button>
         </>
       )}
@@ -198,6 +200,7 @@ function PatientRecord({
   const loadSession = useChatStore((s) => s.loadSession);
   const currentSessionId = useChatStore((s) => s.sessionId);
   const beginSession = useChatStore((s) => s.beginSession);
+  const fa = useInterfaceLanguage((s) => s.language === "fa");
 
   /** True while any visit is ungraded — see `reviewMaySeeTheAnswer`. */
   // The patient's stamp belongs in here, not only in what is sent to the
@@ -227,14 +230,15 @@ function PatientRecord({
    */
   async function unsealAnswer() {
     const confirmed = await askToConfirm({
-      title: "Open the sealed answer?",
+      title: fa ? "آیا پاسخ مهروموم‌شده باز شود؟" : "Open the sealed answer?",
       subject: patient.title,
-      body:
-        "This shows what you wrote when the case was opened, before anything " +
-        "had been attempted. It is recorded: from now on this case reads as " +
-        "opened, and a review of it may use the answer and the written " +
-        "verdicts. Nothing is deleted, and the answer itself cannot be edited.",
-      confirmLabel: "Show me the answer",
+      body: fa
+        ? "این گزینه متنی را که هنگام گشایش پرونده نوشتید نشان می‌دهد. این اقدام ثبت می‌شود و پرونده به عنوان بازشده علامت‌گذاری می‌گردد. داده‌ای پاک نمی‌شود و پاسخ نیز قابل ویرایش نیست."
+        : "This shows what you wrote when the case was opened, before anything " +
+          "had been attempted. It is recorded: from now on this case reads as " +
+          "opened, and a review of it may use the answer and the written " +
+          "verdicts. Nothing is deleted, and the answer itself cannot be edited.",
+      confirmLabel: fa ? "نمایش پاسخ" : "Show me the answer",
     });
     if (confirmed) setAnswer(await revealAnswer(patient.id));
   }
@@ -263,9 +267,9 @@ function PatientRecord({
   }
 
   const measurements = [
-    patient.age_years !== null && `${patient.age_years} years`,
-    patient.height_cm !== null && `${patient.height_cm} cm`,
-    patient.weight_kg !== null && `${patient.weight_kg} kg`,
+    patient.age_years !== null && (fa ? `${patient.age_years} سال` : `${patient.age_years} years`),
+    patient.height_cm !== null && (fa ? `${patient.height_cm} سانتی‌متر` : `${patient.height_cm} cm`),
+    patient.weight_kg !== null && (fa ? `${patient.weight_kg} کیلوگرم` : `${patient.weight_kg} kg`),
   ].filter((entry): entry is string => typeof entry === "string");
 
   return (
@@ -294,7 +298,7 @@ function PatientRecord({
       {(patient.findings.trim() !== "" || record.length > 0) && (
         <div>
           <p className="text-[9px] font-semibold uppercase tracking-wider text-slate-600">
-            On the record
+            {fa ? "در پرونده" : "On the record"}
           </p>
           {patient.findings.trim() !== "" && (
             <p className="mt-0.5 whitespace-pre-wrap leading-relaxed text-slate-400">
@@ -309,7 +313,7 @@ function PatientRecord({
           {record.map((entry) => (
             <div key={entry.id} className="group mt-1 flex items-baseline gap-1.5">
               <span className="shrink-0 tabular-nums text-slate-600">
-                Visit {entry.visit_no}
+                {fa ? `ویزیت ${entry.visit_no}` : `Visit ${entry.visit_no}`}
               </span>
               <span className="min-w-0 flex-1 whitespace-pre-wrap leading-relaxed text-slate-400">
                 {entry.body}
@@ -317,7 +321,7 @@ function PatientRecord({
               <button
                 type="button"
                 onClick={() => void unnote(entry.id)}
-                title="Remove this entry"
+                title={fa ? "حذف این مورد" : "Remove this entry"}
                 className="shrink-0 opacity-0 transition group-hover:opacity-100 hover:text-rose-300"
               >
                 ×
@@ -331,12 +335,12 @@ function PatientRecord({
       {patient.findings.trim() === "" && record.length === 0 && (
         <div>
           <p className="text-[9px] font-semibold uppercase tracking-wider text-slate-600">
-            On the record
+            {fa ? "در پرونده" : "On the record"}
           </p>
           <p className="mt-0.5 leading-snug text-slate-600">
-            Nothing on the record. This case was opened before findings had a
-            place to go — write what is known and the assistant can reason from
-            it.
+            {fa
+              ? "موردی در پرونده ثبت نشده است. آنچه را که از بیمار مشخص است بنویسید تا دستیار بتواند بر مبنای آن استدلال کند."
+              : "Nothing on the record. This case was opened before findings had a place to go — write what is known and the assistant can reason from it."}
           </p>
           <RecordComposer open={writing} onOpenChange={onWritingChange} />
         </div>
@@ -345,7 +349,7 @@ function PatientRecord({
       {symptoms.length > 0 && (
         <div>
           <p className="text-[9px] font-semibold uppercase tracking-wider text-slate-600">
-            Marked on the body
+            {fa ? "علائم ثبت‌شده بر بدن" : "Marked on the body"}
           </p>
           <div className="mt-0.5 space-y-0.5">
             {symptoms.map((entry) => (
@@ -383,7 +387,7 @@ function PatientRecord({
       {visits.length > 0 && (
         <div>
           <p className="text-[9px] font-semibold uppercase tracking-wider text-slate-600">
-            Visits
+            {fa ? "ویزیت‌ها" : "Visits"}
           </p>
           <div className="mt-0.5 space-y-0.5">
             {visits.map((visit) => (
@@ -396,8 +400,8 @@ function PatientRecord({
                 // history; here it is what the row is worth hovering for.
                 title={
                   visit.session_id === currentSessionId
-                    ? "You are in this visit"
-                    : (visit.verdict ?? "Reopen this visit")
+                    ? (fa ? "در حال حاضر در این ویزیت هستید" : "You are in this visit")
+                    : (visit.verdict ?? (fa ? "بازگشایی مجدد این ویزیت" : "Reopen this visit"))
                 }
                 className={`flex w-full items-baseline gap-1.5 rounded px-1 py-0.5 text-left transition ${
                   visit.session_id === currentSessionId
@@ -405,7 +409,7 @@ function PatientRecord({
                     : "hover:bg-slate-800/60"
                 }`}
               >
-                <span className="shrink-0 text-slate-400">Visit {visit.visit_no}</span>
+                <span className="shrink-0 text-slate-400">{fa ? `ویزیت ${visit.visit_no}` : `Visit ${visit.visit_no}`}</span>
                 <span className="min-w-0 flex-1 truncate text-slate-600">
                   {whenLabel(visit.created_at)}
                 </span>
@@ -422,25 +426,14 @@ function PatientRecord({
 
       {symptoms.length === 0 && visits.length === 0 && (
         <p className="leading-snug text-slate-600">
-          Nothing recorded yet. Right-click a structure to mark what the patient
-          reports there.
+          {fa
+            ? "هنوز چیزی ثبت نشده است. روی ساختار آناتومی راست‌کلیک کنید تا علائم گزارش‌شده را مشخص نمایید."
+            : "Nothing recorded yet. Right-click a structure to mark what the patient reports there."}
         </p>
       )}
 
       {/*
         The door in the seal.
-        
-        The seal was written to open only once every visit was graded, and
-        measured against a real journal that gave 1 graded visit out of 13 —
-        because most visits are conversations, not examinations, and will never
-        carry a score. A rule that never fires protects nothing; it only keeps
-        the reader from writing they authored themselves.
-
-        So this is a deliberate act with a confirmation in front of it, which
-        is what the seal was always for: not stopping anyone reading their own
-        answer, but stopping them tripping over it. And it is recorded — once
-        opened, a case stays open, so a summary cannot include the answer today
-        and withhold it tomorrow.
       */}
       {patient.revealed_at === null ? (
         <button
@@ -448,21 +441,21 @@ function PatientRecord({
           onClick={() => void unsealAnswer()}
           className="w-full rounded border border-amber-800/60 py-1 text-amber-300/80 transition hover:border-amber-600 hover:text-amber-200"
         >
-          Reveal the sealed answer
+          {fa ? "افشای پاسخ مهروموم‌شده" : "Reveal the sealed answer"}
         </button>
       ) : answer === null ? (
         <button
           type="button"
           onClick={() => void showAnswer()}
-          title={`Opened ${whenLabel(patient.revealed_at)}`}
+          title={fa ? `گشوده‌شده در ${whenLabel(patient.revealed_at)}` : `Opened ${whenLabel(patient.revealed_at)}`}
           className="w-full rounded border border-slate-700 py-1 text-slate-400 transition hover:border-slate-600 hover:text-slate-200"
         >
-          Show the answer · no longer sealed
+          {fa ? "نمایش پاسخ · از مهروموم خارج شده" : "Show the answer · no longer sealed"}
         </button>
       ) : (
         <div className="rounded border border-amber-800/40 bg-amber-950/20 p-2">
           <p className="text-[9px] font-semibold uppercase tracking-wider text-amber-700">
-            The answer, as you sealed it
+            {fa ? "پاسخ، همان‌طور که مهروموم کردید" : "The answer, as you sealed it"}
           </p>
           <p className="mt-0.5 whitespace-pre-wrap leading-relaxed text-amber-100/80">
             {answer}
@@ -471,10 +464,7 @@ function PatientRecord({
       )}
 
       {/*
-        Reading the file back. Its own control rather than a third mode button,
-        because a review is always *about* a case — there is nothing to review
-        without one open, and a button that is inert most of the time teaches
-        people to stop looking at it.
+        Reading the file back.
       */}
       {(symptoms.length > 0 || visits.length > 0) && (
         <button
@@ -482,13 +472,13 @@ function PatientRecord({
           onClick={startReview}
           title={
             open
-              ? "Summarise this case. The sealed answer stays sealed while a visit is ungraded."
-              : "Summarise this case, including the answer"
+              ? (fa ? "خلاصهٔ این پرونده. پاسخ مهروموم‌شده تا نمره‌دهی همه ویزیت‌ها پنهان می‌ماند." : "Summarise this case. The sealed answer stays sealed while a visit is ungraded.")
+              : (fa ? "خلاصهٔ این پرونده، شامل پاسخ" : "Summarise this case, including the answer")
           }
           className="w-full rounded border border-slate-700 py-1 text-slate-300 transition hover:border-sky-600 hover:text-sky-200"
         >
-          Review this case
-          {open && <span className="ml-1 text-slate-600">· answer stays sealed</span>}
+          {fa ? "مرور این پرونده" : "Review this case"}
+          {open && <span className="ml-1 text-slate-600">{fa ? "· پاسخ مهروموم می‌ماند" : "· answer stays sealed"}</span>}
         </button>
       )}
     </div>
@@ -513,6 +503,7 @@ function RecordComposer({
 }) {
   const note = useCaseStore((s) => s.note);
   const [draft, setDraft] = useState("");
+  const fa = useInterfaceLanguage((s) => s.language === "fa");
 
   if (!open) {
     return (
@@ -521,7 +512,7 @@ function RecordComposer({
         onClick={() => onOpenChange(true)}
         className="mt-1 text-slate-600 transition hover:text-sky-300"
       >
-        + Add to the record
+        {fa ? "+ ثبت در پرونده" : "+ Add to the record"}
       </button>
     );
   }
@@ -541,7 +532,7 @@ function RecordComposer({
         onChange={(event) => setDraft(event.target.value)}
         autoFocus
         rows={2}
-        placeholder="What is known now — a weight, a pressure, what the imaging said"
+        placeholder={fa ? "آنچه اکنون مشخص است — وزن، فشار، نتایج تصویربرداری" : "What is known now — a weight, a pressure, what the imaging said"}
         className="w-full rounded border border-slate-700 bg-slate-950 px-1.5 py-1 outline-none placeholder:text-slate-700 focus:border-sky-600"
       />
       <div className="flex items-center gap-1.5">
@@ -551,7 +542,7 @@ function RecordComposer({
           disabled={draft.trim() === ""}
           className="rounded bg-sky-600 px-2 py-0.5 font-medium disabled:opacity-30"
         >
-          Add
+          {fa ? "افزودن" : "Add"}
         </button>
         <button
           type="button"
@@ -561,9 +552,9 @@ function RecordComposer({
           }}
           className="text-slate-500 transition hover:text-slate-300"
         >
-          Cancel
+          {fa ? "انصراف" : "Cancel"}
         </button>
-        <span className="text-slate-700">Entries are kept, not replaced.</span>
+        <span className="text-slate-700">{fa ? "موارد افزوده حفظ می‌شوند و جایگزین نمی‌گردند." : "Entries are kept, not replaced."}</span>
       </div>
     </div>
   );
@@ -600,6 +591,7 @@ function CaseComposer({
   const [findings, setFindings] = useState("");
   const [answer, setAnswer] = useState("");
   const [busy, setBusy] = useState(false);
+  const fa = useInterfaceLanguage((s) => s.language === "fa");
 
   const ready = title.trim().length > 0 && answer.trim().length > 0;
 
@@ -636,31 +628,27 @@ function CaseComposer({
     <div className="space-y-2 border-b border-slate-800 px-3 py-2 text-[10px]">
       <div className="flex items-center justify-between">
         <span className="font-semibold uppercase tracking-wider text-slate-500">
-          New virtual patient
+          {fa ? "بیمار فرضی جدید" : "New virtual patient"}
         </span>
         <button
           type="button"
           onClick={onClose}
           className="rounded px-1 text-slate-500 transition hover:text-slate-200"
         >
-          cancel
+          {fa ? "انصراف" : "cancel"}
         </button>
       </div>
 
-      {/*
-        At the point of writing, not only in the guide: this form has the shape
-        of a patient record, and it is the one place a real person's health
-        details could be typed in and sent to the AI provider with every turn.
-      */}
       <p className="leading-snug text-amber-300/80">
-        Invented for teaching — never a real person. The case is sent to your AI
-        provider with every turn of the drill.
+        {fa
+          ? "طراحی‌شده برای آموزش — هرگز مشخصات یک فرد واقعی را وارد نکنید. این پرونده در هر نوبت به هوش مصنوعی شما ارسال می‌شود."
+          : "Invented for teaching — never a real person. The case is sent to your AI provider with every turn of the drill."}
       </p>
 
       <input
         value={title}
         onChange={(event) => setTitle(event.target.value)}
-        placeholder="What the case is about — e.g. Chest pain, 58"
+        placeholder={fa ? "موضوع پرونده — مثلاً درد قفسه سینه، ۵۸ ساله" : "What the case is about — e.g. Chest pain, 58"}
         className="w-full rounded border border-slate-700 bg-slate-950 px-2 py-1 outline-none placeholder:text-slate-600 focus:border-sky-600"
       />
 
@@ -678,7 +666,7 @@ function CaseComposer({
                   : "text-slate-500 hover:text-slate-300"
               }`}
             >
-              {option === "female" ? "Female" : "Male"}
+              {option === "female" ? (fa ? "زن" : "Female") : (fa ? "مرد" : "Male")}
             </button>
           ))}
         </div>
@@ -686,50 +674,37 @@ function CaseComposer({
           value={age}
           onChange={(event) => setAge(event.target.value)}
           inputMode="numeric"
-          placeholder="Age"
+          placeholder={fa ? "سن" : "Age"}
           className="w-14 rounded border border-slate-700 bg-slate-950 px-1.5 py-1 outline-none placeholder:text-slate-600 focus:border-sky-600"
         />
         <input
           value={height}
           onChange={(event) => setHeight(event.target.value)}
           inputMode="numeric"
-          placeholder="cm"
+          placeholder={fa ? "قد (cm)" : "cm"}
           className="w-14 rounded border border-slate-700 bg-slate-950 px-1.5 py-1 outline-none placeholder:text-slate-600 focus:border-sky-600"
         />
         <input
           value={weight}
           onChange={(event) => setWeight(event.target.value)}
           inputMode="decimal"
-          placeholder="kg"
+          placeholder={fa ? "وزن (kg)" : "kg"}
           className="w-14 rounded border border-slate-700 bg-slate-950 px-1.5 py-1 outline-none placeholder:text-slate-600 focus:border-sky-600"
         />
       </div>
 
-      {/*
-        Beside the control, permanently, and not in a help page. Presentation
-        differs by sex in exactly the systems these cases are for — women
-        present myocardial infarction differently, and that is a known cause of
-        under-diagnosis. Reasoning about it while showing a male body is honest;
-        letting the reader assume the model changed would not be.
-      */}
       <p className="leading-snug text-slate-600">
-        Sex drives the reasoning. The 3D model in this build is male whichever you
-        choose.
+        {fa
+          ? "جنسیت بر استدلال تأثیر دارد. مدل سه‌بعدی در این نسخه فارغ از انتخاب شما ساختار پایه را نشان می‌دهد."
+          : "Sex drives the reasoning. The 3D model in this build is male whichever you choose."}
       </p>
 
-      {/*
-        Two boxes, not one, and the split is the point. Written as a single
-        field, an author put "overweight, high blood pressure" — the facts the
-        reader needs to reason at all — into the sealed half, and the assistant
-        handed them over anyway, quoting the seal back as "according to the
-        record". The rule was right; the field was doing two jobs.
-      */}
       <GrowingTextarea
         limit="24vh"
         value={findings}
         onChange={(event) => setFindings(event.target.value)}
         rows={2}
-        placeholder="What is on the record — vitals, history, results. The reader sees this."
+        placeholder={fa ? "آنچه در پرونده موجود است — علائم حیاتی، سابقه، آزمایش‌ها. کاربر این را می‌بیند." : "What is on the record — vitals, history, results. The reader sees this."}
         className="w-full rounded border border-slate-700 bg-slate-950 px-2 py-1 leading-relaxed outline-none placeholder:text-slate-600 focus:border-sky-600"
       />
 
@@ -738,12 +713,13 @@ function CaseComposer({
         value={answer}
         onChange={(event) => setAnswer(event.target.value)}
         rows={3}
-        placeholder="What is actually going on. Sealed now, revealed when you ask."
+        placeholder={fa ? "علت و تشخیص واقعی. اکنون مهروموم شده و در زمان درخواست آشکار می‌شود." : "What is actually going on. Sealed now, revealed when you ask."}
         className="w-full rounded border border-slate-700 bg-slate-950 px-2 py-1 leading-relaxed outline-none placeholder:text-slate-600 focus:border-sky-600"
       />
       <p className="leading-snug text-slate-600">
-        Written before anything is attempted, and never editable afterwards — an
-        answer decided once the attempt is in hand grades nothing.
+        {fa
+          ? "قبل از هر تلاشی نوشته می‌شود و پس از آن غیرقابل ویرایش است — پاسخی که بعد از تلاش تعیین شود ارزش ارزیابی ندارد."
+          : "Written before anything is attempted, and never editable afterwards — an answer decided once the attempt is in hand grades nothing."}
       </p>
 
       {error && <p className="leading-snug text-rose-400">{error}</p>}
@@ -754,7 +730,7 @@ function CaseComposer({
         disabled={!ready || busy}
         className="w-full rounded border border-sky-700/60 bg-sky-600/15 px-2 py-1 text-sky-200 transition hover:bg-sky-600/25 disabled:opacity-40"
       >
-        Seal and open
+        {fa ? "مهروموم و شروع پرونده" : "Seal and open"}
       </button>
     </div>
   );

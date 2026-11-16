@@ -7,6 +7,7 @@ import { BrandLogo } from "@/components/BrandLogo";
 import { repairGluedHeadings } from "@/features/chat/repairMarkdown";
 import { APP_VERSION_LABEL } from "@/lib/appVersion";
 import { usePrintStore } from "@/stores/printStore";
+import { useInterfaceLanguage } from "@/stores/interfaceLanguage";
 
 import {
   aiNotice,
@@ -122,19 +123,15 @@ export function PrintSheet() {
 }
 
 function Toolbar({ onClose }: { onClose: () => void }) {
+  const fa = useInterfaceLanguage((s) => s.language === "fa");
   return (
-    <div className="no-print mx-auto mb-4 flex max-w-[820px] items-start gap-2">
+    <div className="no-print mx-auto mb-4 flex max-w-[820px] items-start gap-2" dir={fa ? "rtl" : "ltr"}>
       <div className="text-[11px] leading-relaxed text-slate-400">
-        <p>This is exactly what will be printed.</p>
-        {/*
-          Chromium stamps the page with a date, a page number and the app's
-          internal address unless the reader turns it off, and no stylesheet can
-          reach it — it is drawn outside the document. Said here because this is
-          the moment the checkbox is in front of them.
-        */}
+        <p>{fa ? "این پیش‌نمایش دقیقاً همان چیزی است که چاپ می‌شود." : "This is exactly what will be printed."}</p>
         <p className="text-slate-500">
-          In the print dialog, turn off <span className="text-slate-400">Headers and
-          footers</span> — otherwise it stamps the page with its own date and address.
+          {fa
+            ? "در کادر چاپ، گزینه سرصفحه و پاورقی (Headers and footers) را غیرفعال کنید تا آدرس و تاریخ مرورگر درج نشود."
+            : <>In the print dialog, turn off <span className="text-slate-400">Headers and footers</span> — otherwise it stamps the page with its own date and address.</>}
         </p>
       </div>
       <button
@@ -142,14 +139,14 @@ function Toolbar({ onClose }: { onClose: () => void }) {
         onClick={() => window.print()}
         className="ml-auto rounded border border-sky-600 bg-sky-600/15 px-3 py-1 text-xs text-sky-200 transition hover:bg-sky-600/30"
       >
-        Print… or save as PDF
+        {fa ? "چاپ… یا ذخیره به صورت PDF" : "Print… or save as PDF"}
       </button>
       <button
         type="button"
         onClick={onClose}
         className="rounded border border-slate-700 px-3 py-1 text-xs text-slate-300 transition hover:border-slate-500"
       >
-        Close · Esc
+        {fa ? "بستن · Esc" : "Close · Esc"}
       </button>
     </div>
   );

@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 
 import { UNKNOWN_BRIDGE, useBridgeStore } from "@/stores/bridgeStore";
+import { useInterfaceLanguage } from "@/stores/interfaceLanguage";
 
 import { agentBriefing } from "./agentBriefing";
 import { useCopy } from "./useCopy";
@@ -25,29 +26,9 @@ const MCP_ENV = '"HOOMAAN_BRIDGE": "1"';
 
 /**
  * The control bridge's switch.
- *
- * # Why this is a switch and not a setting
- *
- * Everything else in this drawer is a preference: which provider, which voice,
- * which language. This one opens a door. A program running as you, on this
- * machine, can drive the viewport through it — so it is off at every launch,
- * it is never turned on by anything but a press here, and turning it off takes
- * the pipe with it rather than pausing something that would resume.
- *
- * # What the reader has to be able to see
- *
- * Two things, and they are the whole design. **That it is on** — which is why
- * the header carries a pill and not only this panel. And **the one line to
- * paste**, which never changes, so nobody has to come back here after the
- * first time.
- *
- * There was a per-session token here once, shown beside the pipe. It bought
- * less than it cost: the pipe's own permissions already answer "is this the
- * reader's account", and a token that changed on every switch-on meant editing
- * a config file and restarting a client each session — which reads as a broken
- * feature long before it reads as a careful one.
  */
 export function BridgeSettings() {
+  const fa = useInterfaceLanguage((s) => s.language === "fa");
   const status = useBridgeStore((s) => s.status) ?? UNKNOWN_BRIDGE;
   const error = useBridgeStore((s) => s.error);
   const busy = useBridgeStore((s) => s.busy);
@@ -55,10 +36,6 @@ export function BridgeSettings() {
   const turnOn = useBridgeStore((s) => s.turnOn);
   const turnOff = useBridgeStore((s) => s.turnOff);
 
-  // Asked on open rather than inherited from the header's read at startup.
-  // If that one failed, the status is still null here, and a panel that drew
-  // `UNKNOWN_BRIDGE` would tell a Windows reader the feature does not exist in
-  // their build — a much more convincing lie than an empty panel.
   useEffect(() => {
     void refresh();
   }, [refresh]);
@@ -74,28 +51,20 @@ export function BridgeSettings() {
     return (
       <div>
         <p className="mb-1 text-[10px] uppercase tracking-wider text-slate-500">
-          Control bridge
+          {fa ? "پل کنترل خارجی (Control bridge)" : "Control bridge"}
         </p>
-        {/* An honest absence rather than a switch that does nothing. Whoever
-            reads this on Linux should learn that the feature is missing here,
-            not that they failed to configure it. */}
         <p className="text-[10px] leading-snug text-slate-600">
-          Not in this build. The bridge lets another program on your computer drive
-          the 3D view, and so far it is only built for Windows.
+          {fa
+            ? "در این بیلد در دسترس نیست. پل هدایت سه‌بعدی توسط سایر برنامه‌ها فعلاً ویژهٔ ویندوز است."
+            : "Not in this build. The bridge lets another program on your computer drive the 3D view, and so far it is only built for Windows."}
         </p>
-        {/* The bridge is the half that is missing, not the whole thing. The
-            five read-only tools are plain Python and run anywhere — they do not
-            need the bridge, or this window open, or a key. Saying nothing here
-            would ship a working server nobody could find. */}
         {status.server && (
           <div className="mt-2 space-y-1">
             <CopyRow label="Atlas MCP server" value={`${status.server}/atlas.py`} />
             <p className="text-[10px] leading-snug text-slate-600">
-              The five read-only tools do work here: search the atlas, read a
-              structure, walk the hierarchy. Point an MCP client at this file
-              with a Python 3.10+ environment of your own. The fifteen that move
-              the view need the bridge, so they are absent. See INSTALLED.md
-              beside it.
+              {fa
+                ? "ابزارهای پنج‌گانهٔ خواندنی اطلس کار می‌کنند: جست‌وجو در ساختارها، مشخصات و پیمایش درخت آناتومی با Python 3.10+. راهنمای INSTALLED.md را در کنار فایل ببینید."
+                : "The five read-only tools do work here: search the atlas, read a structure, walk the hierarchy. Point an MCP client at this file with a Python 3.10+ environment of your own. The fifteen that move the view need the bridge, so they are absent. See INSTALLED.md beside it."}
             </p>
           </div>
         )}
@@ -107,7 +76,7 @@ export function BridgeSettings() {
     <div>
       <div className="mb-1 flex items-center gap-2">
         <p className="text-[10px] uppercase tracking-wider text-slate-500">
-          Control bridge
+          {fa ? "پل کنترل خارجی (Control bridge)" : "Control bridge"}
         </p>
         <button
           type="button"
@@ -121,44 +90,41 @@ export function BridgeSettings() {
               : "border-slate-700 text-slate-400 hover:border-slate-600"
           }`}
         >
-          {running ? "On" : "Off"}
+          {running ? (fa ? "روشن" : "On") : fa ? "خاموش" : "Off"}
         </button>
       </div>
 
       <p className="text-[10px] leading-snug text-slate-600">
-        Lets another program on this computer control the view and display
-        external messages in the assistant panel. These messages are attributed
-        to the control bridge, not the HOOMAAN assistant. They are not saved
-        to the journal or sent to your provider. Only your own
-        account can open the connection, and only while this switch is on.
+        {fa
+          ? "به برنامه‌های دیگر در این رایانه (مانند Cursor یا Claude Desktop) اجازه می‌دهد نمای سه‌بعدی را کنترل و پیام‌های خارجی را در پنل دستیار نمایش دهند. این پیام‌ها در ژورنال ذخیره نشده و به ارائه‌دهنده ارسال نمی‌شوند. تنها در صورت روشن بودن این کلید امکان اتصال وجود دارد."
+          : "Lets another program on this computer control the view and display external messages in the assistant panel. These messages are attributed to the control bridge, not the HOOMAAN assistant. They are not saved to the journal or sent to your provider. Only your own account can open the connection, and only while this switch is on."}
       </p>
 
       {running && (
         <div className="mt-2 space-y-2">
-          <CopyRow label="Add this to your MCP client" value={MCP_ENV} />
+          <CopyRow label={fa ? "افزودن به کلاینت MCP (Add this to your MCP client)" : "Add this to your MCP client"} value={MCP_ENV} />
           <p className="text-[10px] leading-snug text-slate-600">
-            Paste it into the <span className="text-slate-400">env</span> block of
-            the HOOMAAN entry, then restart that client. It never changes, so this
-            is a once-only step — the server finds this window by itself.
+            {fa
+              ? "این مقدار را در بخش env ورودی هوومان قرار دهید و کلاینت را بازنشانی کنید. این مقدار ثابت است و سرور این پنجره را خودکار پیدا می‌کند."
+              : "Paste it into the env block of the HOOMAAN entry, then restart that client. It never changes, so this is a once-only step — the server finds this window by itself."}
           </p>
 
           <details>
             <summary className="cursor-pointer text-[10px] text-slate-600 hover:text-slate-400">
-              Writing your own client?
+              {fa ? "در حال توسعه کلاینت اختصاصی هستید؟ (Writing your own client?)" : "Writing your own client?"}
             </summary>
             <div className="mt-1 space-y-2">
-              <CopyRow label="Pipe" value={status.pipe} />
+              <CopyRow label={fa ? "پایپ سیستم‌عامل (Pipe)" : "Pipe"} value={status.pipe} />
               {status.pipe && (
                 <>
                   <CopyButton
-                    label="Copy instructions for an external agent"
+                    label={fa ? "کپی راهنمای اتصال برای دستیار خارجی" : "Copy instructions for an external agent"}
                     value={agentBriefing(status.pipe, status.server)}
                   />
                   <p className="text-[10px] leading-snug text-slate-600">
-                    Paste it into the agent. It names the MCP server first, the
-                    pipe only as a fallback, and the three things that otherwise
-                    look like a broken bridge. It contains the pipe path above,
-                    which identifies your Windows account on this machine.
+                    {fa
+                      ? "این متن را در دستیار قرار دهید. ابتدا سرور MCP و سپس نام پایپ را به عنوان جایگزین معرفی می‌کند."
+                      : "Paste it into the agent. It names the MCP server first, the pipe only as a fallback, and the three things that otherwise look like a broken bridge. It contains the pipe path above, which identifies your Windows account on this machine."}
                   </p>
                 </>
               )}
@@ -166,11 +132,13 @@ export function BridgeSettings() {
           </details>
 
           <p className="text-[10px] text-slate-500">
-            {status.accepted} command{status.accepted === 1 ? "" : "s"} accepted
+            {status.accepted} {fa ? "دستور پذیرفته شد" : `command${status.accepted === 1 ? "" : "s"} accepted`}
             {status.refused > 0 && (
               <>
                 {" · "}
-                <span className="text-amber-300/80">{status.refused} refused</span>
+                <span className="text-amber-300/80">
+                  {status.refused} {fa ? "رد شد" : "refused"}
+                </span>
               </>
             )}
           </p>
@@ -186,52 +154,38 @@ export function BridgeSettings() {
   );
 }
 
-/**
- * A copy control for something too long to show — a briefing, not a value.
- *
- * `CopyRow` prints what it copies, which is right for a pipe path and wrong for
- * forty lines: truncated to one line it would look like a fragment, and shown
- * whole it would bury the panel.
- */
 function CopyButton({ label, value }: { label: string; value: string }) {
   const { copied, copy } = useCopy();
   return (
     <button
       type="button"
       onClick={() => void copy(value)}
-      className="w-full rounded border border-slate-700 px-2 py-1 text-[10px] text-slate-400 transition hover:border-sky-600 hover:text-sky-200"
+      className="rounded border border-slate-700 bg-slate-950 px-2 py-1 text-[10px] text-slate-300 hover:border-slate-500 hover:text-white"
     >
       {copied ? "Copied" : label}
     </button>
   );
 }
 
-/**
- * One copyable value.
- *
- * Its own component so each row owns its own "copied" flash — sharing one
- * would light up one row when the reader copied another, which in a panel
- * whose whole job is "paste this" is worse than no feedback.
- */
 function CopyRow({ label, value }: { label: string; value: string | null }) {
   const { copied, copy } = useCopy();
   if (!value) return null;
 
   return (
     <div>
-      <p className="text-[10px] uppercase tracking-wider text-slate-600">{label}</p>
-      <div className="flex items-center gap-1">
-        <code className="min-w-0 flex-1 truncate rounded border border-slate-800 bg-slate-950 px-1.5 py-1 text-[10px] text-slate-300">
-          {value}
-        </code>
+      <div className="mb-0.5 flex items-center justify-between text-[10px] text-slate-400">
+        <span>{label}</span>
         <button
           type="button"
           onClick={() => void copy(value)}
-          className="rounded border border-slate-700 px-1.5 py-1 text-[10px] text-slate-400 hover:border-slate-600"
+          className="text-slate-500 hover:text-slate-300"
         >
           {copied ? "Copied" : "Copy"}
         </button>
       </div>
+      <code className="block select-all truncate rounded border border-slate-800 bg-slate-950 px-1.5 py-0.5 font-mono text-[9px] text-slate-300">
+        {value}
+      </code>
     </div>
   );
 }

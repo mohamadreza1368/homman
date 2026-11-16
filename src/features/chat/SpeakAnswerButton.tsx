@@ -2,6 +2,7 @@ import type { Language } from "@/lib/schemas";
 
 import { effectiveLanguage } from "./speech";
 import { useSpokenAnswer } from "./useSpokenAnswer";
+import { useInterfaceLanguage } from "@/stores/interfaceLanguage";
 
 /**
  * Read one answer aloud, on request.
@@ -26,6 +27,7 @@ interface Props {
 
 export function SpeakAnswerButton({ content, language }: Props) {
   const spoken = useSpokenAnswer();
+  const fa = useInterfaceLanguage((s) => s.language === "fa");
   const speaking = spoken.state === "speaking";
 
   // On `auto` this is the language the answer turned out to be written in, not
@@ -49,11 +51,11 @@ export function SpeakAnswerButton({ content, language }: Props) {
           if (speaking) spoken.stop();
           else spoken.speak(content, spokenIn);
         }}
-        aria-label={speaking ? "Stop reading aloud" : "Read this answer aloud"}
-        title={speaking ? "Stop reading aloud" : "Read this answer aloud"}
+        aria-label={speaking ? (fa ? "توقف خواندن صوتی" : "Stop reading aloud") : (fa ? "خواندن صوتی این پاسخ" : "Read this answer aloud")}
+        title={speaking ? (fa ? "توقف خواندن صوتی" : "Stop reading aloud") : (fa ? "خواندن صوتی این پاسخ" : "Read this answer aloud")}
         className="text-[11px] text-slate-400 transition hover:text-slate-200"
       >
-        {speaking ? "Stop" : "Read aloud"}
+        {speaking ? (fa ? "توقف" : "Stop") : (fa ? "خواندن صوتی" : "Read aloud")}
       </button>
       {spoken.error && (
         <span className="text-[10px] text-amber-400" role="status">

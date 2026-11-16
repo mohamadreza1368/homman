@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { ManifestOrgan } from "@/lib/schemas";
 import { activeCase, useCaseStore } from "@/stores/caseStore";
 import { organLabel, regionMembersByNode, useSceneStore } from "@/stores/sceneStore";
+import { useInterfaceLanguage } from "@/stores/interfaceLanguage";
 
 export interface MenuTarget {
   organId: string;
@@ -46,6 +47,7 @@ export function StructureMenu({
   const unmark = useCaseStore((s) => s.unmark);
   const menuRef = useRef<HTMLDivElement>(null);
   const [marking, setMarking] = useState(false);
+  const fa = useInterfaceLanguage((s) => s.language === "fa");
 
   const organ = target ? organs[target.organId] : undefined;
   /** What is already recorded here, so the menu shows it rather than duplicating it. */
@@ -103,25 +105,25 @@ export function StructureMenu({
       </div>
 
       <MenuItem onClick={act(() => studyOrgan(organ.organ_id))}>
-        Isolate this structure
+        {fa ? "جداسازی این ساختار" : "Isolate this structure"}
       </MenuItem>
 
       {selectedOrganIds.length > 1 && (
         <>
           <MenuItem onClick={act(isolateSelection)}>
-            Isolate selection
+            {fa ? "جداسازی انتخاب‌شده‌ها" : "Isolate selection"}
             <span className="ml-auto text-[10px] text-slate-500">
               {selectedOrganIds.length}
             </span>
           </MenuItem>
-          <MenuItem onClick={act(hideSelection)}>Hide selection</MenuItem>
+          <MenuItem onClick={act(hideSelection)}>{fa ? "پنهان کردن انتخاب‌شده‌ها" : "Hide selection"}</MenuItem>
         </>
       )}
 
       {groups.length > 0 && (
         <>
           <p className="px-3 pb-0.5 pt-2 text-[9px] uppercase tracking-wider text-slate-600">
-            Isolate the group it belongs to
+            {fa ? "جداسازی گروه مربوطه" : "Isolate the group it belongs to"}
           </p>
           {groups.map((group) => (
             <MenuItem key={group.node} onClick={act(() => studyGroup(group.node))}>
@@ -141,20 +143,13 @@ export function StructureMenu({
           applyCommand({ action: "focus_organ", organ_id: organ.organ_id }),
         )}
       >
-        Fly to this structure
+        {fa ? "پرواز به این ساختار" : "Fly to this structure"}
       </MenuItem>
-      <MenuItem onClick={act(showAllSystems)}>Show everything</MenuItem>
-      {/*
-        Here as well as in the left panel, and not as duplication.
-
-        The panel is most in the way exactly when the viewport is most cramped,
-        and at that moment the reader is holding a right-click over the body
-        with the list sitting on top of what they were trying to see. Sending
-        them to the far side of the window to find a checkbox is asking them to
-        cross the thing that is bothering them.
-      */}
+      <MenuItem onClick={act(showAllSystems)}>{fa ? "نمایش همهٔ ساختارها" : "Show everything"}</MenuItem>
       <MenuItem onClick={act(() => setDepthProbeVisible(!depthProbeVisible))}>
-        {depthProbeVisible ? "Hide the cursor list" : "Show the cursor list"}
+        {depthProbeVisible
+          ? (fa ? "پنهان کردن فهرست مکان‌نما" : "Hide the cursor list")
+          : (fa ? "نمایش فهرست مکان‌نما" : "Show the cursor list")}
       </MenuItem>
 
       {/* Only with a patient open: a complaint has to belong to someone, and
@@ -178,7 +173,7 @@ export function StructureMenu({
               <p className="px-3 pb-0.5 pt-1 text-[9px] uppercase tracking-wider text-slate-600">
                 {activePatient.title}
               </p>
-              <MenuItem onClick={() => setMarking(true)}>Mark a complaint here</MenuItem>
+              <MenuItem onClick={() => setMarking(true)}>{fa ? "ثبت علامت یا شکایت در اینجا" : "Mark a complaint here"}</MenuItem>
               {marked.length > 0 && (
                 <div className="px-3 pb-1.5 pt-0.5 space-y-0.5">
                   {marked.map((entry) => (
@@ -192,7 +187,7 @@ export function StructureMenu({
                       <button
                         type="button"
                         onClick={() => void unmark(entry.id)}
-                        title="Remove this complaint"
+                        title={fa ? "حذف این شکایت" : "Remove this complaint"}
                         className="shrink-0 text-[10px] text-slate-600 transition hover:text-rose-400"
                       >
                         ✕
@@ -232,6 +227,7 @@ function SymptomComposer({
   const [text, setText] = useState("");
   const [severity, setSeverity] = useState(5);
   const [busy, setBusy] = useState(false);
+  const fa = useInterfaceLanguage((s) => s.language === "fa");
 
   async function save() {
     if (text.trim().length === 0) return;
@@ -259,7 +255,7 @@ function SymptomComposer({
           if (event.key === "Enter") void save();
           if (event.key === "Escape") onCancel();
         }}
-        placeholder="What does the patient report here?"
+        placeholder={fa ? "بیمار در این ناحیه چه مشکلی گزارش می‌کند؟" : "What does the patient report here?"}
         className="w-full rounded border border-slate-700 bg-slate-950 px-2 py-1 text-[11px] outline-none placeholder:text-slate-600 focus:border-amber-600"
       />
       <div className="flex items-center gap-2">
@@ -282,14 +278,14 @@ function SymptomComposer({
           disabled={busy || text.trim().length === 0}
           className="flex-1 rounded border border-amber-700/60 bg-amber-500/15 px-2 py-1 text-[10px] text-amber-200 transition hover:bg-amber-500/25 disabled:opacity-40"
         >
-          Mark it
+          {fa ? "ثبت علامت" : "Mark it"}
         </button>
         <button
           type="button"
           onClick={onCancel}
           className="rounded px-2 py-1 text-[10px] text-slate-500 transition hover:text-slate-200"
         >
-          cancel
+          {fa ? "انصراف" : "cancel"}
         </button>
       </div>
     </div>

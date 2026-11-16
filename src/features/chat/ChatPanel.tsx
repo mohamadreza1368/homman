@@ -1121,7 +1121,11 @@ export function ChatPanel() {
     } catch (error) {
       if (turns.accepts(requestId)) {
         if (dispatched) failTurn(requestId, String(error));
-        setTransportError(`Could not send the question. Your draft has been kept. ${String(error)}`);
+        setTransportError(
+          fa
+            ? `ارسال سؤال انجام نشد. پیش‌نویس شما ذخیره شد. ${String(error)}`
+            : `Could not send the question. Your draft has been kept. ${String(error)}`
+        );
       }
       turns.invalidate(requestId);
     } finally {
@@ -1273,7 +1277,9 @@ export function ChatPanel() {
 
       {contextTrimmed && (
         <p role="status" className="mx-3 mb-2 text-[11px] text-slate-400">
-          The assistant receives the latest 50 complete exchanges. Your full journal is kept.
+          {fa
+            ? "دستیار ۵۰ تبادل کامل اخیر را دریافت می‌کند. یادداشت‌ها و سوابق کامل شما نگهداری می‌شوند."
+            : "The assistant receives the latest 50 complete exchanges. Your full journal is kept."}
         </p>
       )}
       <CostNotice messages={messages} mode={mode} />
@@ -1293,17 +1299,23 @@ export function ChatPanel() {
       {scannerNow && draft.trim().length > 0 && (
         <p
           role="status"
-          title="Select a structure to ask about it instead: a selection comes before the scanner."
+          title={
+            fa
+              ? "یک ساختار را برای پرسش درباره آن انتخاب کنید: ساختار انتخابی بر اسکنر اولویت دارد."
+              : "Select a structure to ask about it instead: a selection comes before the scanner."
+          }
           className="mx-3 mb-2 text-[11px] text-cyan-400/80"
         >
-          The assistant knows the scanner is at {scannerNow.level ?? "this height"}: “here” and
-          “this part” mean this level.
+          {fa
+            ? `دستیار می‌داند اسکنر در ارتفاع ${scannerNow.level ?? "این سطح"} قرار دارد: «اینجا» و «این بخش» به این مقطع اشاره دارند.`
+            : `The assistant knows the scanner is at ${scannerNow.level ?? "this height"}: “here” and “this part” mean this level.`}
         </p>
       )}
       {heartNow && draft.trim().length > 0 && (
         <p role="status" className="mx-3 mb-2 text-[11px] text-rose-300/80">
-          The assistant knows the heart is showing {heartNow.rhythm}: ask what it is and how it
-          happens.
+          {fa
+            ? `دستیار می‌داند ریتم قلب در حالت ${heartNow.rhythm} است: بپرسید این چیست و چگونه رخ می‌دهد.`
+            : `The assistant knows the heart is showing ${heartNow.rhythm}: ask what it is and how it happens.`}
         </p>
       )}
 

@@ -6,6 +6,7 @@ import { engineStatus } from "@/lib/ipc";
 import { storageFailure } from "@/lib/localStore";
 import { useSceneStore } from "@/stores/sceneStore";
 import { useStudyStore } from "@/stores/studyStore";
+import { useInterfaceLanguage } from "@/stores/interfaceLanguage";
 
 /**
  * What state the application is actually in, and what has gone wrong with it.
@@ -64,6 +65,7 @@ function clockTime(at: number): string {
 
 export function StatusWindow({ onClose }: { onClose: () => void }) {
   const [entries, setEntries] = useState<LogEntry[]>([]);
+  const fa = useInterfaceLanguage((s) => s.language === "fa");
   const [path, setPath] = useState<string | null>(null);
   const [saved, setSaved] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
@@ -130,59 +132,57 @@ export function StatusWindow({ onClose }: { onClose: () => void }) {
       >
         <header className="flex shrink-0 items-center justify-between border-b border-slate-800 px-4 py-3">
           <h2 className="text-sm font-semibold text-slate-100">
-            Status and log
+            {fa ? "وضعیت و گزارش سیستم" : "Status and log"}
           </h2>
           <button
             type="button"
             onClick={onClose}
             className="rounded border border-slate-700 px-2 py-1 text-xs text-slate-400 transition hover:border-slate-600 hover:text-slate-200"
           >
-            Close · Esc
+            {fa ? "بستن · Esc" : "Close · Esc"}
           </button>
         </header>
 
         <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3">
           <dl className="grid grid-cols-[auto_1fr] gap-x-6 gap-y-1 text-[11px]">
-            <Row label="Version" value={APP_VERSION_LABEL} />
+            <Row label={fa ? "نسخه" : "Version"} value={APP_VERSION_LABEL} />
             <Row
-              label="Settings storage"
-              value={storage ?? "working"}
+              label={fa ? "فضای ذخیره‌سازی تنظیمات" : "Settings storage"}
+              value={storage ?? (fa ? "فعال" : "working")}
               bad={storage !== null}
             />
             <Row
-              label="Journal"
+              label={fa ? "دفترچهٔ یادداشت و جلسات" : "Journal"}
               value={
                 stats
-                  ? `${stats.sessions} sessions · ${stats.cases} cases · ${stats.notes} notes`
-                  : "not read"
+                  ? (fa ? `${stats.sessions} جلسه · ${stats.cases} پرونده · ${stats.notes} یادداشت` : `${stats.sessions} sessions · ${stats.cases} cases · ${stats.notes} notes`)
+                  : (fa ? "خوانده نشده" : "not read")
               }
               bad={!stats}
             />
             <Row
-              label="Atlas"
+              label={fa ? "اطلس آناتومی" : "Atlas"}
               value={
                 manifest
-                  ? `${Object.keys(organs).length.toLocaleString("en-US")} structures loaded`
-                  : "not loaded"
+                  ? (fa ? `${Object.keys(organs).length.toLocaleString("fa-IR")} ساختار بارگذاری‌شده` : `${Object.keys(organs).length.toLocaleString("en-US")} structures loaded`)
+                  : (fa ? "بارگذاری نشده" : "not loaded")
               }
               bad={!manifest}
             />
-            <Row label="Assistant engine" value={engine} bad={engine !== "ready"} />
-            <Row label="Log file" value={path ?? "unavailable"} bad={path === null} />
+            <Row label={fa ? "موتور دستیار هوشمند" : "Assistant engine"} value={fa && engine === "ready" ? "آماده" : engine} bad={engine !== "ready"} />
+            <Row label={fa ? "فایل گزارش (لاگ)" : "Log file"} value={path ?? (fa ? "در دسترس نیست" : "unavailable")} bad={path === null} />
           </dl>
 
           <div className="mt-4 border-t border-slate-800 pt-3">
             <p className="mb-2 text-[10px] uppercase tracking-wider text-slate-500">
-              What has happened ({entries.length})
+              {fa ? `رویدادهای ثبت‌شده (${entries.length})` : `What has happened (${entries.length})`}
             </p>
             {entries.length === 0 ? (
               <p className="text-[11px] text-slate-500">
-                Nothing recorded. That is the good case.
+                {fa ? "هیچ رویدادی ثبت نشده است. این نشانهٔ وضعیت مطلوب سیستم است." : "Nothing recorded. That is the good case."}
               </p>
             ) : (
               <ol className="space-y-0.5 font-mono text-[10px] leading-snug">
-                {/* Newest first: a reader opening this has just seen something
-                    go wrong, and it is the last line that describes it. */}
                 {[...entries].reverse().map((entry, index) => (
                   <li key={`${entry.at}-${index}`} className="flex gap-2">
                     <span className="shrink-0 text-slate-600">{clockTime(entry.at)}</span>
@@ -208,7 +208,7 @@ export function StatusWindow({ onClose }: { onClose: () => void }) {
             }}
             className="rounded border border-slate-700 px-2 py-1 text-xs text-slate-300 transition hover:border-slate-600"
           >
-            {copied ? "Copied" : "Copy report"}
+            {copied ? (fa ? "کپی شد" : "Copied") : (fa ? "کپی گزارش" : "Copy report")}
           </button>
           <button
             type="button"
@@ -217,25 +217,20 @@ export function StatusWindow({ onClose }: { onClose: () => void }) {
             }}
             className="rounded border border-slate-700 px-2 py-1 text-xs text-slate-300 transition hover:border-slate-600"
           >
-            Save a copy…
+            {fa ? "ذخیرهٔ یک نسخه…" : "Save a copy…"}
           </button>
-          {/*
-            Emptying is the reader's, and it is the only destructive thing in
-            this window — which is why it says what it clears and sits apart
-            from the two that only read.
-          */}
           <button
             type="button"
             onClick={() => {
               void clearLog().then(refresh, refresh);
             }}
-            title="Empty the log. Your notes, sessions and settings are untouched."
+            title={fa ? "پاک‌سازی فایل گزارش. یادداشت‌ها، جلسات و تنظیمات شما محفوظ خواهند ماند." : "Empty the log. Your notes, sessions and settings are untouched."}
             className="ml-auto rounded border border-slate-700 px-2 py-1 text-xs text-slate-400 transition hover:border-amber-600 hover:text-amber-300"
           >
-            Empty the log
+            {fa ? "پاک‌سازی لاگ" : "Empty the log"}
           </button>
           {saved && (
-            <p className="w-full text-[10px] text-slate-500">Saved to {saved}</p>
+            <p className="w-full text-[10px] text-slate-500">{fa ? `در ${saved} ذخیره شد` : `Saved to ${saved}`}</p>
           )}
         </footer>
       </div>

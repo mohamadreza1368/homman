@@ -200,7 +200,11 @@ function TopBar({
       <PanelToggle
         active={!treeCollapsed}
         onClick={onToggleTree}
-        title={treeCollapsed ? "Show the anatomy panel" : "Hide the anatomy panel"}
+        title={
+          treeCollapsed
+            ? (fa ? "نمایش پنل آناتومی" : "Show the anatomy panel")
+            : (fa ? "پنهان کردن پنل آناتومی" : "Hide the anatomy panel")
+        }
       >
         ▌▍
       </PanelToggle>
@@ -214,7 +218,7 @@ function TopBar({
       <button
         type="button"
         onClick={onOpenMemory}
-        title="Your study journal, as a map of memories"
+        title={fa ? "دفترچهٔ یادداشت شما به صورت نقشهٔ حافظه" : "Your study journal, as a map of memories"}
         className="rounded border border-slate-700 px-1.5 text-[10px] leading-[17px] tracking-[0.2em] text-slate-500 transition hover:border-cyan-600 hover:text-cyan-300"
       >
         {fa ? 'حافظه' : 'MEMORY'}
@@ -223,8 +227,8 @@ function TopBar({
       <button
         type="button"
         onClick={onOpenGuide}
-        title="How HOOMAAN works"
-        aria-label="How HOOMAAN works"
+        title={fa ? "راهنمای کاربری هومان" : "How HOOMAAN works"}
+        aria-label={fa ? "راهنمای کاربری هومان" : "How HOOMAAN works"}
         className="rounded-full border border-slate-700 px-[7px] text-[11px] leading-[17px] text-slate-500 transition hover:border-sky-600 hover:text-sky-300"
       >
         ?
@@ -242,7 +246,11 @@ function TopBar({
       <PanelToggle
         active={!chatCollapsed}
         onClick={onToggleChat}
-        title={chatCollapsed ? "Show the assistant" : "Hide the assistant"}
+        title={
+          chatCollapsed
+            ? (fa ? "نمایش دستیار" : "Show the assistant")
+            : (fa ? "پنهان کردن دستیار" : "Hide the assistant")
+        }
       >
         ▍▌
       </PanelToggle>

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 
 import { displayStatus, setStableDisplay, type DisplayStatus } from "@/lib/ipc";
+import { useInterfaceLanguage } from "@/stores/interfaceLanguage";
 
 /**
  * Stable display: the cure for a window that blinks black for an instant.
@@ -13,6 +14,7 @@ import { displayStatus, setStableDisplay, type DisplayStatus } from "@/lib/ipc";
  * stored choice.
  */
 export function DisplaySettings() {
+  const fa = useInterfaceLanguage((s) => s.language === "fa");
   const [status, setStatus] = useState<DisplayStatus | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -38,7 +40,9 @@ export function DisplaySettings() {
   return (
     <div>
       <div className="mb-1 flex items-center gap-2">
-        <p className="text-[10px] uppercase tracking-wider text-slate-500">Stable display</p>
+        <p className="text-[10px] uppercase tracking-wider text-slate-500">
+          {fa ? "نمایش پایدار" : "Stable display"}
+        </p>
         <button
           type="button"
           role="switch"
@@ -51,18 +55,17 @@ export function DisplaySettings() {
               : "border-slate-700 text-slate-400 hover:border-slate-600"
           }`}
         >
-          {status.stableDisplay ? "On" : "Off"}
+          {status.stableDisplay ? (fa ? "روشن" : "On") : fa ? "خاموش" : "Off"}
         </button>
       </div>
       <p className="text-[10px] leading-snug text-slate-600">
-        For a screen that blinks black for an instant now and then. Some monitor,
-        graphics card and driver combinations do this; the switch draws the
-        window by a slightly slower, steadier route. Leave it off unless you see
-        the blink.
+        {fa
+          ? "برای صفحاتی که گهگاه برای لحظه‌ای چشمک سیاه می‌زنند. این کلید پنجره را از مسیری پایدارتر رسم می‌کند. در صورت عدم نیاز، خاموش بگذارید."
+          : "For a screen that blinks black for an instant now and then. Some monitor, graphics card and driver combinations do this; the switch draws the window by a slightly slower, steadier route. Leave it off unless you see the blink."}
       </p>
       {pending && (
         <p className="mt-1 text-[10px] leading-snug text-amber-300/90">
-          Takes effect the next time HOOMAAN starts.
+          {fa ? "از راه‌اندازی بعدی هومان اعمال می‌شود." : "Takes effect the next time HOOMAAN starts."}
         </p>
       )}
       {error && (

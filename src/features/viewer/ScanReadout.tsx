@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 
 import { organLabel, useSceneStore } from "@/stores/sceneStore";
 import { useScanStore } from "@/stores/scanStore";
+import { useInterfaceLanguage } from "@/stores/interfaceLanguage";
 
 import { CURRENT_CROSSING, SWEEP_RUNNING } from "./scanCrossing";
 import { CURRENT_LEVEL } from "./vertebralLevel";
@@ -48,6 +49,7 @@ export function ScanReadout() {
   const [running, setRunning] = useState(false);
   const shown = useScanStore((s) => s.readout);
   const toggleReadout = useScanStore((s) => s.toggleReadout);
+  const fa = useInterfaceLanguage((s) => s.language === "fa");
   const list = useRef<HTMLParagraphElement>(null);
   const rest = useRef<HTMLParagraphElement>(null);
   const level = useRef<HTMLSpanElement>(null);
@@ -82,8 +84,8 @@ export function ScanReadout() {
         list.current.textContent =
           named ||
           (useScanStore.getState().plane === "front"
-            ? "nothing at this depth"
-            : "nothing at this height");
+            ? (fa ? "چیزی در این عمق نیست" : "nothing at this depth")
+            : (fa ? "چیزی در این ارتفاع نیست" : "nothing at this height"));
       }
       if (level.current) {
         // Written like the names, not through state: it changes as often as
@@ -93,7 +95,7 @@ export function ScanReadout() {
       }
       if (rest.current) {
         const hidden = Math.max(0, total - organIds.length);
-        rest.current.textContent = hidden > 0 ? `and ${hidden} more` : "";
+        rest.current.textContent = hidden > 0 ? (fa ? `و ${hidden} مورد دیگر` : `and ${hidden} more`) : "";
       }
       frame = requestAnimationFrame(tick);
     };
@@ -109,33 +111,27 @@ export function ScanReadout() {
       <button
         type="button"
         onClick={toggleReadout}
-        title="Name what the plane is crossing again"
+        title={fa ? "نمایش مجدد آنچه مقطع از آن عبور می‌کند" : "Name what the plane is crossing again"}
         className={`pointer-events-auto select-none ${OVERLAY_CHIP} ${OVERLAY_CHIP_ACTION}`}
       >
-        crossing · show
+        {fa ? "مقطع عبوری · نمایش" : "crossing · show"}
       </button>
     );
   }
 
   return (
-    /*
-     * The panel itself stays transparent to the pointer, and only the header
-     * takes clicks. It lies over the model, and a reader aiming at a structure
-     * behind it should reach the structure — the one thing this panel must
-     * never do is become an obstacle while claiming to be a label.
-     */
     <div className="pointer-events-none select-none rounded border border-cyan-800/50 bg-slate-950/80 px-2.5 py-1.5 shadow-lg">
       <button
         type="button"
         onClick={toggleReadout}
-        title="Hide this, and look at what the plane has lit"
+        title={fa ? "پنهان کردن این کادر" : "Hide this, and look at what the plane has lit"}
         className="pointer-events-auto flex w-full items-center justify-between gap-4 text-[9px] uppercase tracking-wider text-cyan-500/70 hover:text-cyan-300"
       >
         <span>
-          Crossing now
+          {fa ? "مقطع فعلی" : "Crossing now"}
           <span ref={level} className="text-cyan-300" />
         </span>
-        <span className="text-slate-500">hide</span>
+        <span className="text-slate-500">{fa ? "پنهان" : "hide"}</span>
       </button>
       <p ref={list} className="max-w-md text-[11px] italic leading-snug text-cyan-100" />
       <p ref={rest} className="text-[9px] text-slate-500" />

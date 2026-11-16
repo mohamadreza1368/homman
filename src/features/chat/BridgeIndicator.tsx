@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 
 import { useBridgeStore } from "@/stores/bridgeStore";
+import { useInterfaceLanguage } from "@/stores/interfaceLanguage";
 
 /**
  * Says, from the header, that something outside this window may be driving it.
@@ -24,6 +25,7 @@ import { useBridgeStore } from "@/stores/bridgeStore";
 export function BridgeIndicator() {
   const running = useBridgeStore((s) => s.status?.running ?? false);
   const refresh = useBridgeStore((s) => s.refresh);
+  const fa = useInterfaceLanguage((s) => s.language === "fa");
 
   useEffect(() => {
     void refresh();
@@ -34,9 +36,13 @@ export function BridgeIndicator() {
   return (
     <span
       className="rounded-full bg-sky-500/15 px-1.5 py-0.5 text-[9px] font-medium uppercase text-sky-300"
-      title="The control bridge is on: a program on this computer may control the view and display external, unsaved messages. Turn it off in Settings."
+      title={
+        fa
+          ? "پل کنترلی هومان فعال است: برنامه‌ای در این رایانه می‌تواند نما را کنترل کند و پیام‌های خارجی را نمایش دهد. در تنظیمات می‌توانید آن را غیرفعال کنید."
+          : "The control bridge is on: a program on this computer may control the view and display external, unsaved messages. Turn it off in Settings."
+      }
     >
-      bridge
+      {fa ? "پل کنترل" : "bridge"}
     </span>
   );
 }
