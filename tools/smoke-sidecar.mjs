@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import { createInterface } from "node:readline";
 import path from "node:path";
 
-const executable = path.resolve(process.argv[2] ?? `engine/dist/anatria-engine/anatria-engine${process.platform === "win32" ? ".exe" : ""}`);
+const executable = path.resolve(process.argv[2] ?? `engine/dist/hoomaan-engine/hoomaan-engine${process.platform === "win32" ? ".exe" : ""}`);
 const expected = Number(readFileSync("src/lib/schemas.ts", "utf8").match(/export const PROTOCOL_VERSION = (\d+)/)?.[1]);
 if (!Number.isInteger(expected)) throw new Error("Cannot read the frontend protocol version");
 const child = spawn(executable, [], { stdio: ["pipe", "pipe", "pipe"], windowsHide: true });

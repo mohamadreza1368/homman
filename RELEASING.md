@@ -1,7 +1,7 @@
-# Releasing Anatria3D
+# Releasing HOOMAAN
 
 Installers are published as **GitHub Releases**, attached to a tag. That is the
-only official source. Anatria3D is not distributed by email, by file-sharing
+only official source. HOOMAAN is not distributed by email, by file-sharing
 link, or on request — a student who learns to accept an executable sent to them
 privately has been taught the wrong habit, and this is a teaching tool.
 
@@ -33,7 +33,7 @@ git status --short --branch   # nothing uncommitted, nothing unpushed
 
 ### The scheme: `0.MINOR.PATCH`
 
-Anatria3D is **before 1.0**, and the release after `0.1.6` was **`0.1.7`** —
+HOOMAAN is **before 1.0**, and the release after `0.1.6` was **`0.1.7`** —
 not `1.7.0`. The two are easy to transpose and they say opposite things: `0.1.x`
 says the interfaces may still move, and `1.x` is a promise of stability to
 anyone building on it. Publishing `1.0.0` is a deliberate act for the day that
@@ -52,7 +52,7 @@ a judgement, not a rule, and the test that has worked is: *would the one-line
 summary have to mention it?*
 
 `0.2.0` is the worked example. It added a second atlas. Every sentence
-describing Anatria3D as "a 3D anatomy atlas of a male body" became false, the
+describing HOOMAAN as "a 3D anatomy atlas of a male body" became false, the
 interface grew a control that had never existed, and the assistant gained a
 tool. `0.1.8` would have filed that under the same heading as a scrolling fix.
 
@@ -71,7 +71,7 @@ running.
 | `package.json` | `version` | hand |
 | `src-tauri/tauri.conf.json` | `version` | hand |
 | `src-tauri/Cargo.toml` | `[package] version` | hand |
-| `src-tauri/Cargo.lock` | the `anatria3d` package entry | `cargo` — commit it |
+| `src-tauri/Cargo.lock` | the `hoomaan3d` package entry | `cargo` — commit it |
 | `CITATION.cff` | `version` **and** `date-released` | hand |
 
 ### And the licence's Change Date, in the same commit
@@ -117,7 +117,7 @@ typed where `0.2.0` was intended.
 Read together rather than one at a time:
 
 ```bash
-node -e "console.log('package.json      ', require('./package.json').version); console.log('tauri.conf.json   ', require('./src-tauri/tauri.conf.json').version)" && grep -m1 '^version' src-tauri/Cargo.toml && grep -A1 '^name = "anatria3d"' src-tauri/Cargo.lock | grep '^version' && grep -E '^(version|date-released)' CITATION.cff
+node -e "console.log('package.json      ', require('./package.json').version); console.log('tauri.conf.json   ', require('./src-tauri/tauri.conf.json').version)" && grep -m1 '^version' src-tauri/Cargo.toml && grep -A1 '^name = "hoomaan3d"' src-tauri/Cargo.lock | grep '^version' && grep -E '^(version|date-released)' CITATION.cff
 ```
 
 ## Build
@@ -135,8 +135,8 @@ Two installers come out, and they are not for the same reader:
 
 | Artefact | For |
 |---|---|
-| `src-tauri/target/release/bundle/msi/Anatria3D_<version>_x64_en-US.msi` | **Institutions.** This is what deploys through Group Policy or Intune, across a lab, without touching each machine. |
-| `src-tauri/target/release/bundle/nsis/Anatria3D_<version>_x64-setup.exe` | **Individuals.** A student installing it on their own laptop. |
+| `src-tauri/target/release/bundle/msi/HOOMAAN_<version>_x64_en-US.msi` | **Institutions.** This is what deploys through Group Policy or Intune, across a lab, without touching each machine. |
+| `src-tauri/target/release/bundle/nsis/HOOMAAN_<version>_x64-setup.exe` | **Individuals.** A student installing it on their own laptop. |
 
 Publish both.
 
@@ -179,8 +179,8 @@ Publish them. They are the only way anyone can prove the file they downloaded is
 the file you built, and with an unsigned installer they carry the whole weight.
 
 ```powershell
-certutil -hashfile Anatria3D_<version>_x64-setup.exe SHA256
-certutil -hashfile Anatria3D_<version>_x64_en-US.msi SHA256
+certutil -hashfile HOOMAAN_<version>_x64-setup.exe SHA256
+certutil -hashfile HOOMAAN_<version>_x64_en-US.msi SHA256
 ```
 
 The pipeline computes these itself and attaches them as `checksums-windows.txt`
@@ -218,7 +218,7 @@ back to this source. An artefact from a maintainer's laptop can demonstrate
 nothing of the kind, and mixing the two silently gives up the guarantee.
 
 ```bash
-git tag -a v<version> -m "Anatria3D v<version>"
+git tag -a v<version> -m "HOOMAAN v<version>"
 git push origin v<version>
 ```
 
@@ -264,13 +264,13 @@ and this is the last point at which a wrong sentence is cheap to fix.
 
 ## The SmartScreen warning
 
-Anatria3D is **not code-signed**. Windows will show *"Windows protected your
+HOOMAAN is **not code-signed**. Windows will show *"Windows protected your
 PC"* on first run, and the release notes have to say so plainly — a warning the
 reader was not expecting is what makes a free tool look like a bad one.
 
 Suggested wording, to reuse verbatim:
 
-> Windows will warn you the first time you run the installer, because Anatria3D
+> Windows will warn you the first time you run the installer, because HOOMAAN
 > is not code-signed. Click **More info**, then **Run anyway**. If you would
 > rather verify it first, the SHA-256 of each file is listed above — compare it
 > with `certutil -hashfile <file> SHA256`. The source for this exact build is

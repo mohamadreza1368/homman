@@ -79,7 +79,7 @@ class FakePipeServer:
     def __init__(self) -> None:
         # Unique per run: a leftover from a crashed test must not make the next
         # one fail with a name collision, and two runs may overlap.
-        self.name = f"anatria3d-test-{os.getpid()}-{time.monotonic_ns()}"
+        self.name = f"hoomaan-test-{os.getpid()}-{time.monotonic_ns()}"
         self.full_name = rf"\\.\pipe\{self.name}"
         self._replies: list[bytes] = []
         self._received = bytearray()

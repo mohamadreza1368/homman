@@ -49,7 +49,7 @@ So: do not merge a `_male` mesh and a `_female` mesh into one file, and do not
 merge the two manifests. Nothing in the application does, and the test suite
 asserts it.
 
-Neither licence applies to the Anatria3D application source code, which is
+Neither licence applies to the HOOMAAN application source code, which is
 licensed separately — under the Business Source License 1.1 from version 0.5.0,
 and Apache-2.0 before it — and merely aggregates these assets rather than
 adapting them. Equally, the application's licence does not apply to these

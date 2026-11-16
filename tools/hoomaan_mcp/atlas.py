@@ -1,4 +1,4 @@
-"""Anatria3D's atlas, over MCP.
+"""HOOMAAN's atlas, over MCP.
 
 A read-only server that answers anatomical questions from the manifest the
 application already ships — 3,478 structures in the male atlas and 264 in the
@@ -6,7 +6,7 @@ female trunk, each with its TA2 Latin term, its system and its place in the
 hierarchy. It needs no running application, no API key and no network.
 
 **It reads, unless you ask for more.** Every tool in this file reads, and that
-is all a client gets by default. Set `ANATRIA3D_BRIDGE=1` and fifteen more
+is all a client gets by default. Set `HOOMAAN_BRIDGE=1` and fifteen more
 tools appear, which drive the viewport — the same fifteen the application's own
 assistant has. Without that variable they are never registered, so a client
 that was not deliberately configured cannot move anything and is not told it
@@ -19,8 +19,8 @@ process runs as that account, so it finds the window by itself.
 
 Run it over stdio:
 
-    tools/anatria_mcp/.venv/Scripts/python.exe tools/anatria_mcp/atlas.py  # Windows
-    tools/anatria_mcp/.venv/bin/python tools/anatria_mcp/atlas.py          # POSIX
+    tools/hoomaan_mcp/.venv/Scripts/python.exe tools/hoomaan_mcp/atlas.py  # Windows
+    tools/hoomaan_mcp/.venv/bin/python tools/hoomaan_mcp/atlas.py          # POSIX
 
 See `README.md` beside this file for client configuration.
 """
@@ -40,7 +40,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 # library throughout, so this process never needs the sidecar's dependencies.
 sys.path.insert(0, str(REPO_ROOT / "engine"))
 
-from anatria_engine.atlas_search import (
+from hoomaan_engine.atlas_search import (
     MAX_RESULTS,
     MIN_QUERY_LENGTH,
     Atlas,
@@ -62,7 +62,7 @@ Gender = Literal["male", "female"]
 #: Where the manifests live. Defaults to the checkout; an installed copy of the
 #: application sets this to its own resources directory, which is why it is an
 #: environment variable rather than a constant.
-ATLAS_DIR = Path(os.environ.get("ANATRIA_ATLAS_DIR", REPO_ROOT / "public" / "anatomy"))
+ATLAS_DIR = Path(os.environ.get("HOOMAAN_ATLAS_DIR", REPO_ROOT / "public" / "anatomy"))
 
 MANIFESTS: dict[str, str] = {
     "male": "manifest.json",
@@ -84,7 +84,7 @@ def atlas(gender: Gender) -> Atlas:
         path = ATLAS_DIR / MANIFESTS[gender]
         if not path.is_file():
             raise FileNotFoundError(
-                f"No {gender} manifest at {path}. Set ANATRIA_ATLAS_DIR to the "
+                f"No {gender} manifest at {path}. Set HOOMAAN_ATLAS_DIR to the "
                 "directory holding manifest.json."
             )
         _loaded[gender] = load_atlas(path)
@@ -285,16 +285,16 @@ def build_server() -> MCPServer:
     paired = bridge is not None
 
     mcp = MCPServer(
-        "anatria-atlas",
-        title="Anatria3D Atlas",
+        "hoomaan-atlas",
+        title="HOOMAAN Atlas",
         version="0.1.0",
         instructions=(
-            "Anatomical reference from the Anatria3D atlas. Structures carry "
+            "Anatomical reference from the HOOMAAN atlas. Structures carry "
             "Terminologia Anatomica (TA2) Latin terms alongside English names. "
             "Use search_structures to find an organ_id, then describe_structure "
             "for its full record. "
             + (
-                "This session is connected to a running Anatria3D: the tools "
+                "This session is connected to a running HOOMAAN: the tools "
                 "that isolate, illuminate, ghost and trace act on what the "
                 "reader is looking at, immediately. A structure existing in "
                 "this index does not mean it is loaded in their viewport — "
@@ -303,7 +303,7 @@ def build_server() -> MCPServer:
                 "accepted here and does nothing there. "
                 if paired
                 else "This server reads only; it cannot move or change "
-                "anything in the Anatria3D application. "
+                "anything in the HOOMAAN application. "
             )
             +
             "What it does NOT hold, so do not answer these from it: the index "

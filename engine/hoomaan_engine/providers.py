@@ -10,8 +10,8 @@ from __future__ import annotations
 
 from pydantic_ai.models import Model
 
-from anatria_engine.model_capability import endpoint_for
-from anatria_engine.protocol import AiProvider
+from hoomaan_engine.model_capability import endpoint_for
+from hoomaan_engine.protocol import AiProvider
 
 # Starting point only — the settings drawer lists what the key can actually
 # reach and the choice is sent per request. Preview models are avoided as
@@ -92,7 +92,7 @@ def build_model(provider: AiProvider, api_key: str, model: str | None = None) ->
                     name,
                     provider=OpenAIProvider(api_key=api_key),
                     # The Responses API keeps conversation state server-side by
-                    # default. Anatria3D owns its history — `build_history`
+                    # default. HOOMAAN owns its history — `build_history`
                     # replays prior turns deliberately, and the journal is the
                     # record — so storing a second copy on OpenAI's side would
                     # put the reader's questions somewhere this application

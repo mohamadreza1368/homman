@@ -13,7 +13,7 @@ from pydantic_ai import Agent
 from pydantic_ai.messages import ModelMessage, ModelResponse, TextPart, ToolCallPart
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 
-from anatria_engine.protocol import (
+from hoomaan_engine.protocol import (
     ApplyPathologyOverlay,
     ClearPathway,
     FocusOrgan,
@@ -27,7 +27,7 @@ from anatria_engine.protocol import (
     SetLayerOpacity,
     SetLayerVisibility,
 )
-from anatria_engine.scene_tools import (
+from hoomaan_engine.scene_tools import (
     DEFAULT_STEP_SECONDS,
     MAX_ILLUMINATED,
     SceneContext,

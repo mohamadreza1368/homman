@@ -9,8 +9,8 @@ from __future__ import annotations
 
 import pytest
 
-from anatria_engine.model_capability import endpoint_for, is_offered
-from anatria_engine.providers import DEFAULT_MODELS
+from hoomaan_engine.model_capability import endpoint_for, is_offered
+from hoomaan_engine.providers import DEFAULT_MODELS
 
 # ---------------------------------------------------------------------------
 # Which endpoint
@@ -153,7 +153,7 @@ def test_specialised_is_an_openai_judgement_only():
 def test_the_default_is_built_as_a_chat_model():
     from pydantic_ai.models.openai import OpenAIChatModel
 
-    from anatria_engine.providers import build_model
+    from hoomaan_engine.providers import build_model
 
     model = build_model("openai", "sk-not-a-real-key", DEFAULT_MODELS["openai"])
     assert isinstance(model, OpenAIChatModel)
@@ -163,16 +163,16 @@ def test_terra_is_built_as_a_responses_model():
     """The fix, at the point where it has an effect."""
     from pydantic_ai.models.openai import OpenAIResponsesModel
 
-    from anatria_engine.providers import build_model
+    from hoomaan_engine.providers import build_model
 
     model = build_model("openai", "sk-not-a-real-key", "gpt-5.6-terra")
     assert isinstance(model, OpenAIResponsesModel)
 
 
 def test_the_responses_route_does_not_leave_the_conversation_on_the_server():
-    """Anatria3D owns its history. A second copy held by the provider would be
+    """HOOMAAN owns its history. A second copy held by the provider would be
     somewhere this application does not manage and cannot delete."""
-    from anatria_engine.providers import build_model
+    from hoomaan_engine.providers import build_model
 
     model = build_model("openai", "sk-not-a-real-key", "gpt-5.6-terra")
     assert model.settings is not None
@@ -182,7 +182,7 @@ def test_the_responses_route_does_not_leave_the_conversation_on_the_server():
 def test_an_unchosen_model_still_resolves_to_the_default_route():
     from pydantic_ai.models.openai import OpenAIChatModel
 
-    from anatria_engine.providers import build_model
+    from hoomaan_engine.providers import build_model
 
     assert isinstance(build_model("openai", "sk-not-a-real-key", None), OpenAIChatModel)
 
@@ -197,7 +197,7 @@ def test_anthropic_asks_for_its_prompt_cache():
     775,199 input tokens at 0% cached, while OpenAI on the same journal ran at
     74-97%. Anthropic caches only where `cache_control` is sent, and nothing
     sent it."""
-    from anatria_engine.providers import build_model
+    from hoomaan_engine.providers import build_model
 
     model = build_model("anthropic", "sk-not-a-real-key", "claude-haiku-4-5")
     settings = model.settings or {}
@@ -209,7 +209,7 @@ def test_anthropic_does_not_cache_the_growing_half():
     """The messages block grows every turn, so a breakpoint there writes a new
     and larger entry each time — paying the write premium over and over for a
     prefix that has already changed."""
-    from anatria_engine.providers import build_model
+    from hoomaan_engine.providers import build_model
 
     model = build_model("anthropic", "sk-not-a-real-key", "claude-haiku-4-5")
     assert "anthropic_cache_messages" not in (model.settings or {})
@@ -219,7 +219,7 @@ def test_the_other_providers_are_left_alone():
     """OpenAI caches any prompt over 1,024 tokens by itself and Gemini caches
     implicitly. Neither needs asking, and a setting invented for them here
     would be a guess this file has no way to check."""
-    from anatria_engine.providers import build_model
+    from hoomaan_engine.providers import build_model
 
     for provider, model_id in [("openai", "gpt-5.2"), ("google", "gemini-3.7-flash")]:
         settings = build_model(provider, "not-a-real-key", model_id).settings or {}

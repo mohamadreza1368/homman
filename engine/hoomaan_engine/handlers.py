@@ -6,15 +6,15 @@ import asyncio
 
 from pydantic import BaseModel
 
-from anatria_engine.agent import (
+from hoomaan_engine.agent import (
     Completed,
     TextChunk,
     ToolStarted,
     build_scene_context,
     run_agent,
 )
-from anatria_engine.model_discovery import list_models
-from anatria_engine.protocol import (
+from hoomaan_engine.model_discovery import list_models
+from hoomaan_engine.protocol import (
     AgentRequest,
     CaseVerdictEvent,
     DoneEvent,
@@ -28,8 +28,8 @@ from anatria_engine.protocol import (
     TextDeltaEvent,
     ToolStartedEvent,
 )
-from anatria_engine.providers import DEFAULT_MODELS, ProviderError
-from anatria_engine.transport import Transport
+from hoomaan_engine.providers import DEFAULT_MODELS, ProviderError
+from hoomaan_engine.transport import Transport
 
 #: A saturated model usually clears in seconds. Retried only while nothing has
 #: been shown yet — see `handle_agent_request`.
@@ -187,7 +187,7 @@ async def handle_local_chat(request: LocalChatRequest, transport: Transport) -> 
     model to call: the viewport cannot move whatever it answers. See
     `local_chat.py` for why the prompt is fitted and checked.
     """
-    from anatria_engine.local_chat import (
+    from hoomaan_engine.local_chat import (
         LocalDone,
         LocalModelError,
         LocalText,
@@ -223,7 +223,7 @@ async def handle_local_chat(request: LocalChatRequest, transport: Transport) -> 
 
 async def handle_local_models(request: LocalModelsRequest, transport: Transport) -> None:
     """Say whether Ollama answers here, and which chat models it has."""
-    from anatria_engine.local_chat import list_local_models
+    from hoomaan_engine.local_chat import list_local_models
 
     try:
         running, models = await list_local_models()
@@ -318,7 +318,7 @@ def _readable(exc: Exception) -> str:
     message = str(exc).strip() or type(exc).__name__
     if _model_is_incompatible(f"{type(exc).__name__} {message}".lower()):
         message = (
-            "This model cannot be driven by Anatria3D's scene tools. "
+            "This model cannot be driven by HOOMAAN's scene tools. "
             "Choose another model under Settings — the one marked as the "
             "default is known to work. Provider said: " + message
         )

@@ -1,8 +1,8 @@
-Anatria3D — anatomical mesh assets
+HOOMAAN — anatomical mesh assets
 ==================================
 
 The 3D meshes and anatomical nomenclature in this directory are NOT covered by
-the Anatria3D application licence. They come from open anatomical datasets and
+the HOOMAAN application licence. They come from open anatomical datasets and
 keep the terms their authors set.
 
 **There are two atlases here, from two unrelated sources, under two different
@@ -28,7 +28,7 @@ Attribution chain
    https://creativecommons.org/licenses/by-sa/4.0/
    https://www.z-anatomy.com/
 
-3. Anatria3D adaptations
+3. HOOMAAN adaptations
    The .glb files here are adaptations of the Z-Anatomy meshes, produced by a
    headless Blender export (tools/asset-pipeline/): conversion from .blend to
    glTF binary, Blender modifiers baked into the exported geometry, lossy Draco
@@ -67,7 +67,7 @@ What this means in practice
 - These asset files may be redistributed, including commercially, provided the
   attribution above is preserved and they remain under CC BY-SA 4.0.
 - The share-alike obligation attaches to the meshes and their derived label
-  data. It does not extend to the Anatria3D application source code, which
+  data. It does not extend to the HOOMAAN application source code, which
   merely aggregates these assets rather than adapting them.
 - Do not relicense, or claim exclusive rights over, anything in this directory.
 
@@ -98,7 +98,7 @@ Attribution chain
    Cite: Börner K, et al. Human Reference Atlas. The licence statement is
    machine-readable in the digital object's own metadata.json.
 
-3. Anatria3D adaptations
+3. HOOMAAN adaptations
    Produced by `tools/asset-pipeline/extract-hra.mjs`, entirely inside glTF —
    no Blender round trip, so the node names are byte-identical to the published
    digital object and any structure here can be checked against the HRA portal.

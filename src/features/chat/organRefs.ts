@@ -2,7 +2,7 @@
  * Inline links between the assistant's prose and the 3D model.
  *
  * The agent marks the structures it names with `[[organ_id]]` (see the SCENE
- * block in `engine/anatria_engine/prompts.py`). This module turns those markers
+ * block in `engine/hoomaan_engine/prompts.py`). This module turns those markers
  * into numbered references so a long answer stays anchored to what is on
  * screen: hovering a number highlights the structure, clicking flies to it.
  *

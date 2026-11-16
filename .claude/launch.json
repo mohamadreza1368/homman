@@ -2,7 +2,7 @@
   "version": "0.0.1",
   "configurations": [
     {
-      "name": "anatria-viewer",
+      "name": "hoomaan-viewer",
       "runtimeExecutable": "pnpm",
       "runtimeArgs": ["dev"],
       "port": 1420

@@ -1,6 +1,6 @@
 # Security Policy
 
-Anatria3D runs on a student's own machine, holds their API key in the operating
+HOOMAAN runs on a student's own machine, holds their API key in the operating
 system's credential store, and spawns a sidecar process. That is a small attack
 surface by design, but it is not an empty one — and a project that gives
 software to universities owes the people who look at it a way to say what they
@@ -14,7 +14,7 @@ version that is still vulnerable.
 
 Use GitHub's private reporting instead:
 
-**[Report a vulnerability](https://github.com/Nurkan1/Anatria-3D/security/advisories/new)**
+**[Report a vulnerability](https://github.com/mohamadreza1368/homman/security/advisories/new)**
 — under the repository's **Security** tab. It is private between you and the
 maintainer, and it becomes a published advisory only once there is a fix to
 publish alongside it.
@@ -75,7 +75,7 @@ The parts where a bug would cost a user something real:
 ## What is not
 
 - **Anatomical or clinical inaccuracy.** Wrong anatomy is a serious bug and very
-  welcome as an ordinary [issue](https://github.com/Nurkan1/Anatria-3D/issues),
+  welcome as an ordinary [issue](https://github.com/mohamadreza1368/homman/issues),
   but it is not a security vulnerability and does not need a private channel.
 - **What the assistant says.** It is a language model; it can be wrong, and it
   can be argued into being wrong. The application states on every screen that it

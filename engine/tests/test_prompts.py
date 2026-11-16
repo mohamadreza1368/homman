@@ -1,6 +1,6 @@
 """The instruction layers are load-bearing, so they get asserted like code.
 
-The safety block is what keeps Anatria3D outside EU MDR 2017/745 scope. If it
+The safety block is what keeps HOOMAAN outside EU MDR 2017/745 scope. If it
 stops being composed into every turn — any profile, any language — the product's
 regulatory classification changes. That is worth a test, not a code review.
 """
@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import pytest
 
-from anatria_engine.prompts import (
+from hoomaan_engine.prompts import (
     CASE,
     PROFILES,
     REVIEW,
@@ -17,7 +17,7 @@ from anatria_engine.prompts import (
     SCENE,
     build_instructions,
 )
-from anatria_engine.protocol import (
+from hoomaan_engine.protocol import (
     BreathContext,
     CaseComplaint,
     CaseRecordUpdate,
@@ -243,7 +243,7 @@ def test_multiple_selection_is_framed_as_a_comparison() -> None:
 
 
 def test_an_explicit_model_is_used_as_given():
-    from anatria_engine.providers import resolve_model_name
+    from hoomaan_engine.providers import resolve_model_name
 
     assert resolve_model_name("anthropic", "claude-opus-5") == "claude-opus-5"
 
@@ -256,7 +256,7 @@ def test_no_choice_resolves_to_the_provider_default():
     consumption panel that cannot name the model it is counting invites the
     reader to attribute the spend to the wrong one.
     """
-    from anatria_engine.providers import DEFAULT_MODELS, resolve_model_name
+    from hoomaan_engine.providers import DEFAULT_MODELS, resolve_model_name
 
     for provider, default in DEFAULT_MODELS.items():
         assert resolve_model_name(provider, None) == default
@@ -269,7 +269,7 @@ def test_no_choice_resolves_to_the_provider_default():
 
 def test_auto_follows_the_reader_and_names_no_fixed_language():
     """`auto` is the absence of a choice, not a fourth language."""
-    from anatria_engine.prompts import _language_rule
+    from hoomaan_engine.prompts import _language_rule
 
     rule = _language_rule("auto")
     assert "the language the reader writes to you in" in rule
@@ -283,7 +283,7 @@ def test_auto_still_carries_the_nomenclature_rules():
     Guards the shared tail: it was inlined in one branch before `auto` existed,
     and a copy-paste split would have silently dropped it from the new one.
     """
-    from anatria_engine.prompts import _language_rule
+    from hoomaan_engine.prompts import _language_rule
 
     for language in ("auto", "bg", "es", "en"):
         rule = _language_rule(language)
@@ -292,7 +292,7 @@ def test_auto_still_carries_the_nomenclature_rules():
 
 
 def test_a_fixed_language_is_named_and_wins_over_the_question():
-    from anatria_engine.prompts import _language_rule
+    from hoomaan_engine.prompts import _language_rule
 
     rule = _language_rule("bg")
     assert "Bulgarian (български)" in rule
@@ -301,15 +301,15 @@ def test_a_fixed_language_is_named_and_wins_over_the_question():
 
 def test_latin_never_switches_the_language_under_either_setting():
     """A message that is only a structure name says nothing about its author."""
-    from anatria_engine.prompts import _language_rule
+    from hoomaan_engine.prompts import _language_rule
 
     for language in ("auto", "es"):
         assert "Arteria femoralis" in _language_rule(language)
 
 
 def test_the_instructions_build_for_every_language_including_auto():
-    from anatria_engine.prompts import build_instructions
-    from anatria_engine.protocol import OrganMeta
+    from hoomaan_engine.prompts import build_instructions
+    from hoomaan_engine.protocol import OrganMeta
 
     organs = [
         OrganMeta(
@@ -830,7 +830,7 @@ def test_the_body_rule_sits_below_safety() -> None:
         mode="tutor",
         gender="female",
     )
-    assert text.index("THE BODY ON SCREEN") > text.index("Anatria3D")
+    assert text.index("THE BODY ON SCREEN") > text.index("HOOMAAN")
 
 
 HEART = OrganContext(

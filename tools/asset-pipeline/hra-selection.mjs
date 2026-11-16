@@ -1,5 +1,5 @@
 /**
- * Which structures of the HRA female body Anatria3D ships, and what to call them.
+ * Which structures of the HRA female body HOOMAAN ships, and what to call them.
  *
  * # Why this is a hand-written table
  *
@@ -421,7 +421,7 @@ export const STRUCTURES = [
   //
   // Nothing here exists on the male body. The male atlas has no breast of any
   // kind, so these fourteen are not a finer version of something — they are the
-  // only breast anatomy Anatria3D has.
+  // only breast anatomy HOOMAAN has.
   ...["left", "right"].flatMap((side) => {
     const tag = side === "left" ? "L" : "R";
     const id = (name) => `${name}_${tag.toLowerCase()}`;

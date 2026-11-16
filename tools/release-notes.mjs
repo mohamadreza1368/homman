@@ -90,7 +90,7 @@ const hashes = findChecksums(root)
 
 // -- the parts that are the same every time --------------------------------
 
-const body = `Anatria3D **v${version}** — Windows and Linux, 64-bit. Installs without administrator rights.
+const body = `HOOMAAN **v${version}** — Windows and Linux, 64-bit. Installs without administrator rights.
 
 ${section.trim()}
 
@@ -100,10 +100,10 @@ ${section.trim()}
 
 | File | Take this one if |
 |---|---|
-| \`Anatria3D_${version}_x64-setup.exe\` | Windows, on your own machine. |
-| \`Anatria3D_${version}_x64_en-US.msi\` | Windows, deploying across a faculty or a lab. |
-| \`Anatria3D_${version}_amd64.AppImage\` | Linux. Nothing to install — make it executable and run it. |
-| \`Anatria3D_${version}_amd64.deb\` | Debian or Ubuntu, through the package manager. |
+| \`HOOMAAN_${version}_x64-setup.exe\` | Windows, on your own machine. |
+| \`HOOMAAN_${version}_x64_en-US.msi\` | Windows, deploying across a faculty or a lab. |
+| \`HOOMAAN_${version}_amd64.AppImage\` | Linux. Nothing to install — make it executable and run it. |
+| \`HOOMAAN_${version}_amd64.deb\` | Debian or Ubuntu, through the package manager. |
 
 The AppImage needs FUSE 2. If it will not start and complains about
 \`libfuse.so.2\`, either install \`libfuse2\` or run it with
@@ -111,7 +111,7 @@ The AppImage needs FUSE 2. If it will not start and complains about
 
 ## Windows will warn you the first time
 
-Anatria3D is not code-signed. Click **More info**, then **Run anyway**.
+HOOMAAN is not code-signed. Click **More info**, then **Run anyway**.
 
 To check the download first:
 
@@ -120,7 +120,7 @@ ${hashes}
 \`\`\`
 
 \`\`\`
-certutil -hashfile Anatria3D_${version}_x64-setup.exe SHA256
+certutil -hashfile HOOMAAN_${version}_x64-setup.exe SHA256
 \`\`\`
 
 On Linux, \`sha256sum -c checksums-linux.txt\`.
@@ -132,7 +132,7 @@ source to the installer you downloaded can be checked by anyone.
 
 **There is no auto-updater**, by design: the application never reaches the
 network on its own. New versions appear here and nowhere else — see
-[CHANGELOG.md](https://github.com/Nurkan1/Anatria-3D/blob/main/CHANGELOG.md) for
+[CHANGELOG.md](https://github.com/mohamadreza1368/homman/blob/main/CHANGELOG.md) for
 what is different in each one.
 
 Educational use only — not a medical device, and not for diagnosis or treatment.

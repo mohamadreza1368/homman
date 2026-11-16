@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pytest
 
-from anatria_engine.atlas_search import (
+from hoomaan_engine.atlas_search import (
     MIN_QUERY_LENGTH,
     belly_id,
     children_of,
@@ -23,7 +23,7 @@ from anatria_engine.atlas_search import (
     search,
     systems_map,
 )
-from anatria_engine.protocol import OrganMeta
+from hoomaan_engine.protocol import OrganMeta
 
 MANIFEST = Path(__file__).resolve().parents[2] / "public" / "anatomy" / "manifest.json"
 
@@ -34,7 +34,7 @@ def atlas():
 
 
 def structure(organ_id: str, latin: str, english: str, path: tuple[str, ...] = ()):
-    from anatria_engine.atlas_search import Structure
+    from hoomaan_engine.atlas_search import Structure
 
     return Structure(
         organ_id=organ_id, ta2_latin=latin, name_en=english, system="cardiovascular", path=path

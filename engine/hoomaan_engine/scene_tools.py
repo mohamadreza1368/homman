@@ -21,7 +21,7 @@ from typing import Literal
 from pydantic import BaseModel
 from pydantic_ai import Agent, ModelRetry, RunContext
 
-from anatria_engine.protocol import (
+from hoomaan_engine.protocol import (
     AddSupply,
     AnatomicalSystem,
     ApplyPathologyOverlay,

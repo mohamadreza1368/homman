@@ -13,9 +13,9 @@ from pydantic_ai import Agent
 from pydantic_ai.messages import ModelMessage, ModelResponse, TextPart, ToolCallPart
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 
-from anatria_engine.prompts import INLINE_INVENTORY_LIMIT, build_instructions
-from anatria_engine.protocol import OrganMeta
-from anatria_engine.scene_tools import MAX_SEARCH_RESULTS, SceneContext, register_scene_tools
+from hoomaan_engine.prompts import INLINE_INVENTORY_LIMIT, build_instructions
+from hoomaan_engine.protocol import OrganMeta
+from hoomaan_engine.scene_tools import MAX_SEARCH_RESULTS, SceneContext, register_scene_tools
 
 
 def organs(count: int, system: str = "cardiovascular") -> list[OrganMeta]:

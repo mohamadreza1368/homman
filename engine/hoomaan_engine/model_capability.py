@@ -34,7 +34,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from anatria_engine.protocol import AiProvider
+from hoomaan_engine.protocol import AiProvider
 
 #: Which HTTP surface a model has to be driven through.
 Endpoint = Literal["chat", "responses"]

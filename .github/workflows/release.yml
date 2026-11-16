@@ -1,6 +1,6 @@
 # Build the installers from a tag, and publish them with their checksums.
 #
-# This workflow is what makes the download trustworthy. Anatria3D is not
+# This workflow is what makes the download trustworthy. HOOMAAN is not
 # code-signed, so the only thing a reader can verify is that the file they have
 # is the file this pipeline produced from this public source — which is exactly
 # what a build on a maintainer's laptop cannot demonstrate.
@@ -325,7 +325,7 @@ jobs:
         uses: softprops/action-gh-release@v3
         with:
           draft: true # reviewed before anyone can download it
-          name: Anatria3D ${{ github.ref_name }}
+          name: HOOMAAN ${{ github.ref_name }}
           body_path: notes.md
           # `**` because the artifact keeps the bundle's directory structure.
           # Every pattern ends in a file extension, so none of them can match

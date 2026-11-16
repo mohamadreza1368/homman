@@ -8,8 +8,8 @@ calls.
 
 Run them with this directory's own virtualenv, not the repository one:
 
-    tools/anatria_mcp/.venv/Scripts/python.exe -m pytest tools/anatria_mcp -q  # Windows
-    tools/anatria_mcp/.venv/bin/python -m pytest tools/anatria_mcp -q          # POSIX
+    tools/hoomaan_mcp/.venv/Scripts/python.exe -m pytest tools/hoomaan_mcp -q  # Windows
+    tools/hoomaan_mcp/.venv/bin/python -m pytest tools/hoomaan_mcp -q          # POSIX
 """
 
 from __future__ import annotations
@@ -46,7 +46,7 @@ async def client():
         env={
             key: value
             for key, value in os.environ.items()
-            if key != "ANATRIA3D_BRIDGE" and not key.startswith("ANATRIA3D_BRIDGE_")
+            if key != "HOOMAAN_BRIDGE" and not key.startswith("HOOMAAN_BRIDGE_")
         },
     )
     async with (

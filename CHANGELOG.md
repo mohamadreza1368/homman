@@ -1,11 +1,11 @@
 # Changelog
 
-What changed in Anatria3D, written for the person using it rather than the
+What changed in HOOMAAN, written for the person using it rather than the
 person who wrote it. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 This file starts at 0.1.7. Earlier releases are described on the
-[Releases page](https://github.com/Nurkan1/Anatria-3D/releases) — they are not
+[Releases page](https://github.com/Nurkan1/homman/releases) — they are not
 reconstructed here, because notes written from memory a year later are a good
 way to record something that did not happen.
 
@@ -123,7 +123,7 @@ title. With no 3D at all, the index and the reader still work.
 Linux: from the next launch the window is drawn by a slower, steadier route.
 Leave it off unless you see blinking.
 
-**Regulatory transparency.** A new section of *How Anatria3D works* sets the
+**Regulatory transparency.** A new section of *How HOOMAAN works* sets the
 application against the EU AI Act, the MDR and the GDPR: what it is for, why it
 is not a high-risk system, what is sent to your AI provider and when, and how
 the assistant may act on the model. *Credits* now carries a contact address.
@@ -135,7 +135,7 @@ Source License 1.1: free for study, teaching, academic research and
 non-commercial evaluation by healthcare professionals, and converting to
 Apache-2.0 on 24 September 2030. Deployment in a clinic or any other
 revenue-generating setting needs a commercial agreement —
-anatria@digitalrose.org. Releases up to 0.4.0 remain Apache-2.0. **The anatomy
+contact@hoomaan.app. Releases up to 0.4.0 remain Apache-2.0. **The anatomy
 is unaffected**: the meshes and nomenclature keep their own Creative Commons
 licences, which this does not restrict.
 
@@ -202,7 +202,7 @@ The line above the picture says how deep the plane is, measured from the most
 anterior point of the body, and the wheel steps a centimetre at a time. *Cut*,
 *Slab*, the torch, magnifying, the caliper and *Save* all work as they do across
 the body. The same ring serves both: in *Front* it stays at the chest and reads
-*ANATRIA 3D FRONT*, and the light on the body marks the plane. Each plane keeps
+*HOOMAAN FRONT*, and the light on the body marks the plane. Each plane keeps
 its own place, and a measurement stays on the section it was drawn on.
 
 **The assistant knows where the scanner is.** With nothing selected and the
@@ -298,7 +298,7 @@ in *Cut* the structure under an end may lie below the plane.
 
 **Save a section as a picture.** *Save* writes what is on screen to a PNG, with
 the measurement on it if you drew one, and suggests a name made of what it is —
-`anatria3d-axial-T8-13cm-slab.png` — so a folder of them can be read without
+`hoomaan-axial-T8-13cm-slab.png` — so a folder of them can be read without
 opening any. The line saying it is not a medical device is part of the picture,
 because a caption on screen does not travel with a screenshot.
 
@@ -306,7 +306,7 @@ because a caption on screen does not travel with a screenshot.
 renal arteries leave, and it puts the scanner there, switching it on if it was
 off. It names a structure rather than a level, so a vertebra and the aortic root
 are the same request. When the assistant is the one that moved it, the ring reads
-*ANATRIA 3D AI*; move it yourself and it goes back to *ANATRIA 3D*.
+*HOOMAAN AI*; move it yourself and it goes back to *HOOMAAN*.
 
 **A torch.** *Aim the light with the pointer* makes the cursor the lamp over the
 enlarged section: the middle is overhead and the edges lay the light flat across
@@ -682,10 +682,10 @@ It is off by default. With the fascia on, the anatomy is honest; taking it off
 is the dissection move, and that should be your decision rather than ours.
 
 **The atlas answers questions outside the application.** A read-only Model
-Context Protocol server ships in `tools/anatria_mcp/`. Point Claude, Codex or
+Context Protocol server ships in `tools/hoomaan_mcp/`. Point Claude, Codex or
 Gemini at it and they can search the 3,742 structures by Latin or English name,
 read a structure's record and its place in the hierarchy, walk that hierarchy,
-and see which licence each atlas carries — with Anatria3D closed, without an API
+and see which licence each atlas carries — with HOOMAAN closed, without an API
 key, and without touching the network.
 
 It cannot change anything. It does not talk to the running application, cannot
@@ -903,11 +903,11 @@ It appears **only when something on the page was actually generated**. A noteboo
 of your own notes carries nothing, because there is nothing to disclose.
 
 The notice also says where its knowledge stops: notes are entered by you, and
-Anatria3D does not record where their text came from. That second half is not
+HOOMAAN does not record where their text came from. That second half is not
 padding. Without it the first half would quietly certify that everything
 unmarked was written by a human, and that is not something this application can
 know — a paragraph pasted from a chatbot and one copied from a textbook arrive
-through the same keystroke. Anatria3D does not guess: it does not run your
+through the same keystroke. HOOMAAN does not guess: it does not run your
 writing through a detector, and it does not record what you paste. Both would
 produce false accusations, and detectors are wrong most often about people
 writing outside their first language.

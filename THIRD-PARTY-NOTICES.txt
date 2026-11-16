@@ -1,7 +1,7 @@
-Anatria3D — licensing notice
+HOOMAAN — licensing notice
 ============================
 
-Anatria3D is educational software. It is NOT a medical device, and it is not
+HOOMAAN is educational software. It is NOT a medical device, and it is not
 for diagnosis or treatment of any person.
 
 
@@ -16,7 +16,7 @@ non-commercial evaluation by healthcare professionals.
 Any other production use — a commercial clinic or healthcare business,
 any revenue-generating environment, re-branding, or distribution as part of a
 paid product or service — requires a commercial licence. Write to
-anatria@digitalrose.org.
+contact@hoomaan.app.
 
 This version converts to the Apache License, Version 2.0 four years after
 its release, on the Change Date stated in the LICENSE file installed with the
@@ -45,7 +45,7 @@ Files: `anatomy/manifest.json`, `anatomy/*_male.glb`
      CC BY-SA 4.0 — https://creativecommons.org/licenses/by-sa/4.0/
      https://www.z-anatomy.com/
 
-  3. Anatria3D adaptations — headless Blender export to glTF binary, modifiers
+  3. HOOMAAN adaptations — headless Blender export to glTF binary, modifiers
      baked in, lossy Draco compression, materials dropped in favour of shading
      applied by the viewer, stable organ identifiers added, and an anatomical
      hierarchy derived from Z-Anatomy's own collection nesting.
@@ -75,7 +75,7 @@ whole body, because no open dataset provides a female one.
      Digital object ref-organ/united-female v1.5
      CC BY 4.0 — https://creativecommons.org/licenses/by/4.0/
 
-  3. Anatria3D adaptations — 264 of 888 structures selected, node hierarchy
+  3. HOOMAAN adaptations — 264 of 888 structures selected, node hierarchy
      flattened with transforms baked in, materials and UV sets dropped, lossy
      Draco compression, stable organ identifiers added, and each structure
      matched by hand to a Terminologia Anatomica term.
@@ -104,7 +104,7 @@ Application source code — earlier versions
 The licence for this version's code is the Business Source License 1.1 stated
 at the top of this notice, and its full text ships as LICENSE.
 
-Versions of Anatria3D up to and including 0.4.0 were published under the
+Versions of HOOMAAN up to and including 0.4.0 were published under the
 Apache License, Version 2.0, and remain under it. The Apache text ships as
 LICENSES/Apache-2.0.txt, because it is also the licence this version converts
 to on its change date.
@@ -119,7 +119,7 @@ Bundled components
 
 The application bundles a Python runtime and third-party Python packages, each
 under its own licence. Their licence files are installed alongside them, under
-`anatria-engine/_internal/`.
+`hoomaan-engine/_internal/`.
 
 
 Your own data

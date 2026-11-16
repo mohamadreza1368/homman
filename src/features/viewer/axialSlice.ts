@@ -639,7 +639,7 @@ function drawMeasure(
  * A name for the file, made of what the picture actually is.
  *
  * Somebody saving one section is saving several, and a folder of
- * `hoomaan-view.png` and `anatria3d-view (1).png` is a folder nobody can
+ * `hoomaan-view.png` and `hoomaan-view (1).png` is a folder nobody can
  * read. The plane, where it was — the level, or the depth — and the width
  * are what tell them apart.
  *

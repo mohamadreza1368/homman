@@ -1,6 +1,6 @@
 """Freeze the AI engine into a self-contained directory for bundling.
 
-Output: `engine/dist/anatria-engine/anatria-engine[.exe]` plus its `_internal`
+Output: `engine/dist/hoomaan-engine/hoomaan-engine[.exe]` plus its `_internal`
 tree. Rust picks it up from there in development, and `tauri.conf.json` copies
 the whole directory into the installer's resource directory for release.
 
@@ -23,7 +23,7 @@ import sys
 from pathlib import Path
 
 ENGINE_DIR = Path(__file__).resolve().parent
-APP_NAME = "anatria-engine"
+APP_NAME = "hoomaan-engine"
 
 # Provider SDKs and Pydantic AI resolve a good deal at import time. PyInstaller's
 # static analysis misses some of it, so collect these wholesale. Trim only with

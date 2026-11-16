@@ -121,7 +121,7 @@ export const Markdown = memo(function Markdown({ children, structurePins = true 
          *
          * react-markdown rewrites every href it does not recognise to the empty
          * string — its allow-list is `http`, `https`, `mailto`, `xmpp` and
-         * `irc`. `anatria-ref:` is not on it, so the pins arrived with no href
+         * `irc`. `hoomaan-ref:` is not on it, so the pins arrived with no href
          * at all, the branch below never matched, and every numbered reference
          * in every answer rendered as inert blue text. Nothing threw and
          * nothing looked broken; the numbers were simply dead, and the reader

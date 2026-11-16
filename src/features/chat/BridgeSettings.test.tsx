@@ -73,13 +73,13 @@ describe("the switch", () => {
     // are plain Python and need neither the bridge nor this window. Shipping a
     // working server nobody can find is worse than not shipping it.
     ipc.bridgeStatus.mockResolvedValue(
-      status({ supported: false, server: "/usr/lib/anatria3d/anatria-mcp" }),
+      status({ supported: false, server: "/usr/lib/hoomaan/hoomaan-mcp" }),
     );
     render(<BridgeSettings />);
 
     await waitFor(() => {
       expect(
-        screen.getByText("/usr/lib/anatria3d/anatria-mcp/atlas.py"),
+        screen.getByText("/usr/lib/hoomaan/hoomaan-mcp/atlas.py"),
       ).toBeTruthy();
     });
     expect(screen.getByText(/five read-only tools do work here/i)).toBeTruthy();

@@ -1,4 +1,4 @@
-# How to cite Anatria3D.
+# How to cite HOOMAAN.
 #
 # Citation File Format 1.2.0 — https://citation-file-format.github.io
 # GitHub reads this to render "Cite this repository", and Zenodo reads it when
@@ -9,7 +9,7 @@
 # tauri.conf.json. A stale version here is worse than none: it would tell a
 # reader to cite a build they are not running.
 cff-version: 1.2.0
-title: Anatria3D
+title: HOOMAAN
 message: If you use this software, please cite it.
 type: software
 
@@ -46,7 +46,7 @@ identifiers:
     description: Concept DOI — always resolves to the latest archived version.
 
 license: BUSL-1.1
-repository-code: https://github.com/Nurkan1/Anatria-3D
+repository-code: https://github.com/mohamadreza1368/homman
 version: 0.7.0
 date-released: 2026-10-30
 

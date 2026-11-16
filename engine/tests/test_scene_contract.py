@@ -18,9 +18,9 @@ from typing import Annotated, get_args, get_origin
 
 import pytest
 
-from anatria_engine.atlas_search import load_atlas
-from anatria_engine.protocol import SceneCommand
-from anatria_engine.scene_contract import (
+from hoomaan_engine.atlas_search import load_atlas
+from hoomaan_engine.protocol import SceneCommand
+from hoomaan_engine.scene_contract import (
     ATLAS_REFERENCES,
     XRAY_OPACITY,
     UnclassifiedActionError,
@@ -127,7 +127,7 @@ class TestItAgreesWithTheAgentOnTheXrayValue:
     """
 
     def test_the_agent_uses_the_shared_value(self):
-        from anatria_engine import scene_tools
+        from hoomaan_engine import scene_tools
 
         assert scene_tools.XRAY_OPACITY == XRAY_OPACITY
 

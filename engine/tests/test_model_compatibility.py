@@ -19,10 +19,10 @@ from __future__ import annotations
 
 import pytest
 
-from anatria_engine.handlers import _classify, _readable
-from anatria_engine.model_discovery import _finish
-from anatria_engine.protocol import ModelInfo
-from anatria_engine.providers import DEFAULT_MODELS
+from hoomaan_engine.handlers import _classify, _readable
+from hoomaan_engine.model_discovery import _finish
+from hoomaan_engine.protocol import ModelInfo
+from hoomaan_engine.providers import DEFAULT_MODELS
 
 
 class ProviderRejectionError(Exception):
@@ -51,7 +51,7 @@ def test_an_incompatible_model_is_not_an_internal_error():
 
 def test_the_message_leads_with_what_the_reader_can_press():
     readable = _readable(TERRA)
-    assert readable.startswith("This model cannot be driven by Anatria3D")
+    assert readable.startswith("This model cannot be driven by HOOMAAN")
     assert "Settings" in readable
     # The provider's own wording is kept: it names the model and the endpoint,
     # which is what a bug report needs.

@@ -1,4 +1,4 @@
-# Contributing to Anatria3D
+# Contributing to HOOMAAN
 
 Thank you for looking. Please read this before opening a pull request, because
 it decides whether one can be accepted at all.
@@ -13,7 +13,7 @@ no clause that licenses a contribution back automatically.
 
 So **a pull request cannot be merged without a written contributor agreement**
 with the licensor, Nurdzhan Kerimov (Digital Rose). Write to
-**anatria@digitalrose.org** before starting any work you intend to contribute,
+**hoomaan@digitalrose.org** before starting any work you intend to contribute,
 and nothing will be wasted.
 
 ## What needs no agreement
@@ -24,7 +24,7 @@ and nothing will be wasted.
   describes, never in a public issue.
 - **Forking and changing the code for your own study, teaching or
   non-production use**, which the licence already allows. A fork may not be
-  called Anatria3D: the name is a trademark and is not licensed.
+  called HOOMAAN: the name is a trademark and is not licensed.
 
 ## The anatomy is different
 

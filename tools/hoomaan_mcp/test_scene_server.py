@@ -12,7 +12,7 @@ in for it here only has to hold a pipe open and record what arrived.
 
 Run them with this directory's own virtualenv, not the repository one:
 
-    tools/anatria_mcp/.venv/Scripts/python.exe -m pytest tools/anatria_mcp -q
+    tools/hoomaan_mcp/.venv/Scripts/python.exe -m pytest tools/hoomaan_mcp -q
 """
 
 from __future__ import annotations
@@ -55,7 +55,7 @@ def anyio_backend():
 
 @pytest.fixture
 def app():
-    """A fake Anatria3D: a real pipe that records what arrives."""
+    """A fake HOOMAAN: a real pipe that records what arrives."""
     from pipe_server import FakePipeServer
 
     with FakePipeServer() as server:
@@ -70,10 +70,10 @@ async def driving(app):
         args=[str(SERVER)],
         env=os.environ
         | {
-            "ANATRIA3D_BRIDGE": "1",
+            "HOOMAAN_BRIDGE": "1",
             # The one thing a reader never sets. Here it points the server at a
             # fake application instead of the real one this account would have.
-            "ANATRIA3D_BRIDGE_PIPE": app.full_name,
+            "HOOMAAN_BRIDGE_PIPE": app.full_name,
         },
     )
     async with (
@@ -150,8 +150,8 @@ class TestSurface:
             args=[str(SERVER)],
             env=os.environ
             | {
-                "ANATRIA3D_BRIDGE": "1",
-                "ANATRIA3D_BRIDGE_PIPE": app.full_name,
+                "HOOMAAN_BRIDGE": "1",
+                "HOOMAAN_BRIDGE_PIPE": app.full_name,
             },
         )
         async with (
@@ -161,7 +161,7 @@ class TestSurface:
             said = (await session.initialize()).instructions or ""
 
         assert "reads only" not in said
-        assert "connected to a running Anatria3D" in said
+        assert "connected to a running HOOMAAN" in said
 
 
 class TestItReachesTheApplication:
@@ -170,7 +170,7 @@ class TestItReachesTheApplication:
         tool = tools["say"]
         assert tool.input_schema["properties"]["text"]["maxLength"] == 4000
         assert "via the control bridge" in tool.description
-        assert "NOT the Anatria3D assistant" in tool.description
+        assert "NOT the HOOMAAN assistant" in tool.description
         assert tool.annotations.read_only_hint is False
         assert tool.annotations.idempotent_hint is False
 
@@ -318,8 +318,8 @@ class TestWhenTheApplicationIsNotThere:
             args=[str(SERVER)],
             env=os.environ
             | {
-                "ANATRIA3D_BRIDGE": "1",
-                "ANATRIA3D_BRIDGE_PIPE": "anatria3d-control-nothing-is-here",
+                "HOOMAAN_BRIDGE": "1",
+                "HOOMAAN_BRIDGE_PIPE": "hoomaan-control-nothing-is-here",
             },
         )
         async with (
@@ -329,4 +329,4 @@ class TestWhenTheApplicationIsNotThere:
             await session.initialize()
             message = await refuse(session, "focus_organ", organ_id=REAL_ID)
 
-        assert "Anatria3D" in message
+        assert "HOOMAAN" in message

@@ -1,7 +1,7 @@
-# Anatria3D Atlas — MCP server
+# HOOMAAN Atlas — MCP server
 
 Anatomical reference over the Model Context Protocol, and — if you pair it —
-control of a running Anatria3D. Answers from the manifest the application
+control of a running HOOMAAN. Answers from the manifest the application
 already ships: **3,478 structures** in the male atlas and **264** in the female
 trunk, each with its Terminologia Anatomica (TA2) Latin term, its system, and
 its place in the hierarchy.
@@ -28,7 +28,7 @@ is the same fifteen tools its own assistant has: `focus_organ`,
 `set_cross_section`.
 
 **They are not registered unless you ask for them.** Without
-`ANATRIA3D_BRIDGE` the server is read-only in the strong sense: the tools do
+`HOOMAAN_BRIDGE` the server is read-only in the strong sense: the tools do
 not exist, so a model is never offered them and never spends a turn
 discovering they fail. See *Driving the application* below.
 
@@ -88,23 +88,23 @@ This is the same mechanism that took the sidecar from 97 MB to 434 MB during
 the voice experiment. The isolation is the fix, and it only works while nobody
 runs `pip install mcp` in the repository root.
 
-The seam between the two environments is `anatria_engine/atlas_search.py`,
+The seam between the two environments is `hoomaan_engine/atlas_search.py`,
 which is standard library only. Adding a dependency there would have to be
 satisfied twice.
 
 ## Setting it up
 
 ```bash
-python -m venv tools/anatria_mcp/.venv
-tools/anatria_mcp/.venv/Scripts/python.exe -m pip install "mcp>=2.1,<3" pytest anyio
+python -m venv tools/hoomaan_mcp/.venv
+tools/hoomaan_mcp/.venv/Scripts/python.exe -m pip install "mcp>=2.1,<3" pytest anyio
 ```
 
-On Linux and macOS the interpreter is `tools/anatria_mcp/.venv/bin/python`.
+On Linux and macOS the interpreter is `tools/hoomaan_mcp/.venv/bin/python`.
 
 Run the tests — they spawn the server over stdio exactly as a client does:
 
 ```bash
-tools/anatria_mcp/.venv/Scripts/python.exe -m pytest tools/anatria_mcp -q
+tools/hoomaan_mcp/.venv/Scripts/python.exe -m pytest tools/hoomaan_mcp -q
 ```
 
 ## Connecting a client
@@ -116,7 +116,7 @@ repository.
 ### Claude Code
 
 ```bash
-claude mcp add anatria-atlas -- "C:\path\to\Anatria3D\tools\anatria_mcp\.venv\Scripts\python.exe" "C:\path\to\Anatria3D\tools\anatria_mcp\atlas.py"
+claude mcp add hoomaan-atlas -- "C:\path\to\HOOMAAN\tools\hoomaan_mcp\.venv\Scripts\python.exe" "C:\path\to\HOOMAAN\tools\hoomaan_mcp\atlas.py"
 ```
 
 ### Claude Desktop — `claude_desktop_config.json`
@@ -124,9 +124,9 @@ claude mcp add anatria-atlas -- "C:\path\to\Anatria3D\tools\anatria_mcp\.venv\Sc
 ```json
 {
   "mcpServers": {
-    "anatria-atlas": {
-      "command": "C:\\path\\to\\Anatria3D\\tools\\anatria_mcp\\.venv\\Scripts\\python.exe",
-      "args": ["C:\\path\\to\\Anatria3D\\tools\\anatria_mcp\\atlas.py"]
+    "hoomaan-atlas": {
+      "command": "C:\\path\\to\\HOOMAAN\\tools\\hoomaan_mcp\\.venv\\Scripts\\python.exe",
+      "args": ["C:\\path\\to\\HOOMAAN\\tools\\hoomaan_mcp\\atlas.py"]
     }
   }
 }
@@ -135,9 +135,9 @@ claude mcp add anatria-atlas -- "C:\path\to\Anatria3D\tools\anatria_mcp\.venv\Sc
 ### Codex CLI — `~/.codex/config.toml`
 
 ```toml
-[mcp_servers.anatria-atlas]
-command = "C:\\path\\to\\Anatria3D\\tools\\anatria_mcp\\.venv\\Scripts\\python.exe"
-args = ["C:\\path\\to\\Anatria3D\\tools\\anatria_mcp\\atlas.py"]
+[mcp_servers.hoomaan-atlas]
+command = "C:\\path\\to\\HOOMAAN\\tools\\hoomaan_mcp\\.venv\\Scripts\\python.exe"
+args = ["C:\\path\\to\\HOOMAAN\\tools\\hoomaan_mcp\\atlas.py"]
 ```
 
 ### Gemini CLI — `~/.gemini/settings.json`
@@ -145,9 +145,9 @@ args = ["C:\\path\\to\\Anatria3D\\tools\\anatria_mcp\\atlas.py"]
 ```json
 {
   "mcpServers": {
-    "anatria-atlas": {
-      "command": "C:\\path\\to\\Anatria3D\\tools\\anatria_mcp\\.venv\\Scripts\\python.exe",
-      "args": ["C:\\path\\to\\Anatria3D\\tools\\anatria_mcp\\atlas.py"]
+    "hoomaan-atlas": {
+      "command": "C:\\path\\to\\HOOMAAN\\tools\\hoomaan_mcp\\.venv\\Scripts\\python.exe",
+      "args": ["C:\\path\\to\\HOOMAAN\\tools\\hoomaan_mcp\\atlas.py"]
     }
   }
 }
@@ -158,10 +158,10 @@ args = ["C:\\path\\to\\Anatria3D\\tools\\anatria_mcp\\atlas.py"]
 One line, and it never changes:
 
 ```json
-"env": { "ANATRIA3D_BRIDGE": "1" }
+"env": { "HOOMAAN_BRIDGE": "1" }
 ```
 
-Then open Anatria3D, turn **Control bridge** on in the settings drawer, and
+Then open HOOMAAN, turn **Control bridge** on in the settings drawer, and
 restart the MCP client once. There is nothing to copy: the pipe is named for
 the account that created it and the server runs as that same account, so it
 finds the window by itself.
@@ -183,7 +183,7 @@ your case files without going near a viewport. Against that, a value that
 changed every session meant editing this file and restarting the client every
 session, which reads as a broken feature rather than a careful one.
 
-`ANATRIA3D_BRIDGE_PIPE` still overrides the derived name, for an application
+`HOOMAAN_BRIDGE_PIPE` still overrides the derived name, for an application
 running as a different account that has deliberately been made reachable.
 Nobody needs it for the ordinary setup.
 
@@ -194,7 +194,7 @@ driven from here leaves no trace in the application: no saved conversation, no
 note, no case file, no coverage, no token accounting. What was said stays in
 the client's own window.
 
-That is the design, not a gap. Everything that makes Anatria3D a study tool
+That is the design, not a gap. Everything that makes HOOMAAN a study tool
 rather than a viewer is built by the assistant inside the application, on the
 reader's own API key. This server drives the atlas; it does not keep a record
 of having done so.
@@ -214,10 +214,10 @@ no error at all.
 ### Reading the manifests from somewhere else
 
 By default the server reads `public/anatomy/` from this checkout. Point it at an
-installed copy with `ANATRIA_ATLAS_DIR`:
+installed copy with `HOOMAAN_ATLAS_DIR`:
 
 ```json
-"env": { "ANATRIA_ATLAS_DIR": "C:\\Program Files\\Anatria3D\\anatomy" }
+"env": { "HOOMAAN_ATLAS_DIR": "C:\\Program Files\\HOOMAAN\\anatomy" }
 ```
 
 ## Licence of the data

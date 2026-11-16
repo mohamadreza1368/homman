@@ -1,7 +1,7 @@
 """Generate placeholder application icons.
 
 These are stand-ins so `tauri build` has the icon set it requires. Replace them
-with the real Anatria3D mark by dropping a 1024x1024 PNG in and running
+with the real HOOMAAN mark by dropping a 1024x1024 PNG in and running
 `pnpm tauri icon <file>`, which regenerates every size properly.
 
 Written with zlib + struct rather than Pillow so the repo does not grow an

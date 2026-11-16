@@ -1,6 +1,6 @@
-"""The client half of Anatria3D's control bridge.
+"""The client half of HOOMAAN's control bridge.
 
-Transport only. This module knows how to find a running Anatria3D and put one
+Transport only. This module knows how to find a running HOOMAAN and put one
 scene command on the wire; it knows nothing about what a scene command means,
 and nothing here validates one against the atlas. That belongs a layer up,
 where the manifest is in hand — see `scene_contract` in the engine.
@@ -9,7 +9,7 @@ where the manifest is in hand — see `scene_contract` in the engine.
 
 One environment variable, and it never changes:
 
-    ANATRIA3D_BRIDGE=1
+    HOOMAAN_BRIDGE=1
 
 Its absence is not an error — it is how a reader says they want the atlas
 without the viewport. `from_environment` returns `None`, the control tools are
@@ -73,7 +73,7 @@ SCENE_FRAME = "scene_command"
 #: The stem the application builds its pipe name on, with the SID appended.
 #: Mirrors `PIPE_STEM` in `control_bridge.rs`; the two must agree or nothing
 #: connects, which is what `test_bridge` pins.
-PIPE_STEM = "anatria3d-control"
+PIPE_STEM = "hoomaan-control"
 
 
 class BridgeUnavailable(RuntimeError):
@@ -85,7 +85,7 @@ class BridgeUnavailable(RuntimeError):
 
 
 class ControlBridge:
-    """One connection to a running Anatria3D.
+    """One connection to a running HOOMAAN.
 
     Opened lazily on the first command and kept afterwards, which matters more
     than it looks: the bridge admits one client at a time, so a client that
@@ -102,15 +102,15 @@ class ControlBridge:
     def from_environment(cls) -> ControlBridge | None:
         """Build one if the reader asked for it, or `None` if they did not.
 
-        `ANATRIA3D_BRIDGE` is the whole configuration. `ANATRIA3D_BRIDGE_PIPE`
+        `HOOMAAN_BRIDGE` is the whole configuration. `HOOMAAN_BRIDGE_PIPE`
         is read too and overrides the derived name, which exists for the case
         the derivation cannot cover: an application running as a *different*
         account that has deliberately been made reachable. Nobody needs it for
         the ordinary setup and the panel does not ask for it.
         """
-        if os.environ.get("ANATRIA3D_BRIDGE", "").strip().lower() not in _TRUE:
+        if os.environ.get("HOOMAAN_BRIDGE", "").strip().lower() not in _TRUE:
             return None
-        override = os.environ.get("ANATRIA3D_BRIDGE_PIPE", "").strip()
+        override = os.environ.get("HOOMAAN_BRIDGE_PIPE", "").strip()
         return cls(override or None)
 
     @property
@@ -183,7 +183,7 @@ class ControlBridge:
                 return open(self._name, "r+b", buffering=0)
             except FileNotFoundError as err:
                 raise BridgeUnavailable(
-                    f"Nothing is listening on {self._name}. Open Anatria3D and "
+                    f"Nothing is listening on {self._name}. Open HOOMAAN and "
                     "switch the control bridge on in Settings."
                 ) from err
             except PermissionError as err:
@@ -215,7 +215,7 @@ _TRUE = {"1", "true", "yes", "on"}
 
 
 def default_pipe_name() -> str:
-    """The pipe an Anatria3D running as this account will have created.
+    """The pipe an HOOMAAN running as this account will have created.
 
     This is what replaces the pipe-and-token copying. The application names its
     pipe for the account that owns it, this process runs as the same account,

@@ -2,8 +2,8 @@
 
 import pytest
 
-from anatria_engine.prompts import SAFETY, _groups_rule, build_instructions
-from anatria_engine.protocol import OrganContext, OrganMeta, ScannerContext
+from hoomaan_engine.prompts import SAFETY, _groups_rule, build_instructions
+from hoomaan_engine.protocol import OrganContext, OrganMeta, ScannerContext
 
 
 def shared_prefix(first: str, second: str) -> str:

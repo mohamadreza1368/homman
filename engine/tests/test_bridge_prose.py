@@ -6,7 +6,7 @@ from pydantic_ai import Agent
 from pydantic_ai.messages import ModelResponse, TextPart
 from pydantic_ai.models.function import FunctionModel
 
-from anatria_engine.protocol import Say, SceneCommand
+from hoomaan_engine.protocol import Say, SceneCommand
 
 
 @pytest.mark.parametrize("character", ["x", "🫀"])
@@ -20,7 +20,7 @@ def test_say_preserves_4000_unicode_characters_and_refuses_4001(character):
 
 @pytest.mark.asyncio
 async def test_say_is_not_an_internal_assistant_tool():
-    from anatria_engine.scene_tools import SceneContext, register_scene_tools
+    from hoomaan_engine.scene_tools import SceneContext, register_scene_tools
 
     names = set()
 

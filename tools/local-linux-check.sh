@@ -2,7 +2,7 @@
 # Isolated local validation; never installs system packages or changes the source checkout.
 set -euo pipefail
 source_root="$(cd "$(dirname "$0")/.." && pwd)"
-task_root="$(mktemp -d /var/tmp/anatria-stability.XXXXXX)"
+task_root="$(mktemp -d /var/tmp/hoomaan-stability.XXXXXX)"
 printf 'LINUX_VALIDATION_ROOT=%s\n' "$task_root"
 git -c safe.directory="$source_root" -C "$source_root" ls-files --cached --others --exclude-standard -z \
   | tar -C "$source_root" --null -T - -cf - \
@@ -33,10 +33,10 @@ python -m pytest engine -q
 python -m ruff check engine
 pnpm sidecar:build
 node tools/smoke-sidecar.mjs
-python3.12 -m venv --without-pip tools/anatria_mcp/.venv
-tools/anatria_mcp/.venv/bin/python .tooling/get-pip.py
-tools/anatria_mcp/.venv/bin/python -m pip install 'mcp>=2.1,<3' pytest anyio
-tools/anatria_mcp/.venv/bin/python -m pytest tools/anatria_mcp -q
+python3.12 -m venv --without-pip tools/hoomaan_mcp/.venv
+tools/hoomaan_mcp/.venv/bin/python .tooling/get-pip.py
+tools/hoomaan_mcp/.venv/bin/python -m pip install 'mcp>=2.1,<3' pytest anyio
+tools/hoomaan_mcp/.venv/bin/python -m pytest tools/hoomaan_mcp -q
 cargo test --manifest-path src-tauri/Cargo.toml --locked
 cargo clippy --manifest-path src-tauri/Cargo.toml --locked --all-targets -- -D warnings
 pnpm tauri build --bundles deb

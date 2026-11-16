@@ -4,7 +4,7 @@ import { agentBriefing } from "./agentBriefing";
 
 const NAME = "hoomaan-control-S-1-5-21-000-000-000-1001";
 const PIPE = `\\\\.\\pipe\\${NAME}`;
-const SERVER = "C:\\Program Files\\Anatria3D\\resources\\anatria-mcp";
+const SERVER = "C:\\Program Files\\HOOMAAN\\resources\\hoomaan-mcp";
 
 /** Wrapping is layout; these assertions are about what the text says. */
 const flat = (pipe: string, server: string | null = null) =>
@@ -71,7 +71,7 @@ describe("agentBriefing", () => {
 describe("agentBriefing, when the server ships with the application", () => {
   it("gives the path on this machine, separator and all", () => {
     // In a template literal `\a` is just `a`, so a single backslash in the
-    // source produces "…anatria-mcpatlas.py" — a path that exists nowhere, in
+    // source produces "…hoomaan-mcpatlas.py" — a path that exists nowhere, in
     // a briefing whose entire purpose is not to do that. It happened once.
     expect(agentBriefing(PIPE, SERVER)).toContain(`${SERVER}\\atlas.py`);
   });

@@ -19,9 +19,9 @@ from __future__ import annotations
 
 import asyncio
 
-from anatria_engine.model_capability import is_offered
-from anatria_engine.protocol import AiProvider, ModelInfo
-from anatria_engine.providers import DEFAULT_MODELS, ProviderError
+from hoomaan_engine.model_capability import is_offered
+from hoomaan_engine.protocol import AiProvider, ModelInfo
+from hoomaan_engine.providers import DEFAULT_MODELS, ProviderError
 
 
 def _finish(provider: AiProvider, models: list[ModelInfo]) -> list[ModelInfo]:

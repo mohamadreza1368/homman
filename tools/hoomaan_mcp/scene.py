@@ -1,4 +1,4 @@
-"""The tools that let an external agent drive a running Anatria3D.
+"""The tools that let an external agent drive a running HOOMAAN.
 
 The same fifteen the application's own assistant has, under the same names.
 That is the point of the exercise rather than an aesthetic choice: an agent
@@ -11,7 +11,7 @@ It is not part of the application's own assistant tool set.
 
 # Where the wire format comes from
 
-From `anatria_engine.protocol`, the actual Pydantic models the engine emits.
+From `hoomaan_engine.protocol`, the actual Pydantic models the engine emits.
 Nothing here restates a limit — that a route has between two and twenty-four
 stops, that opacity runs 0 to 1, that at most sixty-four structures can be
 isolated at once — because every one of those already lives on a model, is
@@ -45,8 +45,8 @@ from collections.abc import Callable
 from itertools import pairwise
 from typing import Annotated, Literal
 
-from anatria_engine.atlas_search import Atlas
-from anatria_engine.protocol import (
+from hoomaan_engine.atlas_search import Atlas
+from hoomaan_engine.protocol import (
     AddSupply,
     AnatomicalSystem,
     ApplyPathologyOverlay,
@@ -70,7 +70,7 @@ from anatria_engine.protocol import (
     SetLayerOpacity,
     SetLayerVisibility,
 )
-from anatria_engine.scene_contract import XRAY_OPACITY, unknown_references
+from hoomaan_engine.scene_contract import XRAY_OPACITY, unknown_references
 from bridge import BridgeUnavailable, ControlBridge
 from mcp.server import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
@@ -126,7 +126,7 @@ def register_scene_tools(
             # error. Refusing says which file is missing; proceeding would not.
             raise ToolError(
                 "No atlas manifest could be read, so nothing can be checked "
-                "before it is sent. Set ANATRIA_ATLAS_DIR to the directory "
+                "before it is sent. Set HOOMAAN_ATLAS_DIR to the directory "
                 "holding manifest.json."
             )
         missing = _unknown(payload, loaded)
@@ -155,7 +155,7 @@ def register_scene_tools(
     def say(text: BridgeText) -> str:
         """Show Markdown in the reader's window, attributed 'via the control bridge'.
 
-        This is external text, NOT the Anatria3D assistant's response. It stays
+        This is external text, NOT the HOOMAAN assistant's response. It stays
         outside the journal and provider history. No structure pins. Up to 4000
         characters; only the latest 20 messages remain, until the bridge is off.
         """

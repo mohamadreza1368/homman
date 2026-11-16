@@ -1,6 +1,6 @@
 """Emit a normalised description of the IPC protocol as JSON.
 
-Run as `python -m anatria_engine.protocol_surface`. The TypeScript contract test
+Run as `python -m hoomaan_engine.protocol_surface`. The TypeScript contract test
 (`tests/protocol-contract.test.ts`) computes the same structure from the Zod
 schemas and asserts the two match, so a field added on one side and forgotten
 on the other fails a test instead of failing in production.
@@ -24,7 +24,7 @@ from typing import Any, get_args
 
 from pydantic import BaseModel
 
-from anatria_engine import protocol as p
+from hoomaan_engine import protocol as p
 
 EXCLUDED_FIELDS = {"api_key", "kind"}
 

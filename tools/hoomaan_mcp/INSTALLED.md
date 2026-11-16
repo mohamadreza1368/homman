@@ -1,6 +1,6 @@
-# The Anatria3D MCP server, as installed
+# The HOOMAAN MCP server, as installed
 
-These files ship inside Anatria3D. You are reading the copy that came with the
+These files ship inside HOOMAAN. You are reading the copy that came with the
 application, not the repository — there is no git checkout here and none is
 needed.
 
@@ -41,10 +41,10 @@ interpreter. To get the fifteen tools that move the view, add to the entry's
 environment:
 
 ```
-"ANATRIA3D_BRIDGE": "1"
+"HOOMAAN_BRIDGE": "1"
 ```
 
-and turn the **control bridge** switch on in Anatria3D — Settings, beside the
+and turn the **control bridge** switch on in HOOMAAN — Settings, beside the
 model. It is off at every launch, on purpose.
 
 ## What it will not do

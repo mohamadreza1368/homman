@@ -87,13 +87,13 @@ from typing import Literal
 
 import httpx
 
-from anatria_engine.prompts import (
+from hoomaan_engine.prompts import (
     LOCAL_TRIAGE_PROMPT,
     build_local_instructions,
     build_local_question,
     local_notice,
 )
-from anatria_engine.protocol import (
+from hoomaan_engine.protocol import (
     GenderModel,
     LocalModelInfo,
     OrganContext,
@@ -168,7 +168,7 @@ _DETECT_PROMPT = (
 _TRIAGE_CHARS = 600
 
 #: What the panel names as the author of a fixed notice: no model wrote it.
-NOTICE_MODEL = "Anatria3D notice"
+NOTICE_MODEL = "HOOMAAN notice"
 
 MessageKind = Literal["study", "person", "crisis"]
 

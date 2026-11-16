@@ -9,7 +9,7 @@ This directory holds the other licence texts the application refers to:
   reasons, and neither makes it the current licence:
   - it is the **Change License** named in `LICENSE`: this version of the code
     converts to it on the Change Date stated there;
-  - versions of Anatria3D **up to and including 0.4.0** were published under
+  - versions of HOOMAAN **up to and including 0.4.0** were published under
     it, and remain under it.
 
 The anatomical meshes and nomenclature are under neither: see

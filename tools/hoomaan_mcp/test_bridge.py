@@ -15,7 +15,7 @@ to read.
 
 Run them with this directory's own virtualenv, not the repository one:
 
-    tools/anatria_mcp/.venv/Scripts/python.exe -m pytest tools/anatria_mcp -q
+    tools/hoomaan_mcp/.venv/Scripts/python.exe -m pytest tools/hoomaan_mcp -q
 """
 
 from __future__ import annotations
@@ -42,19 +42,19 @@ windows_only = pytest.mark.skipif(
 @pytest.mark.parametrize(
     "pasted",
     [
-        r"\\.\pipe\anatria3d-control-S-1-5-21-9",
+        r"\\.\pipe\hoomaan-control-S-1-5-21-9",
         # Halved slashes: a shell, a JSON file or an env var can all do this,
         # and the reader has no way to tell it happened.
-        r"\.\pipe\anatria3d-control-S-1-5-21-9",
-        r"\\?\pipe\anatria3d-control-S-1-5-21-9",
-        "anatria3d-control-S-1-5-21-9",
-        "  anatria3d-control-S-1-5-21-9  ",
+        r"\.\pipe\hoomaan-control-S-1-5-21-9",
+        r"\\?\pipe\hoomaan-control-S-1-5-21-9",
+        "hoomaan-control-S-1-5-21-9",
+        "  hoomaan-control-S-1-5-21-9  ",
     ],
 )
 def test_every_spelling_of_the_path_reaches_the_same_pipe(pasted: str) -> None:
     assert (
         ControlBridge(pasted).pipe_name
-        == r"\\.\pipe\anatria3d-control-S-1-5-21-9"
+        == r"\\.\pipe\hoomaan-control-S-1-5-21-9"
     )
 
 
@@ -66,7 +66,7 @@ def test_every_spelling_of_the_path_reaches_the_same_pipe(pasted: str) -> None:
 def test_not_asking_for_it_is_not_an_error(monkeypatch: pytest.MonkeyPatch) -> None:
     # It is how a reader says they want the atlas without the viewport, and the
     # server registers no control tools at all in that case.
-    monkeypatch.delenv("ANATRIA3D_BRIDGE", raising=False)
+    monkeypatch.delenv("HOOMAAN_BRIDGE", raising=False)
     assert ControlBridge.from_environment() is None
 
 
@@ -76,8 +76,8 @@ def test_every_ordinary_spelling_of_yes_requests_the_transport(
 ) -> None:
     # Generous on purpose. Somebody who wrote `true` because every other tool
     # takes `true` should not get five tools instead of twenty with no clue why.
-    monkeypatch.setenv("ANATRIA3D_BRIDGE", said)
-    monkeypatch.delenv("ANATRIA3D_BRIDGE_PIPE", raising=False)
+    monkeypatch.setenv("HOOMAAN_BRIDGE", said)
+    monkeypatch.delenv("HOOMAAN_BRIDGE_PIPE", raising=False)
     if sys.platform == "win32":
         assert ControlBridge.from_environment() is not None
     else:
@@ -89,7 +89,7 @@ def test_every_ordinary_spelling_of_yes_requests_the_transport(
 
 @pytest.mark.parametrize("said", ["0", "false", "no", ""])
 def test_saying_no_is_taken_as_no(monkeypatch: pytest.MonkeyPatch, said: str) -> None:
-    monkeypatch.setenv("ANATRIA3D_BRIDGE", said)
+    monkeypatch.setenv("HOOMAAN_BRIDGE", said)
     assert ControlBridge.from_environment() is None
 
 
@@ -97,8 +97,8 @@ def test_saying_no_is_taken_as_no(monkeypatch: pytest.MonkeyPatch, said: str) ->
 def test_it_finds_the_pipe_without_being_told(monkeypatch: pytest.MonkeyPatch) -> None:
     # The whole reason the token went away. Nothing is copied from the panel,
     # so nothing goes stale between sessions.
-    monkeypatch.setenv("ANATRIA3D_BRIDGE", "1")
-    monkeypatch.delenv("ANATRIA3D_BRIDGE_PIPE", raising=False)
+    monkeypatch.setenv("HOOMAAN_BRIDGE", "1")
+    monkeypatch.delenv("HOOMAAN_BRIDGE_PIPE", raising=False)
 
     built = ControlBridge.from_environment()
     assert built is not None
@@ -135,8 +135,8 @@ def test_the_derived_identity_is_the_one_windows_reports() -> None:
 def test_an_explicit_pipe_still_wins(monkeypatch: pytest.MonkeyPatch) -> None:
     # The escape hatch, for an application running as another account that has
     # deliberately been made reachable. Nobody needs it for the ordinary setup.
-    monkeypatch.setenv("ANATRIA3D_BRIDGE", "1")
-    monkeypatch.setenv("ANATRIA3D_BRIDGE_PIPE", "somebody-elses-pipe")
+    monkeypatch.setenv("HOOMAAN_BRIDGE", "1")
+    monkeypatch.setenv("HOOMAAN_BRIDGE_PIPE", "somebody-elses-pipe")
     built = ControlBridge.from_environment()
     assert built is not None
     assert built.pipe_name.endswith("somebody-elses-pipe")
@@ -293,10 +293,10 @@ def test_it_speaks_to_a_real_named_pipe() -> None:
 
 @windows_only
 def test_a_pipe_nobody_is_serving_says_to_open_the_application() -> None:
-    client = ControlBridge("anatria3d-control-no-such-pipe-here")
+    client = ControlBridge("hoomaan-control-no-such-pipe-here")
     with pytest.raises(BridgeUnavailable) as raised:
         client.send({"action": "reset_view"})
-    assert "Anatria3D" in str(raised.value)
+    assert "HOOMAAN" in str(raised.value)
 
 
 @windows_only

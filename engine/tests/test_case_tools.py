@@ -16,9 +16,9 @@ from pydantic_ai import Agent
 from pydantic_ai.messages import ModelMessage, ModelResponse, TextPart, ToolCallPart
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 
-from anatria_engine.case_tools import MIN_VERDICT_CHARS, register_case_tools
-from anatria_engine.protocol import OrganMeta
-from anatria_engine.scene_tools import SceneContext, register_scene_tools
+from hoomaan_engine.case_tools import MIN_VERDICT_CHARS, register_case_tools
+from hoomaan_engine.protocol import OrganMeta
+from hoomaan_engine.scene_tools import SceneContext, register_scene_tools
 
 ORGANS = [
     OrganMeta(

@@ -5,7 +5,7 @@ import type { LocalModelInfo } from "@/lib/schemas";
 
 /**
  * The local chat: a conversation with a model in Ollama on this computer.
- * See `engine/anatria_engine/local_chat.py` for what it can and cannot do.
+ * See `engine/hoomaan_engine/local_chat.py` for what it can and cannot do.
  *
  * # What is remembered
  *

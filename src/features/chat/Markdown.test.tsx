@@ -74,7 +74,7 @@ Nel bulbo.`}</Markdown>,
   it("makes a numbered reference a control, not decoration", () => {
     // The regression this exists for, and it was silent for a long time.
     // react-markdown rewrites any href whose scheme is not on its allow-list to
-    // the empty string, so `anatria-ref:` arrived blank, the branch that builds
+    // the empty string, so `hoomaan-ref:` arrived blank, the branch that builds
     // the pin never matched, and every number in every answer rendered as inert
     // blue text. Nothing threw. The feature was simply dead, and the only way
     // to reach a structure was to scroll past the whole answer to the chips.

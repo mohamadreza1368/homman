@@ -1,4 +1,4 @@
-"""Export Z-Anatomy collections to .glb for the Anatria3D viewer.
+"""Export Z-Anatomy collections to .glb for the HOOMAAN viewer.
 
 Run headless:
 
@@ -224,7 +224,7 @@ def build_clean_scene(source_objects) -> tuple:
     relationships.
     """
     depsgraph = bpy.context.evaluated_depsgraph_get()
-    scene = bpy.data.scenes.new("anatria_export")
+    scene = bpy.data.scenes.new("hoomaan_export")
 
     skipped: list[str] = []
     exported: list[dict] = []

@@ -13,7 +13,7 @@ those can: the manifest is data, and no type system knows whether
 `left_atrium_l` is in it.
 
 **Standard library only**, for the same reason as `atlas_search`: the control
-server runs in `tools/anatria_mcp/.venv` without the sidecar's dependencies,
+server runs in `tools/hoomaan_mcp/.venv` without the sidecar's dependencies,
 and a dependency added here would have to be satisfied twice.
 
 Nothing imports this from the running application, and that is deliberate. The
@@ -27,7 +27,7 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from typing import Literal
 
-from anatria_engine.atlas_search import Atlas, heading_names
+from hoomaan_engine.atlas_search import Atlas, heading_names
 
 #: How a field names something in the atlas.
 #:

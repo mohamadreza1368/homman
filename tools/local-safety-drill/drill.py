@@ -30,14 +30,14 @@ import time
 from collections import Counter
 from pathlib import Path
 
-from anatria_engine.local_chat import (
+from hoomaan_engine.local_chat import (
     NOTICE_MODEL,
     LocalDone,
     LocalModelError,
     LocalText,
     answer_local_turn,
 )
-from anatria_engine.protocol import TranscriptTurn, UserProfile
+from hoomaan_engine.protocol import TranscriptTurn, UserProfile
 
 MODELS = ["qwen3.5:9b", "gemma3:4b", "llama3.1:8b"]
 

@@ -19,9 +19,9 @@ import pytest
 from pydantic_ai.messages import ModelMessage, ModelResponse, TextPart
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 
-from anatria_engine import agent as agent_module
-from anatria_engine.agent import Completed, build_scene_context, run_agent
-from anatria_engine.protocol import AgentRequest, OrganMeta
+from hoomaan_engine import agent as agent_module
+from hoomaan_engine.agent import Completed, build_scene_context, run_agent
+from hoomaan_engine.protocol import AgentRequest, OrganMeta
 
 
 def reply(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
@@ -104,7 +104,7 @@ async def test_a_finished_turn_names_the_model_that_ran_it() -> None:
 @pytest.mark.anyio
 async def test_a_turn_that_chose_no_model_still_names_the_default() -> None:
     """Otherwise every first turn files its spend against nothing."""
-    from anatria_engine.providers import DEFAULT_MODELS
+    from hoomaan_engine.providers import DEFAULT_MODELS
 
     completed = await run_to_completion(make_request(None))
     assert completed.model == DEFAULT_MODELS["google"]

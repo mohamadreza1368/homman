@@ -9,7 +9,7 @@ import httpx
 import pytest
 from pydantic import ValidationError
 
-from anatria_engine.local_chat import (
+from hoomaan_engine.local_chat import (
     NOTICE_MODEL,
     NUM_CTX,
     SUPPORTED_LANGUAGES,
@@ -27,14 +27,14 @@ from anatria_engine.local_chat import (
     list_local_models,
     stream_local_chat,
 )
-from anatria_engine.prompts import (
+from hoomaan_engine.prompts import (
     LOCAL_SAFETY_REMINDER,
     SAFETY,
     build_local_instructions,
     build_local_question,
     local_notice,
 )
-from anatria_engine.protocol import (
+from hoomaan_engine.protocol import (
     LocalChatRequest,
     LocalModelsEvent,
     TextDeltaEvent,
@@ -603,7 +603,7 @@ class Recorder:
 
 
 async def test_the_handler_emits_text_and_never_a_scene_command(monkeypatch) -> None:
-    from anatria_engine import handlers, local_chat
+    from hoomaan_engine import handlers, local_chat
 
     async def fake_turn(**_kwargs):
         yield local_chat.LocalText("Hola.")
@@ -620,8 +620,8 @@ async def test_the_handler_emits_text_and_never_a_scene_command(monkeypatch) -> 
 
 
 async def test_listing_models_closes_its_request(monkeypatch) -> None:
-    from anatria_engine import handlers, local_chat
-    from anatria_engine.protocol import LocalModelsRequest
+    from hoomaan_engine import handlers, local_chat
+    from hoomaan_engine.protocol import LocalModelsRequest
 
     async def fake_list():
         return True, []

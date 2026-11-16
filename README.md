@@ -1,6 +1,6 @@
 # Homman | هومان
 
-هومان یک اطلس آموزشی سه‌بعدی بدن انسان است. کاربر می‌تواند ساختارها را انتخاب و بررسی کند، اطلاعات آموزشی و بیماری‌های مرتبط را ببیند و با تمرین روی مدل، آموخته‌های خود را مرور کند. هومان با استفاده از [Anatria3D](https://github.com/Nurkan1/Anatria-3D) به‌عنوان پروژهٔ پایه توسعه داده می‌شود.
+هومان یک اطلس آموزشی سه‌بعدی بدن انسان است. کاربر می‌تواند ساختارها را انتخاب و بررسی کند، اطلاعات آموزشی و بیماری‌های مرتبط را ببیند و با تمرین روی مدل، آموخته‌های خود را مرور کند. هومان (HOOMAAN) یک پلتفرم کالبدشناسی سه‌بعدی و دستیار هوشمند بالینی است.
 
 > **کاربرد آموزشی:** هومان وسیلهٔ پزشکی نیست و برای تشخیص، درمان یا تصمیم‌گیری دربارهٔ بیمار طراحی یا اعتبارسنجی نشده است. محتوای پزشکی، ترجمه‌ها و ارتباط‌های خودکار آناتومی به بازبینی تخصصی نیاز دارند.
 
@@ -134,7 +134,7 @@ tools/                     ابزارهای ساخت داده و پردازش م
 - **اطلس مرد:** مشتق از Z-Anatomy و BodyParts3D، با شرایط انتساب و اشتراک مشابه؛ جزئیات در [مجوز دارایی‌ها](public/anatomy/LICENSE) و [اطلاعیهٔ آناتومی](public/anatomy/NOTICE).
 - **اطلس زن:** برگرفته از NIH Human Reference Atlas / Visible Human Female، با مجوز و انتساب ذکرشده در همان فایل‌ها.
 - **داده‌های بیماری:** Mondo با CC BY 4.0، دادهٔ Disease Ontology با CC0 و Uberon با CC BY 3.0؛ جزئیات نسخه‌ها در [NOTICE](public/diseases/NOTICE.txt).
-- **پروژهٔ پایه و وابستگی‌ها:** [Anatria3D](https://github.com/Nurkan1/Anatria-3D) و [اطلاعیه‌های شخص ثالث](THIRD-PARTY-NOTICES.txt).
+- **پروژهٔ پایه و وابستگی‌ها:** [HOOMAAN](https://github.com/mohamadreza1368/homman) و [اطلاعیه‌های شخص ثالث](THIRD-PARTY-NOTICES.txt).
 
 ## مسیر توسعه
 
@@ -142,4 +142,4 @@ tools/                     ابزارهای ساخت داده و پردازش م
 
 ---
 
-**English:** Homman is a bilingual educational 3D anatomy application built on Anatria3D. It currently displays the male atlas and includes anatomy exploration, an educational disease catalogue and a limited practice/review workflow. Translations, disease mappings and educational content remain incomplete. It is not a medical device. See [LICENSE](LICENSE), [anatomy notices](public/anatomy/NOTICE) and [disease data notices](public/diseases/NOTICE.txt) before use or redistribution.
+**English:** Homman is a bilingual educational 3D anatomy application built on HOOMAAN. It currently displays the male atlas and includes anatomy exploration, an educational disease catalogue and a limited practice/review workflow. Translations, disease mappings and educational content remain incomplete. It is not a medical device. See [LICENSE](LICENSE), [anatomy notices](public/anatomy/NOTICE) and [disease data notices](public/diseases/NOTICE.txt) before use or redistribution.

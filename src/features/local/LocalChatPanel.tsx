@@ -23,7 +23,7 @@ import { latinIndex, mentionedStructures, type Mention } from "./mentions";
  *
  * That nothing leaves the computer, that it cannot move the atlas, that small
  * local models make more mistakes, and that it is not saved. Each is true by
- * construction — see `engine/anatria_engine/local_chat.py` — and each is said
+ * construction — see `engine/hoomaan_engine/local_chat.py` — and each is said
  * where the reader types, not in a tooltip.
  */
 

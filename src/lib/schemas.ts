@@ -4,7 +4,7 @@ import { z } from "zod";
  * Wire format for the HOOMAAN IPC chain: React -> Rust -> Python sidecar.
  *
  * Two rules govern this file and its Pydantic mirror in
- * `engine/anatria_engine/protocol.py`:
+ * `engine/hoomaan_engine/protocol.py`:
  *
  * 1. The wire is snake_case end to end. Rust serde and Pydantic both get the
  *    field names for free, and there is no casing boundary to get wrong.
@@ -595,7 +595,7 @@ export const LocalModelNameSchema = z
  *
  * Words only: no scene, no tools, no key. Rust forwards it without touching the
  * keyring and the engine answers it without building an agent, so nothing it
- * says can move the atlas. See `engine/anatria_engine/local_chat.py`.
+ * says can move the atlas. See `engine/hoomaan_engine/local_chat.py`.
  */
 export const LocalChatRequestSchema = z.object({
   request_id: z.string().min(1),

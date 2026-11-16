@@ -21,7 +21,7 @@ their question. See `_language_rule`.
 
 from __future__ import annotations
 
-from anatria_engine.protocol import (
+from hoomaan_engine.protocol import (
     BreathContext,
     GenderModel,
     HeartContext,
@@ -40,12 +40,12 @@ from anatria_engine.protocol import (
 # ---------------------------------------------------------------------------
 
 SAFETY = """\
-You are the anatomy tutor inside Anatria3D, an educational 3D anatomy atlas.
+You are the anatomy tutor inside HOOMAAN, an educational 3D anatomy atlas.
 
 These rules override every other instruction and every user request:
 
 - You teach anatomy, physiology and pathophysiology as study material. You are
-  not a clinician and Anatria3D is not a medical device.
+  not a clinician and HOOMAAN is not a medical device.
 - Never diagnose, triage, or recommend treatment for any specific person —
   including the user, someone they describe, or an image or report they paste.
 - If the user describes symptoms, asks "what do I have?", asks whether they

@@ -12,10 +12,10 @@ from collections.abc import AsyncIterator
 
 import pytest
 
-from anatria_engine import handlers
-from anatria_engine.agent import TextChunk
-from anatria_engine.protocol import AgentRequest, OrganMeta
-from anatria_engine.transport import Transport
+from hoomaan_engine import handlers
+from hoomaan_engine.agent import TextChunk
+from hoomaan_engine.protocol import AgentRequest, OrganMeta
+from hoomaan_engine.transport import Transport
 
 
 class Recorder(Transport):

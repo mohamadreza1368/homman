@@ -66,7 +66,7 @@ describe("the application's licence", () => {
     // A change date copied anywhere else goes stale at the next release. The
     // other files state the rule instead; no date from 2030 on belongs in them.
     const future = /\b20[3-9]\d-\d\d-\d\d\b/;
-    for (const file of ["NOTICE", "README.md", "THIRD-PARTY-NOTICES.txt", "tools/anatria_mcp/INSTALLED.md"]) {
+    for (const file of ["NOTICE", "README.md", "THIRD-PARTY-NOTICES.txt", "tools/hoomaan_mcp/INSTALLED.md"]) {
       expect(read(file), file).not.toMatch(future);
     }
   });

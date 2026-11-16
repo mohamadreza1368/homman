@@ -36,7 +36,7 @@ import {
 
 /**
  * The IPC protocol has two owners — Zod in `src/lib/schemas.ts` and Pydantic in
- * `engine/anatria_engine/protocol.py`. Nothing in the type system connects
+ * `engine/hoomaan_engine/protocol.py`. Nothing in the type system connects
  * them, so a field added on one side and forgotten on the other would surface
  * as a runtime validation error in a built app. This test is the connection:
  * it derives a normalised surface from each and asserts they match.
@@ -136,7 +136,7 @@ function pythonSurface(): ProtocolSurface {
   ].filter(Boolean) as string[];
   const python = candidates.find((path) => existsSync(path)) ?? "python";
 
-  const stdout = execFileSync(python, ["-m", "anatria_engine.protocol_surface"], {
+  const stdout = execFileSync(python, ["-m", "hoomaan_engine.protocol_surface"], {
     cwd: join(repoRoot, "engine"),
     encoding: "utf8",
   });

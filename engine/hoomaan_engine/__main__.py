@@ -12,7 +12,7 @@ import sys
 
 from pydantic import TypeAdapter, ValidationError
 
-from anatria_engine.protocol import (
+from hoomaan_engine.protocol import (
     AgentRequest,
     CancelRequest,
     EngineRequest,
@@ -23,7 +23,7 @@ from anatria_engine.protocol import (
     ReadyEvent,
     ShutdownRequest,
 )
-from anatria_engine.transport import StdinReader, Transport, parse_json_line
+from hoomaan_engine.transport import StdinReader, Transport, parse_json_line
 
 _request_adapter: TypeAdapter[EngineRequest] = TypeAdapter(EngineRequest)
 
@@ -121,7 +121,7 @@ class Engine:
             # triggered it. Importing above the try would let an ImportError
             # escape as an unretrieved task exception — the request would simply
             # hang, with the reason only on stderr.
-            from anatria_engine.handlers import (
+            from hoomaan_engine.handlers import (
                 handle_agent_request,
                 handle_list_models,
                 handle_local_chat,

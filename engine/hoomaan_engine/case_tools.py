@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from pydantic_ai import Agent, ModelRetry, RunContext
 
-from anatria_engine.scene_tools import SceneContext
+from hoomaan_engine.scene_tools import SceneContext
 
 #: Below this the "verdict" is an acknowledgement, not an evaluation. A student
 #: reviewing a drill three weeks later needs to see why they scored what they

@@ -15,7 +15,7 @@ with permission to use the existing interpreter passed. No packages were install
 
 ## Design and observable changes
 
-- `say(text)` is the twenty-first MCP tool when `ANATRIA3D_BRIDGE=1`.
+- `say(text)` is the twenty-first MCP tool when `HOOMAAN_BRIDGE=1`.
   Its `BridgeText` Pydantic annotation publishes and enforces `maxLength: 4000`.
   Zod checks the same bound in Unicode code points, including supplementary
   characters. Overflow is refused, not truncated. No atlas lookup is needed
@@ -58,7 +58,7 @@ capability-negotiation protocol. The pipe remains off at application startup.
    prose to assistant actions and persistence. A dedicated component and store
    field avoid that coupling; no changes to the journal or chat store are needed.
 2. Reusing Markdown unchanged would activate structure pins, including explicit
-   `anatria-ref:` links. Both marker conversion and the link renderer must be
+   `hoomaan-ref:` links. Both marker conversion and the link renderer must be
    disabled for external prose, not just one of them.
 3. JavaScript string length is not Python string length for supplementary
    Unicode characters. Using an ordinary JS length cap would refuse some
@@ -123,7 +123,7 @@ test result: ok. 173 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fi
 cd src-tauri; cargo clippy --all-targets -- -D warnings
     Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.63s
 
-tools/anatria_mcp/.venv/Scripts/python.exe -m pytest tools/anatria_mcp -q
+tools/hoomaan_mcp/.venv/Scripts/python.exe -m pytest tools/hoomaan_mcp -q
 85 passed in 86.16s (0:01:26)
 ```
 
@@ -147,23 +147,23 @@ empty stdin and no visible window, exited with code 0, and emitted:
 
 This verifies startup of the frozen engine, not live requests to providers or
 every optional integration. Its executable is at
-`engine/dist/anatria-engine/anatria-engine.exe`, not directly under `engine/dist`.
+`engine/dist/hoomaan-engine/hoomaan-engine.exe`, not directly under `engine/dist`.
 
 The build completed successfully (exit 0), producing both configured Windows
 bundles. Local artifact measurements, all timestamps UTC on 2026-09-07:
 
 | Artifact | Bytes | Last modified |
 | --- | ---: | --- |
-| `src-tauri/target/release/bundle/nsis/Anatria3D_0.2.5_x64-setup.exe` | 61,422,056 | 08:49:21.4625063 |
-| `src-tauri/target/release/bundle/msi/Anatria3D_0.2.5_x64_en-US.msi` | 69,698,060 | 08:47:59.001 |
-| `engine/dist/anatria-engine/anatria-engine.exe` | 17,618,824 | 08:45:54.8417039 |
+| `src-tauri/target/release/bundle/nsis/HOOMAAN_0.2.5_x64-setup.exe` | 61,422,056 | 08:49:21.4625063 |
+| `src-tauri/target/release/bundle/msi/HOOMAAN_0.2.5_x64_en-US.msi` | 69,698,060 | 08:47:59.001 |
+| `engine/dist/hoomaan-engine/hoomaan-engine.exe` | 17,618,824 | 08:45:54.8417039 |
 
 NSIS SHA-256:
 `4F97AC4914742E581BF52778477D9DC2F3D030BFD7C9F8C3526E3286C7D1ADAF`.
 
 Sidecar SHA-256:
 `7818AF7FBC95403BD4D95F587D14F74BE5174BAC96950AEF32DB6BC7F18BF7E8`.
-The resource copy at `src-tauri/target/release/anatria-engine/anatria-engine.exe`
+The resource copy at `src-tauri/target/release/hoomaan-engine/hoomaan-engine.exe`
 has that same hash and independently emitted the same ready frame with exit 0.
 This is the resource staged for packaging, not a test after installing the bundle.
 

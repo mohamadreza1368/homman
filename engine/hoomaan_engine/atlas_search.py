@@ -6,7 +6,7 @@ server searches the whole manifest with no viewport at all. Same rule, two
 corpora — so the rule lives here and neither owns a copy of it.
 
 **Standard library only, deliberately.** The MCP server runs in its own
-virtualenv without `pydantic-ai` (see `tools/anatria_mcp/README.md` for why),
+virtualenv without `pydantic-ai` (see `tools/hoomaan_mcp/README.md` for why),
 and this module is the seam between the two environments. A dependency added
 here would have to be satisfied twice.
 """

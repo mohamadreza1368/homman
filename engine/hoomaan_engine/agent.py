@@ -31,16 +31,16 @@ from pydantic_ai.messages import (
     UserPromptPart,
 )
 
-from anatria_engine.case_tools import register_case_tools
-from anatria_engine.prompts import build_instructions
-from anatria_engine.protocol import (
+from hoomaan_engine.case_tools import register_case_tools
+from hoomaan_engine.prompts import build_instructions
+from hoomaan_engine.protocol import (
     AgentRequest,
     AnatomicalSystem,
     TokenUsage,
     TranscriptTurn,
 )
-from anatria_engine.providers import build_model, resolve_model_name
-from anatria_engine.scene_tools import SceneContext, register_scene_tools
+from hoomaan_engine.providers import build_model, resolve_model_name
+from hoomaan_engine.scene_tools import SceneContext, register_scene_tools
 
 #: Tool retries per turn. Two is enough for the model to recover from a wrong
 #: organ_id; more just burns tokens re-reading the same inventory.

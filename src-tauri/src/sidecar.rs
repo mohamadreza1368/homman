@@ -29,12 +29,12 @@ use tauri::{AppHandle, Emitter, Manager};
 
 /// Directory name the engine build is staged under, in both the dev tree and
 /// the bundled resource directory.
-const ENGINE_DIR: &str = "anatria-engine";
+const ENGINE_DIR: &str = "hoomaan-engine";
 
 #[cfg(windows)]
-const ENGINE_EXE: &str = "anatria-engine.exe";
+const ENGINE_EXE: &str = "hoomaan-engine.exe";
 #[cfg(not(windows))]
-const ENGINE_EXE: &str = "anatria-engine";
+const ENGINE_EXE: &str = "hoomaan-engine";
 
 /// Single channel carrying every engine frame to the frontend. The frontend
 /// validates each one with Zod and routes on `type`, so Rust does not need to

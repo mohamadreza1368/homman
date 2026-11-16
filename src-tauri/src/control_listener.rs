@@ -11,7 +11,7 @@
 //!
 //! It does not know what a line means. Lines go to the handler exactly as they
 //! arrived, and validating them against the manifest belongs a layer up, where
-//! the atlas is in hand — see `anatria_engine::scene_contract` for the rule the
+//! the atlas is in hand — see `hoomaan_engine::scene_contract` for the rule the
 //! bridge will apply there.
 
 #![cfg(windows)]

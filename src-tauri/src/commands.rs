@@ -157,7 +157,7 @@ fn build_local_frame(kind: &str, request: LocalRequest) -> CommandResult<String>
 }
 
 /// One turn with a model in Ollama on this computer. Words only — see
-/// `engine/anatria_engine/local_chat.py`.
+/// `engine/hoomaan_engine/local_chat.py`.
 #[tauri::command]
 pub fn ask_local(engine: State<'_, EngineHandle>, request: LocalRequest) -> CommandResult<()> {
     let frame = build_local_frame("local_chat_request", request)?;
@@ -570,7 +570,7 @@ pub fn bridge_status(app: tauri::AppHandle, bridge: State<'_, ControlBridge>) ->
 /// directory can exist and be empty, and reporting a path to nothing would send
 /// somebody looking for a file that is not there.
 fn mcp_server_dir(app: &tauri::AppHandle) -> Option<String> {
-    let dir = app.path().resource_dir().ok()?.join("anatria-mcp");
+    let dir = app.path().resource_dir().ok()?.join("hoomaan-mcp");
     dir.join("atlas.py")
         .is_file()
         .then(|| dir.to_string_lossy().into_owned())
