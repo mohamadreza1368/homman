@@ -7,6 +7,7 @@ import {
   ListModelsRequestSchema,
   LocalChatRequestSchema,
   LocalModelsRequestSchema,
+  PROTOCOL_VERSION,
   type AgentRequest,
   type AiProvider,
   type EngineEvent,
@@ -17,6 +18,18 @@ import {
 
 /** Channel Rust forwards every engine frame on. Mirrors `sidecar::ENGINE_EVENT`. */
 const ENGINE_EVENT = "hoomaan://engine-event";
+
+/**
+ * Detect whether the application is running inside Tauri's native webview.
+ * When running directly in a web browser (e.g. Chrome/Edge opening http://127.0.0.1:1420/),
+ * Tauri IPC bindings (__TAURI_INTERNALS__) are not available.
+ */
+export function isTauriContext(): boolean {
+  return (
+    typeof window !== "undefined" &&
+    Boolean((window as unknown as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__)
+  );
+}
 
 // ---------------------------------------------------------------------------
 // Credentials
@@ -98,6 +111,14 @@ export interface EngineStatus {
  * answered here, whatever happens next arrives as an event.
  */
 export function engineStatus(): Promise<EngineStatus> {
+  if (!isTauriContext()) {
+    // In browser mode (e.g. Vite dev server), Tauri engine sidecar is not running.
+    return Promise.resolve({
+      ready: true,
+      error: null,
+      protocol_version: PROTOCOL_VERSION,
+    });
+  }
   return invoke("engine_status");
 }
 
@@ -214,6 +235,12 @@ export function onEngineEvent(
     ((_payload, issues) => {
       console.error("[engine] protocol violation", issues);
     });
+
+  if (!isTauriContext()) {
+    // In browser mode, Tauri native event listening is unavailable.
+    // Return a harmless no-op unlistener so the application runs without errors.
+    return Promise.resolve(() => {});
+  }
 
   return listen<unknown>(ENGINE_EVENT, (message) => {
     const parsed = EngineEventSchema.safeParse(message.payload);
