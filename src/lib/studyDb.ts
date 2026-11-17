@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 
+import { isTauriContext } from "./ipc";
 import type { AiProvider, FiledMode, Language, UserProfile } from "./schemas";
 
 /**
@@ -142,6 +143,7 @@ export interface NoteInput {
 
 /** Append a finished exchange, creating the session row if this is the first. */
 export function saveStudyTurn(turn: TurnInput): Promise<void> {
+  if (!isTauriContext()) return Promise.resolve();
   return invoke("save_study_turn", { turn });
 }
 
@@ -150,6 +152,7 @@ export function recordCaseResult(
   score: number,
   verdict: string,
 ): Promise<void> {
+  if (!isTauriContext()) return Promise.resolve();
   return invoke("record_case_result", { sessionId, score, verdict });
 }
 
@@ -163,18 +166,22 @@ export function listStudySessions(
   caseId: string | null,
   limit = 100,
 ): Promise<SessionSummary[]> {
+  if (!isTauriContext()) return Promise.resolve([]);
   return invoke("list_study_sessions", { query, organId, caseId, limit });
 }
 
 export function getStudySession(sessionId: string): Promise<SessionDetail | null> {
+  if (!isTauriContext()) return Promise.resolve(null);
   return invoke("get_study_session", { sessionId });
 }
 
 export function renameStudySession(sessionId: string, title: string): Promise<void> {
+  if (!isTauriContext()) return Promise.resolve();
   return invoke("rename_study_session", { sessionId, title });
 }
 
 export function deleteStudySession(sessionId: string): Promise<void> {
+  if (!isTauriContext()) return Promise.resolve();
   return invoke("delete_study_session", { sessionId });
 }
 
@@ -313,27 +320,50 @@ export const MAX_SEVERITY = 10;
 
 /** Mark a complaint where the reader points. */
 export function addCaseSymptom(symptom: SymptomInput): Promise<CaseSymptom> {
+  if (!isTauriContext()) {
+    return Promise.resolve({
+      id: Date.now(),
+      organ_id: symptom.organ_id,
+      organ_label: symptom.organ_label ?? null,
+      symptom: symptom.symptom,
+      severity: symptom.severity ?? null,
+      session_id: symptom.session_id ?? null,
+      created_at: Date.now(),
+    });
+  }
   return invoke("add_case_symptom", { symptom });
 }
 
 export function caseSymptoms(caseId: string): Promise<CaseSymptom[]> {
+  if (!isTauriContext()) return Promise.resolve([]);
   return invoke("case_symptoms", { caseId });
 }
 
 export function deleteCaseSymptom(id: number): Promise<void> {
+  if (!isTauriContext()) return Promise.resolve();
   return invoke("delete_case_symptom", { id });
 }
 
 /** Add to the record. There is no equivalent for the sealed answer. */
 export function addCaseFinding(finding: FindingInput): Promise<CaseFinding> {
+  if (!isTauriContext()) {
+    return Promise.resolve({
+      id: Date.now(),
+      visit_no: 1,
+      body: finding.body,
+      created_at: Date.now(),
+    });
+  }
   return invoke("add_case_finding", { finding });
 }
 
 export function caseFindings(caseId: string): Promise<CaseFinding[]> {
+  if (!isTauriContext()) return Promise.resolve([]);
   return invoke("case_findings", { caseId });
 }
 
 export function deleteCaseFinding(id: number): Promise<void> {
+  if (!isTauriContext()) return Promise.resolve();
   return invoke("delete_case_finding", { id });
 }
 
@@ -349,25 +379,48 @@ export const MAX_VISITS = 20;
  * become a medical record.
  */
 export function createCase(kase: CaseInput): Promise<CaseFile> {
+  if (!isTauriContext()) {
+    const now = Date.now();
+    return Promise.resolve({
+      id: kase.id,
+      title: kase.title,
+      sex: kase.sex,
+      age_years: kase.age_years ?? null,
+      height_cm: kase.height_cm ?? null,
+      weight_kg: kase.weight_kg ?? null,
+      findings: kase.findings,
+      sealed_at: now,
+      revealed_at: null,
+      profile: kase.profile,
+      language: kase.language,
+      created_at: now,
+      updated_at: now,
+      visit_count: 0,
+    });
+  }
   return invoke("create_case", { case: kase });
 }
 
 export function listCases(): Promise<CaseFile[]> {
+  if (!isTauriContext()) return Promise.resolve([]);
   return invoke("list_cases");
 }
 
 /** Its own call, so opening a case can never spoil it. */
 export function revealCaseAnswer(caseId: string): Promise<string | null> {
+  if (!isTauriContext()) return Promise.resolve(null);
   return invoke("reveal_case_answer", { caseId });
 }
 
 /** What the next visit carries forward. Read from the journal, never generated. */
 export function caseDigest(caseId: string): Promise<CaseDigest | null> {
+  if (!isTauriContext()) return Promise.resolve(null);
   return invoke("case_digest", { caseId });
 }
 
 /** The visits survive as ordinary sessions. */
 export function deleteCase(caseId: string): Promise<void> {
+  if (!isTauriContext()) return Promise.resolve();
   return invoke("delete_case", { caseId });
 }
 
@@ -376,14 +429,27 @@ export function deleteCase(caseId: string): Promise<void> {
 // ---------------------------------------------------------------------------
 
 export function createNote(note: NoteInput): Promise<StudyNote> {
+  if (!isTauriContext()) {
+    return Promise.resolve({
+      id: Date.now(),
+      organ_id: note.organ_id,
+      organ_label: note.organ_label,
+      session_id: note.session_id,
+      body: note.body,
+      created_at: Date.now(),
+      updated_at: Date.now(),
+    });
+  }
   return invoke("create_note", { note });
 }
 
 export function updateNote(id: number, body: string): Promise<void> {
+  if (!isTauriContext()) return Promise.resolve();
   return invoke("update_note", { id, body });
 }
 
 export function deleteNote(id: number): Promise<void> {
+  if (!isTauriContext()) return Promise.resolve();
   return invoke("delete_note", { id });
 }
 
@@ -392,6 +458,7 @@ export function listNotes(
   query: string | null,
   limit = 200,
 ): Promise<StudyNote[]> {
+  if (!isTauriContext()) return Promise.resolve([]);
   return invoke("list_notes", { organId, query, limit });
 }
 
@@ -400,6 +467,15 @@ export function listNotes(
 // ---------------------------------------------------------------------------
 
 export function studyStats(): Promise<StudyStats> {
+  if (!isTauriContext()) {
+    return Promise.resolve({
+      sessions: 0,
+      cases: 0,
+      graded_cases: 0,
+      notes: 0,
+      average_score: null,
+    });
+  }
   return invoke("study_stats");
 }
 
@@ -417,6 +493,7 @@ export interface StudyCoverage {
  * the caller reads absence as the gap it is.
  */
 export function studyCoverage(): Promise<StudyCoverage[]> {
+  if (!isTauriContext()) return Promise.resolve([]);
   return invoke("study_coverage");
 }
 
@@ -457,6 +534,7 @@ export interface UsageBucket {
 }
 
 export function recordTokenUsage(usage: UsageInput): Promise<void> {
+  if (!isTauriContext()) return Promise.resolve();
   return invoke("record_token_usage", { usage });
 }
 
@@ -467,6 +545,7 @@ export function recordTokenUsage(usage: UsageInput): Promise<void> {
  * the reader has ever taken across this boundary to add up six numbers.
  */
 export function tokenUsage(days: number): Promise<UsageBucket[]> {
+  if (!isTauriContext()) return Promise.resolve([]);
   return invoke("token_usage", { days });
 }
 
@@ -502,11 +581,13 @@ export interface ImportSummary {
  * back only so the UI can say where it went. `null` means cancelled.
  */
 export function exportJournal(): Promise<string | null> {
+  if (!isTauriContext()) return Promise.resolve(null);
   return invoke("export_journal");
 }
 
 /** Fold a journal file into this one, merging rather than replacing. */
 export function importJournal(): Promise<ImportSummary | null> {
+  if (!isTauriContext()) return Promise.resolve(null);
   return invoke("import_journal");
 }
 
@@ -523,5 +604,6 @@ export function saveViewImage(
   /** What the save dialog should open with. Sanitised on the other side. */
   fileName?: string,
 ): Promise<string | null> {
+  if (!isTauriContext()) return Promise.resolve(null);
   return invoke("save_view_image", { pngBase64, fileName });
 }

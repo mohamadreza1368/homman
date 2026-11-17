@@ -41,14 +41,17 @@ export function isTauriContext(): boolean {
  * engine's stdin. Keys are write-only and existence-checkable from here.
  */
 export function saveApiKey(provider: AiProvider, apiKey: string): Promise<void> {
+  if (!isTauriContext()) return Promise.resolve();
   return invoke("save_api_key", { provider, apiKey });
 }
 
 export function hasApiKey(provider: AiProvider): Promise<boolean> {
+  if (!isTauriContext()) return Promise.resolve(false);
   return invoke("has_api_key", { provider });
 }
 
 export function deleteApiKey(provider: AiProvider): Promise<void> {
+  if (!isTauriContext()) return Promise.resolve();
   return invoke("delete_api_key", { provider });
 }
 
@@ -62,6 +65,7 @@ export function deleteApiKey(provider: AiProvider): Promise<void> {
  * caught at the Pydantic end it produces an error event with no such context.
  */
 export function askAgent(request: AgentRequest): Promise<void> {
+  if (!isTauriContext()) return Promise.resolve();
   return invoke("ask_agent", { request: AgentRequestSchema.parse(request) });
 }
 
@@ -71,6 +75,7 @@ export function askAgent(request: AgentRequest): Promise<void> {
  * an `invalid_api_key` error event on the same request id.
  */
 export function listModels(request: ListModelsRequest): Promise<void> {
+  if (!isTauriContext()) return Promise.resolve();
   return invoke("list_models", { request: ListModelsRequestSchema.parse(request) });
 }
 
@@ -82,11 +87,13 @@ export function listModels(request: ListModelsRequest): Promise<void> {
  * local model's answer cannot move the atlas. See `local_chat.py`.
  */
 export function askLocal(request: LocalChatRequest): Promise<void> {
+  if (!isTauriContext()) return Promise.resolve();
   return invoke("ask_local", { request: LocalChatRequestSchema.parse(request) });
 }
 
 /** Which chat models Ollama on this computer has; answered by a `local_models` event. */
 export function listLocalModels(request: LocalModelsRequest): Promise<void> {
+  if (!isTauriContext()) return Promise.resolve();
   return invoke("list_local_models", { request: LocalModelsRequestSchema.parse(request) });
 }
 
@@ -130,10 +137,12 @@ export function engineStatus(): Promise<EngineStatus> {
  * inside the app rather than by quitting it.
  */
 export function restartEngine(): Promise<void> {
+  if (!isTauriContext()) return Promise.resolve();
   return invoke("restart_engine");
 }
 
 export function cancelRequest(requestId: string): Promise<void> {
+  if (!isTauriContext()) return Promise.resolve();
   return invoke("cancel_request", { requestId });
 }
 
@@ -171,6 +180,16 @@ export interface BridgeStatus {
 }
 
 export function bridgeStatus(): Promise<BridgeStatus> {
+  if (!isTauriContext()) {
+    return Promise.resolve({
+      supported: false,
+      running: false,
+      pipe: null,
+      accepted: 0,
+      refused: 0,
+      server: null,
+    });
+  }
   return invoke("bridge_status");
 }
 
@@ -181,11 +200,31 @@ export function bridgeStatus(): Promise<BridgeStatus> {
  * panel can never draw a switch as on while the pipe failed to open.
  */
 export function startBridge(): Promise<BridgeStatus> {
+  if (!isTauriContext()) {
+    return Promise.resolve({
+      supported: false,
+      running: false,
+      pipe: null,
+      accepted: 0,
+      refused: 0,
+      server: null,
+    });
+  }
   return invoke("start_bridge");
 }
 
 /** Turn it off. The pipe goes with it, so there is nothing left to open. */
 export function stopBridge(): Promise<BridgeStatus> {
+  if (!isTauriContext()) {
+    return Promise.resolve({
+      supported: false,
+      running: false,
+      pipe: null,
+      accepted: 0,
+      refused: 0,
+      server: null,
+    });
+  }
   return invoke("stop_bridge");
 }
 
@@ -200,10 +239,24 @@ export interface DisplayStatus {
 }
 
 export function displayStatus(): Promise<DisplayStatus> {
+  if (!isTauriContext()) {
+    return Promise.resolve({
+      supported: false,
+      stableDisplay: false,
+      active: false,
+    });
+  }
   return invoke("display_status");
 }
 
 export function setStableDisplay(on: boolean): Promise<DisplayStatus> {
+  if (!isTauriContext()) {
+    return Promise.resolve({
+      supported: false,
+      stableDisplay: on,
+      active: false,
+    });
+  }
   return invoke("set_stable_display", { on });
 }
 

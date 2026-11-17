@@ -1,5 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 
+import { isTauriContext } from "./ipc";
+
 /**
  * The application's own record, from the window's side.
  *
@@ -39,22 +41,27 @@ export function logEvent(
   source: string,
   message: string,
 ): void {
+  if (!isTauriContext()) return;
   try { const p = invoke("log_event", { level, source, message }); p?.catch?.(() => {}); } catch {}
 }
 
 export function readLog(): Promise<LogEntry[]> {
+  if (!isTauriContext()) return Promise.resolve([]);
   return invoke("read_log");
 }
 
 export function logLocation(): Promise<string | null> {
+  if (!isTauriContext()) return Promise.resolve(null);
   return invoke("log_location");
 }
 
 export function clearLog(): Promise<void> {
+  if (!isTauriContext()) return Promise.resolve();
   return invoke("clear_log");
 }
 
 /** Write a copy wherever the reader chooses. Resolves to the path, or null. */
 export function saveLogCopy(contents: string): Promise<string | null> {
+  if (!isTauriContext()) return Promise.resolve(null);
   return invoke("save_log_copy", { contents });
 }
