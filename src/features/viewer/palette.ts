@@ -385,6 +385,24 @@ export function tissueRoughness(system: AnatomicalSystem): number {
   return ROUGHNESS[system] ?? 0.55;
 }
 
+const METALNESS: Partial<Record<AnatomicalSystem, number>> = {
+  skeletal: 0.02,
+  articular: 0.08,
+  muscular: 0.04,
+  cardiovascular: 0.08,
+  digestive: 0.06,
+  respiratory: 0.04,
+  nervous: 0.02,
+  endocrine: 0.05,
+  renal: 0.05,
+  integumentary: 0.02,
+  regional: 0.02,
+};
+
+export function tissueMetalness(system: AnatomicalSystem): number {
+  return METALNESS[system] ?? 0.04;
+}
+
 /**
  * Tissue that is transparent in life, and therefore on the model.
  *

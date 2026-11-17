@@ -10,6 +10,7 @@ import {
   tissueDepthBias,
   tissueFamily,
   tissueHex,
+  tissueMetalness,
   tissueOpacity,
   tissueRoughness,
 } from "./palette";
@@ -322,6 +323,20 @@ describe("tissueRoughness", () => {
     for (const system of Object.keys(SYSTEM_COLOURS) as AnatomicalSystem[]) {
       expect(tissueRoughness(system)).toBeGreaterThan(0);
       expect(tissueRoughness(system)).toBeLessThanOrEqual(1);
+    }
+  });
+});
+
+describe("tissueMetalness", () => {
+  it("gives moist tissues and cartilage subtle specular highlights", () => {
+    expect(tissueMetalness("cardiovascular")).toBeGreaterThan(tissueMetalness("skeletal"));
+    expect(tissueMetalness("articular")).toBeGreaterThan(tissueMetalness("skeletal"));
+  });
+
+  it("has a valid physical range between 0 and 1 for every system", () => {
+    for (const system of Object.keys(SYSTEM_COLOURS) as AnatomicalSystem[]) {
+      expect(tissueMetalness(system)).toBeGreaterThanOrEqual(0);
+      expect(tissueMetalness(system)).toBeLessThanOrEqual(0.2);
     }
   });
 });

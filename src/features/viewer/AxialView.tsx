@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 
+import { useInterfaceLanguage } from "@/stores/interfaceLanguage";
 import { organLabel, useSceneStore } from "@/stores/sceneStore";
 import { useScanStore } from "@/stores/scanStore";
 
@@ -119,7 +120,19 @@ function SliceTable({ compact }: { compact: boolean }) {
   );
 }
 
+type WindowPreset = "natural" | "soft" | "bone" | "lung" | "invert";
+
+const WINDOW_FILTERS: Record<WindowPreset, string> = {
+  natural: "none",
+  soft: "grayscale(1) contrast(140%) brightness(95%)",
+  bone: "grayscale(1) contrast(220%) brightness(130%)",
+  lung: "grayscale(1) contrast(120%) brightness(150%)",
+  invert: "invert(1) grayscale(1) contrast(130%)",
+};
+
 export function AxialView() {
+  const fa = useInterfaceLanguage((s) => s.language === "fa");
+  const [windowPreset, setWindowPreset] = useState<WindowPreset>("natural");
   const canvas = useRef<HTMLCanvasElement>(null);
   const enabled = useScanStore((s) => s.enabled);
   const axial = useScanStore((s) => s.axial);
@@ -594,6 +607,7 @@ export function AxialView() {
             ref={canvas}
             width={SLICE_PIXELS.value}
             height={SLICE_PIXELS.value}
+            style={{ filter: WINDOW_FILTERS[windowPreset] }}
             className="absolute inset-0 h-full w-full"
             aria-label={
               front
@@ -794,6 +808,36 @@ export function AxialView() {
             </p>
           )}
 
+          <div className="space-y-1">
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-cyan-500/80">
+              {fa ? "پنجرهٔ کنتراست رادیولوژی (Windowing)" : "Radiological Window"}
+            </p>
+            <div className="flex flex-wrap gap-1">
+              {(
+                [
+                  { id: "natural", labelEn: "Natural", labelFa: "طبیعی" },
+                  { id: "soft", labelEn: "Soft Tissue", labelFa: "بافت نرم" },
+                  { id: "bone", labelEn: "Bone", labelFa: "استخوان" },
+                  { id: "lung", labelEn: "Lung", labelFa: "ریه" },
+                  { id: "invert", labelEn: "Invert X-ray", labelFa: "نگاتیو" },
+                ] as const
+              ).map((preset) => (
+                <button
+                  key={preset.id}
+                  type="button"
+                  onClick={() => setWindowPreset(preset.id)}
+                  className={`rounded px-2 py-0.5 text-[10px] font-medium transition ${
+                    windowPreset === preset.id
+                      ? "border border-cyan-400 bg-cyan-950/60 text-cyan-200"
+                      : "border border-slate-700 bg-slate-900/60 text-slate-400 hover:text-slate-200"
+                  }`}
+                >
+                  {fa ? preset.labelFa : preset.labelEn}
+                </button>
+              ))}
+            </div>
+          </div>
+
           <SliceTable compact={false} />
 
           <p className="text-[11px] leading-snug text-slate-500">
@@ -829,6 +873,7 @@ export function AxialView() {
           ref={canvas}
           width={SLICE_PIXELS.value}
           height={SLICE_PIXELS.value}
+          style={{ filter: WINDOW_FILTERS[windowPreset] }}
           className="block h-36 w-36 rounded-sm bg-black short:h-28 short:w-28"
           aria-label={`${
             front

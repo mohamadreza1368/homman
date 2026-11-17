@@ -27,6 +27,7 @@ import type { ManifestOrgan } from "@/lib/schemas";
 import {
   tissueColour,
   tissueDepthBias,
+  tissueMetalness,
   tissueOpacity,
   tissueRoughness,
 } from "./palette";
@@ -632,7 +633,7 @@ export const OrganMesh = memo(function OrganMesh({
     emissive,
     emissiveIntensity,
     roughness: tissueRoughness(organ.system),
-    metalness: 0.05,
+    metalness: tissueMetalness(organ.system),
     transparent: ghosted,
     opacity,
     // The detail that makes layered ghosting work instead of producing the

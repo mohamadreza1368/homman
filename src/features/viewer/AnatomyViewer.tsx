@@ -38,7 +38,7 @@ import { PathwayBar } from "./PathwayBar";
 import { SelectionBar } from "./SelectionBar";
 import { StructureMenu, type MenuTarget } from "./StructureMenu";
 import { useCaseMarks } from "./useCaseMarks";
-import { ViewpointBar } from "./ViewpointBar";
+import { StudioActionDock } from "./StudioActionDock";
 import { OVERLAY_CHIP, OVERLAY_CHIP_ACTION, OVERLAY_GROUND } from "./overlayChrome";
 
 /**
@@ -321,7 +321,7 @@ export function AnatomyViewer({ paused = false }: { paused?: boolean } = {}) {
       <PathwayBar />
       <SelectionBar />
       <IlluminationBar />
-      <ViewpointBar />
+      <StudioActionDock />
       <ExplodeBar />
       <StructureMenu target={menu} onClose={() => setMenu(null)} />
     </div>

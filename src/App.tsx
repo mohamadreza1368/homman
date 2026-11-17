@@ -88,7 +88,7 @@ export default function App() {
       <aside
         hidden={layout.treeCollapsed}
         inert={layout.treeCollapsed}
-        className="relative z-10 flex min-h-0 shrink-0 flex-col overflow-hidden border-e border-slate-800/80 bg-slate-900/95 backdrop-blur-xl"
+        className="relative z-10 my-2 ms-2 flex min-h-0 shrink-0 flex-col overflow-hidden rounded-2xl border border-slate-700/60 bg-slate-950/85 shadow-2xl backdrop-blur-2xl ring-1 ring-white/5"
         style={{ width: layout.treeWidth }}
       >
         <LeftPanel />
@@ -136,7 +136,7 @@ export default function App() {
       <aside
         hidden={layout.chatCollapsed}
         inert={layout.chatCollapsed}
-        className="relative z-10 flex min-h-0 shrink-0 flex-col overflow-hidden border-s border-slate-800/80 bg-slate-900/95 backdrop-blur-xl"
+        className="relative z-10 my-2 me-2 flex min-h-0 shrink-0 flex-col overflow-hidden rounded-2xl border border-slate-700/60 bg-slate-950/85 shadow-2xl backdrop-blur-2xl ring-1 ring-white/5"
         style={{ width: layout.chatWidth }}
       >
         <ChatPanel />
@@ -169,7 +169,7 @@ function TopBar({
 }) {
   const fa = useInterfaceLanguage((s) => s.language === "fa");
   return (
-    <header className="absolute inset-x-0 top-0 z-30 flex items-center justify-between border-b border-teal-900/40 bg-[#091a20]/95 px-3 py-1.5 shadow-lg backdrop-blur-md">
+    <header className="absolute inset-x-0 top-0 z-30 flex items-center justify-between border-b border-teal-500/20 bg-slate-950/80 px-4 py-2 shadow-xl backdrop-blur-2xl ring-1 ring-white/5">
       <div className="flex items-center gap-2">
         <PanelToggle
           active={!treeCollapsed}
