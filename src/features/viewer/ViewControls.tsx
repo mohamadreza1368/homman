@@ -3,28 +3,6 @@ import { useInterfaceLanguage } from "@/stores/interfaceLanguage";
 
 /**
  * How the model is drawn, as opposed to what is in it.
- *
- * # Why it is not inside the anatomy tree any more
- *
- * It was, and that made it reachable only from the Atlas tab. But these are the
- * controls somebody reaches for *while reading* — turning the body to glass to
- * see what a note describes, draining the colour to find what is marked,
- * putting the view back after losing it. Reading is what the Study tab is for,
- * and having to leave it to make the model legible is the wrong way round.
- *
- * So the strip belongs to the panel rather than to any one tab, and it is
- * mounted once below all three.
- *
- * # Why it stays pinned
- *
- * The reason it was pinned inside the tree still holds: Systems expands, one
- * open system is hundreds of rows, and anything sharing that scroll container
- * is a scroll away the moment somebody opens one. These are the controls
- * reached for most often, which makes them the ones that must not move.
- *
- * No heading, unlike the sections above it. This is on screen permanently, so
- * its height is paid for on every frame, and the buttons already say what they
- * do.
  */
 export function ViewControls() {
   const fa = useInterfaceLanguage((s) => s.language === 'fa');
@@ -39,10 +17,6 @@ export function ViewControls() {
   const resetView = useSceneStore((s) => s.resetView);
   const manifest = useSceneStore((s) => s.manifest);
 
-  // Every system at the glass setting, which is what the button both makes and
-  // undoes. Derived rather than stored: a flag could disagree with the
-  // opacities the moment one system was cycled by hand. Read from the manifest
-  // because that is the list the action itself works from.
   const isGlass =
     (manifest?.systems.length ?? 0) > 0 &&
     (manifest?.systems ?? []).every(
@@ -50,90 +24,75 @@ export function ViewControls() {
     );
 
   return (
-    <section className="flex shrink-0 flex-wrap gap-2 border-t border-slate-800 px-4 py-3">
+    <section className="shrink-0 border-t border-slate-800/80 bg-slate-950/40 p-3">
       {isolatedOrganIds !== null && (
         <button
           type="button"
           onClick={clearIsolation}
-          className="rounded border border-amber-600/60 bg-amber-500/10 px-2 py-1 text-xs text-amber-300"
+          className="mb-2 w-full rounded-lg border border-amber-500/40 bg-amber-500/10 px-2.5 py-1.5 text-center text-xs font-medium text-amber-300 transition hover:bg-amber-500/20"
         >
           {fa ? `نمایش ${isolatedOrganIds.length} مورد ایزوله — پاک کردن` : `Showing ${isolatedOrganIds.length} isolated — clear`}
         </button>
       )}
-      <button
-        type="button"
-        onClick={showAllSystems}
-        className="rounded border border-slate-700 px-2 py-1 text-xs text-slate-400"
-      >
-        {fa ? 'نمایش همهٔ دستگاه‌ها' : 'Show all systems'}
-      </button>
-      <button
-        type="button"
-        onClick={glassBody}
-        title="Turn the whole body to glass — then point at it, and what lies under the cursor lights up"
-        aria-pressed={isGlass}
-        className={`rounded border px-2 py-1 text-xs ${
-          isGlass
-            ? "border-amber-500/70 bg-amber-400/15 text-amber-200"
-            : "border-slate-700 text-slate-400"
-        }`}
-      >
-        {fa ? 'بدن شفاف' : 'Glass body'}
-      </button>
-      {/*
-        Beside Glass body rather than as another checkbox above, because it
-        answers the same question those buttons do — *how* the body is drawn,
-        not *what* is drawn. There are already several ways to play down the
-        anatomy, and grouping the ones that change its appearance keeps them
-        from reading as five unrelated switches.
-      */}
-      {/*
-        One button stepping through three tones rather than three buttons.
 
-        They are mutually exclusive answers to one question — how much of the
-        tissue's own appearance survives — and a row of three would read as
-        three unrelated switches in a column that already has several. The label
-        says what you are looking at, not what the next press does: a control
-        that names a state you cannot see is a riddle.
-      */}
-      <button
-        type="button"
-        onClick={cycleBodyTone}
-        title={
-          bodyTone === "solid"
-            ? "Drain the colour from everything except what is marked, selected or isolated"
-            : bodyTone === "scan"
-              ? "Press the drained body down towards black, so the scanner's light has somewhere to go"
-              : "Give the body its colour back"
-        }
-        aria-pressed={bodyTone !== "solid"}
-        className={`rounded border px-2 py-1 text-xs ${
-          bodyTone === "carbon"
-            ? "border-slate-100/80 bg-slate-950 text-slate-100"
-            : bodyTone === "scan"
-              ? "border-slate-300/70 bg-slate-200/15 text-slate-100"
-              : "border-slate-700 text-slate-400"
-        }`}
-      >
-        {bodyTone === "carbon" ? (fa ? 'کربنی' : 'Carbon') : (fa ? 'اسکن' : 'Scan')}
-      </button>
+      <div className="grid grid-cols-2 gap-1.5">
+        <button
+          type="button"
+          onClick={showAllSystems}
+          className="rounded-lg border border-slate-700/80 bg-slate-900/60 px-2 py-1.5 text-center text-[11px] font-medium text-slate-300 transition hover:border-teal-500/50 hover:text-white"
+        >
+          {fa ? 'همهٔ دستگاه‌ها' : 'All systems'}
+        </button>
+
+        <button
+          type="button"
+          onClick={glassBody}
+          title="Turn the whole body to glass"
+          aria-pressed={isGlass}
+          className={`rounded-lg border px-2 py-1.5 text-center text-[11px] font-medium transition ${
+            isGlass
+              ? "border-teal-400 bg-teal-500/20 text-teal-200"
+              : "border-slate-700/80 bg-slate-900/60 text-slate-300 hover:border-teal-500/50 hover:text-white"
+          }`}
+        >
+          {fa ? 'بدن شفاف' : 'Glass body'}
+        </button>
+
+        <button
+          type="button"
+          onClick={cycleBodyTone}
+          title="Tone cycle"
+          aria-pressed={bodyTone !== "solid"}
+          className={`rounded-lg border px-2 py-1.5 text-center text-[11px] font-medium transition ${
+            bodyTone === "carbon"
+              ? "border-slate-400 bg-slate-800 text-white"
+              : bodyTone === "scan"
+                ? "border-cyan-500/60 bg-cyan-950/40 text-cyan-200"
+                : "border-slate-700/80 bg-slate-900/60 text-slate-300 hover:border-teal-500/50 hover:text-white"
+          }`}
+        >
+          {bodyTone === "carbon" ? (fa ? 'رنگ کربنی' : 'Carbon') : bodyTone === "scan" ? (fa ? 'رنگ اسکن' : 'Scan') : (fa ? 'رنگ طبیعی' : 'Natural')}
+        </button>
+
+        <button
+          type="button"
+          onClick={resetView}
+          className="rounded-lg border border-slate-700/80 bg-slate-900/60 px-2 py-1.5 text-center text-[11px] font-medium text-slate-300 transition hover:border-rose-500/50 hover:text-rose-200"
+        >
+          {fa ? 'بازنشانی نما' : 'Reset view'}
+        </button>
+      </div>
+
       {Object.keys(systemOpacity).length > 0 && (
         <button
           type="button"
           onClick={clearGhosting}
           title="Make every layer solid again"
-          className="rounded border border-sky-700/70 bg-sky-600/15 px-2 py-1 text-xs text-sky-300"
+          className="mt-1.5 w-full rounded-lg border border-sky-600/40 bg-sky-950/30 px-2 py-1 text-center text-[11px] text-sky-300 transition hover:bg-sky-900/40"
         >
-          {fa ? 'بازگشت به حالت عادی' : 'Solid again'}
+          {fa ? 'بازگشت به حالت توپر' : 'Solid again'}
         </button>
       )}
-      <button
-        type="button"
-        onClick={resetView}
-        className="rounded border border-slate-700 px-2 py-1 text-xs text-slate-400"
-      >
-        {fa ? 'بازنشانی نما' : 'Reset view'}
-      </button>
     </section>
   );
 }

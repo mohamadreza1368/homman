@@ -47,7 +47,7 @@ export function LeftPanel() {
         <BrandLogo variant="mark-dark" className="h-9 w-9" decorative />
         <div className="min-w-0"><div className="text-sm font-bold tracking-[0.18em] text-white" dir="ltr">HOOMAAN STUDIO</div><div className="mt-0.5 text-[10px] text-teal-300/80">{fa ? "فضای یادگیری بدن انسان" : "Explore the human body"}</div></div>
       </div>
-      <div className="flex shrink-0 border-b border-slate-800 px-1">
+      <div className="flex shrink-0 border-b border-slate-800 bg-slate-950/40 px-1">
         <TabButton active={tab === "atlas"} onClick={() => setTab("atlas")}>
           {fa ? 'اطلس' : 'Atlas'}
         </TabButton>
@@ -60,7 +60,7 @@ export function LeftPanel() {
         <TabButton active={tab === "study"} onClick={() => setTab("study")}>
           {fa ? 'مطالعه' : 'Study'}
           {noteCount > 0 && (
-            <span className="ml-1 rounded-full bg-slate-700/70 px-1 text-[9px] text-slate-300">
+            <span className="ml-1 rounded-full bg-teal-500/20 px-1.5 py-0.2 text-[9px] text-teal-300 ring-1 ring-teal-500/30">
               {noteCount}
             </span>
           )}
@@ -68,25 +68,38 @@ export function LeftPanel() {
         <TabButton active={tab === "usage"} onClick={() => setTab("usage")}>
           {fa ? 'مصرف' : 'Usage'}
         </TabButton>
-        {/*
-          Sits in the tab strip rather than in a dialog, because the question it
-          answers — "which build is this?" — is asked by someone reporting a
-          problem or comparing two plates, and both of those are worse errands
-          if the answer is three clicks deep. `shrink-0` keeps the three tabs
-          sharing the width as they did before.
-        */}
+      </div>
+      <div className="flex items-center justify-between border-b border-slate-800/80 bg-slate-950/20 px-3 py-1.5">
         <button
           type="button"
           onClick={() => setStatus(true)}
-          className="shrink-0 self-center px-2 text-[10px] font-medium tabular-nums text-slate-600 transition hover:text-slate-300"
+          className="rounded px-1.5 py-0.5 text-[10px] font-mono text-slate-500 transition hover:bg-slate-800 hover:text-teal-300"
           title={`HOOMAAN ${APP_VERSION_LABEL} — click for status and log`}
         >
           {APP_VERSION_LABEL}
         </button>
-      </div>
-      <div className="flex justify-end gap-1 border-b border-slate-800 px-3 py-2" aria-label="Interface language">
-        <button type="button" aria-pressed={fa} onClick={() => setLanguage('fa')} className={`rounded-lg px-2 py-1 text-xs ${fa ? 'bg-teal-700 text-white' : 'text-slate-400'}`}>فارسی</button>
-        <button type="button" aria-pressed={!fa} onClick={() => setLanguage('en')} className={`rounded-lg px-2 py-1 text-xs ${!fa ? 'bg-teal-700 text-white' : 'text-slate-400'}`}>English</button>
+        <div className="flex items-center gap-1" aria-label="Interface language">
+          <button
+            type="button"
+            aria-pressed={fa}
+            onClick={() => setLanguage('fa')}
+            className={`rounded-full px-2 py-0.5 text-[10px] font-medium transition ${
+              fa ? 'bg-teal-600/90 text-white ring-1 ring-teal-400/40' : 'text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            فارسی
+          </button>
+          <button
+            type="button"
+            aria-pressed={!fa}
+            onClick={() => setLanguage('en')}
+            className={`rounded-full px-2 py-0.5 text-[10px] font-medium transition ${
+              !fa ? 'bg-teal-600/90 text-white ring-1 ring-teal-400/40' : 'text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            English
+          </button>
+        </div>
       </div>
 
       {/* Rendered from here rather than from `App`, because the button that

@@ -79,8 +79,8 @@ export function ViewpointBar() {
   }, [dollyView, fitView, orientView]);
 
   return (
-    <div className="pointer-events-none absolute bottom-4 left-1/2 -translate-x-1/2 z-20 flex items-center justify-center">
-      <div className="pointer-events-auto flex items-center gap-1 rounded-full border border-teal-500/30 bg-slate-900/90 px-3 py-1.5 shadow-2xl backdrop-blur-xl ring-1 ring-white/10">
+    <div className="pointer-events-none absolute bottom-3 right-3 z-20">
+      <div className="pointer-events-auto flex items-center gap-1 rounded-full border border-teal-500/30 bg-slate-900/90 px-2.5 py-1 shadow-2xl backdrop-blur-xl ring-1 ring-white/10">
         <Key
           onClick={fitView}
           title={
@@ -123,7 +123,6 @@ export function ViewpointBar() {
 
         <span aria-hidden className="mx-0.5 h-4 w-px bg-slate-700/60" />
 
-        {/* Quick studio dissection tools */}
         <Key
           onClick={glassBody}
           title={fa ? "حالت بافت شفاف (شیشه‌ای) برای دیدن اعضای عمقی" : "Glass body mode"}
