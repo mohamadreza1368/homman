@@ -17,6 +17,7 @@ import { useChatStore } from "@/stores/chatStore";
 import { askToConfirm } from "@/stores/confirmStore";
 import { useSceneStore } from "@/stores/sceneStore";
 import { useInterfaceLanguage } from "@/stores/interfaceLanguage";
+import { ClinicalVitalsHUD } from "./ClinicalVitalsHUD";
 
 /**
  * Which virtual patient the next drill belongs to.
@@ -86,6 +87,7 @@ export function CaseBar({ profile, language }: { profile: UserProfile; language:
             </span>
             <span className="shrink-0 text-slate-500">{showRecord ? "▴" : "▾"}</span>
           </button>
+          {!showRecord && <ClinicalVitalsHUD patient={current} compact />}
           <button
             type="button"
             onClick={() => {
@@ -294,6 +296,8 @@ function PatientRecord({
       {measurements.length > 0 && (
         <p className="text-slate-500">{measurements.join(" · ")}</p>
       )}
+
+      <ClinicalVitalsHUD patient={patient} />
 
       {(patient.findings.trim() !== "" || record.length > 0) && (
         <div>

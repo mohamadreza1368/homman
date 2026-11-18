@@ -1823,7 +1823,9 @@ const SECTIONS: Section[] = [
 ];
 
 export function GuideOverlay({ onClose }: { onClose: () => void }) {
-  const fa = useInterfaceLanguage((s) => s.language === "fa");
+  const language = useInterfaceLanguage((s) => s.language);
+  const setLanguage = useInterfaceLanguage((s) => s.setLanguage);
+  const fa = language === "fa";
   const sections = fa ? FA_SECTIONS : SECTIONS;
   const [active, setActive] = useState(sections[0]!.id);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -1855,7 +1857,7 @@ export function GuideOverlay({ onClose }: { onClose: () => void }) {
       if (node) observer.observe(node);
     }
     return () => observer.disconnect();
-  }, []);
+  }, [sections]);
 
   return (
     <div
@@ -1897,19 +1899,42 @@ export function GuideOverlay({ onClose }: { onClose: () => void }) {
         </nav>
 
         <div className="flex min-w-0 flex-1 flex-col">
-          <header className="flex shrink-0 items-center gap-2 border-b border-slate-800 px-5 py-3">
+          <header className="flex shrink-0 items-center justify-between gap-2 border-b border-slate-800 px-5 py-3">
             <h2 className="flex items-center gap-2 text-sm font-semibold tracking-tight text-slate-100">
               <BrandLogo variant="mark-dark" className="h-5 w-auto shrink-0" decorative />
               {fa ? "راهنمای کارکرد هومان" : "How HOOMAAN works"}
             </h2>
 
-            <button
-              type="button"
-              onClick={onClose}
-              className={`${fa ? "mr-auto" : "ml-auto"} rounded border border-slate-700 px-2 py-0.5 text-[11px] text-slate-400 transition hover:border-slate-600 hover:text-slate-200`}
-            >
-              {fa ? "شروع کاوش" : "Start exploring"}
-            </button>
+            <div className="flex items-center gap-2">
+              <div className="flex items-center gap-0.5 rounded-full border border-slate-700/80 bg-slate-950/80 p-0.5" aria-label={fa ? "تغییر زبان راهنما" : "Guide language"}>
+                <button
+                  type="button"
+                  onClick={() => setLanguage("fa")}
+                  className={`rounded-full px-2.5 py-0.5 text-[10.5px] font-medium transition ${
+                    fa ? "bg-sky-600 text-white shadow-sm" : "text-slate-400 hover:text-slate-200"
+                  }`}
+                >
+                  فارسی
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setLanguage("en")}
+                  className={`rounded-full px-2.5 py-0.5 text-[10.5px] font-medium transition ${
+                    !fa ? "bg-sky-600 text-white shadow-sm" : "text-slate-400 hover:text-slate-200"
+                  }`}
+                >
+                  English
+                </button>
+              </div>
+
+              <button
+                type="button"
+                onClick={onClose}
+                className="rounded border border-slate-700 px-2.5 py-0.5 text-[11px] text-slate-300 transition hover:border-slate-500 hover:text-white"
+              >
+                {fa ? "شروع کاوش" : "Start exploring"}
+              </button>
+            </div>
           </header>
 
           <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
@@ -1993,11 +2018,12 @@ export function Ui({ children }: { children: React.ReactNode }) {
  * `opener:allow-open-url`, and one address is not worth widening that for.
  */
 export function ContactCard() {
+  const fa = useInterfaceLanguage((s) => s.language === "fa");
   const { copied, copy } = useCopy();
   return (
     <div className="rounded-lg border border-slate-700/70 bg-slate-950/50 px-4 py-3">
       <p className="text-[10px] font-semibold uppercase tracking-[0.15em] text-slate-500">
-        Contact
+        {fa ? "تماس و ارتباط" : "Contact"}
       </p>
       <div className="mt-1 flex flex-wrap items-center gap-2">
         <span className="select-all text-base font-semibold text-slate-100">{CONTACT_EMAIL}</span>
@@ -2006,12 +2032,13 @@ export function ContactCard() {
           onClick={() => void copy(CONTACT_EMAIL)}
           className="rounded border border-slate-700 px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-slate-400 transition hover:border-sky-600 hover:text-sky-300"
         >
-          {copied ? "Copied" : "Copy"}
+          {copied ? (fa ? "کپی شد" : "Copied") : (fa ? "کپی آدرس" : "Copy")}
         </button>
       </div>
       <p className="mt-2 text-[12px] leading-relaxed text-slate-400">
-        Support, custom features, and use in a university, a school or a clinical
-        training setting.
+        {fa
+          ? "پشتیبانی، ویژگی‌های سفارشی و استفاده در دانشگاه‌ها، مراکز درمانی و محیط‌های آموزشی بالینی."
+          : "Support, custom features, and use in a university, a school or a clinical training setting."}
       </p>
     </div>
   );

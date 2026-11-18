@@ -66,12 +66,23 @@ describe("linkifyOrganRefs", () => {
     expect(linkifyOrganRefs(text, refs)).toContain(`[1](${REF_SCHEME}left_ventricle)`);
     expect(linkifyOrganRefs(text, refs)).toContain("**Left ventricle**");
   });
+
+  it("rewrites rhythm and slice markers into interactive links", () => {
+    const text = "Observe [[rhythm:sinus_tachycardia]] and verify [[slice:vertebra_t8]].";
+    const refs = collectOrganRefs(text, isKnown);
+    const linked = linkifyOrganRefs(text, refs);
+    expect(linked).toContain("hoomaan-rhythm:sinus_tachycardia");
+    expect(linked).toContain("hoomaan-slice:vertebra_t8");
+  });
 });
 
 describe("stripOrganRefs", () => {
   it("removes markers for copied text", () => {
     expect(stripOrganRefs("The left ventricle [[left_ventricle]] is thick.")).toBe(
       "The left ventricle is thick.",
+    );
+    expect(stripOrganRefs("Observe [[rhythm:sinus_tachycardia]] at [[slice:vertebra_t8]].")).toBe(
+      "Observe at.",
     );
   });
 

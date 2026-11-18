@@ -168,6 +168,7 @@ function TopBar({
   onSignOut: () => void;
 }) {
   const fa = useInterfaceLanguage((s) => s.language === "fa");
+  const setLanguage = useInterfaceLanguage((s) => s.setLanguage);
   return (
     <header className="absolute inset-x-0 top-0 z-30 flex items-center justify-between border-b border-teal-500/20 bg-slate-950/80 px-4 py-2 shadow-xl backdrop-blur-2xl ring-1 ring-white/5">
       <div className="flex items-center gap-2">
@@ -194,6 +195,30 @@ function TopBar({
       </p>
 
       <div className="flex items-center gap-1.5">
+        <div
+          className="flex items-center gap-0.5 rounded-full border border-slate-800 bg-slate-900/80 p-0.5 text-[10px]"
+          aria-label={fa ? "تغییر زبان" : "Change interface language"}
+        >
+          <button
+            type="button"
+            onClick={() => setLanguage("fa")}
+            className={`rounded-full px-2 py-0.5 font-medium transition ${
+              fa ? "bg-teal-600 text-white shadow-sm" : "text-slate-400 hover:text-slate-200"
+            }`}
+          >
+            فارسی
+          </button>
+          <button
+            type="button"
+            onClick={() => setLanguage("en")}
+            className={`rounded-full px-2 py-0.5 font-medium transition ${
+              !fa ? "bg-teal-600 text-white shadow-sm" : "text-slate-400 hover:text-slate-200"
+            }`}
+          >
+            EN
+          </button>
+        </div>
+
         <button
           type="button"
           onClick={onOpenMemory}

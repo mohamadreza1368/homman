@@ -2,9 +2,19 @@ import { memo, useMemo } from "react";
 import ReactMarkdown, { defaultUrlTransform } from "react-markdown";
 import remarkGfm from "remark-gfm";
 
+import { useHeartStore } from "@/stores/heartStore";
+import { useInterfaceLanguage } from "@/stores/interfaceLanguage";
+import { useScanStore } from "@/stores/scanStore";
 import { organLabel, useSceneStore } from "@/stores/sceneStore";
+import type { RhythmId } from "@/features/viewer/rhythms";
 
-import { collectOrganRefs, linkifyOrganRefs, REF_SCHEME } from "./organRefs";
+import {
+  collectOrganRefs,
+  linkifyOrganRefs,
+  REF_SCHEME,
+  RHYTHM_SCHEME,
+  SLICE_SCHEME,
+} from "./organRefs";
 import { repairGluedHeadings } from "./repairMarkdown";
 import { useCopy } from "./useCopy";
 
@@ -43,25 +53,11 @@ function CodeBlock({ children }: { children: React.ReactNode }) {
  * Hovering highlights the mesh, clicking flies the camera to it — the same
  * store the assistant's own tools write to, so a click and a tool call put the
  * scene in exactly the same state.
- *
- * # Why it looks like something you can press
- *
- * It did not, for a long time, and the consequence was that nobody pressed it.
- * At nine pixels with a fifth-opacity fill and — after the Tailwind v4 upgrade
- * — an arrow cursor, it read as a footnote marker: something to look at rather
- * than something to use. The chips at the end of an answer got the clicks
- * instead, which means scrolling past the whole explanation and losing the
- * sentence you were reading.
- *
- * So it carries a ring, enough contrast to separate from the prose, and it
- * grows very slightly under the pointer. Still understated on purpose: there
- * can be a dozen in a paragraph, and a paragraph studded with buttons is
- * harder to read than one with none.
  */
 function OrganPin({ organId, label }: { organId: string; label: string }) {
-  const organ = useSceneStore((s) => s.organs[organId]);
-  const setHovered = useSceneStore((s) => s.setHovered);
-  const focusReference = useSceneStore((s) => s.focusReference);
+  const organ = useSceneStore((s) => s?.organs?.[organId]);
+  const setHovered = useSceneStore((s) => s?.setHovered);
+  const focusReference = useSceneStore((s) => s?.focusReference);
   if (!organ) return null;
 
   const name = organLabel(organ);
@@ -69,16 +65,12 @@ function OrganPin({ organId, label }: { organId: string; label: string }) {
   return (
     <button
       type="button"
-      onMouseEnter={() => setHovered(organId)}
-      onMouseLeave={() => setHovered(null)}
-      onFocus={() => setHovered(organId)}
-      onBlur={() => setHovered(null)}
-      // The number goes with it, so the label that appears in the scene is
-      // marked the same as the pin that was pressed.
-      onClick={() => focusReference(organId, Number(label))}
+      onMouseEnter={() => setHovered?.(organId)}
+      onMouseLeave={() => setHovered?.(null)}
+      onFocus={() => setHovered?.(organId)}
+      onBlur={() => setHovered?.(null)}
+      onClick={() => focusReference?.(organId, Number(label))}
       title={`Show ${name}`}
-      // The number alone tells a screen reader nothing about what pressing it
-      // does, and it is the only label sighted readers get from the shape.
       aria-label={`Show ${name}`}
       className="mx-0.5 inline-flex h-[15px] min-w-[15px] items-center justify-center rounded-full bg-sky-500/25 px-1 align-super text-[10px] font-semibold text-sky-200 ring-1 ring-inset ring-sky-400/40 transition hover:bg-sky-400/50 hover:text-white hover:ring-sky-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300"
     >
@@ -87,28 +79,69 @@ function OrganPin({ organId, label }: { organId: string; label: string }) {
   );
 }
 
-export const Markdown = memo(function Markdown({ children, structurePins = true }: {
+/**
+ * A cardiac rhythm interactive pill: clicking plays the rhythm and focuses on heart.
+ */
+function RhythmPin({ rhythmId, label }: { rhythmId: string; label: string }) {
+  const fa = useInterfaceLanguage((s) => s.language === "fa");
+
+  const handleClick = () => {
+    useHeartStore.setState({ enabled: true });
+    useHeartStore.getState().setRhythm?.(rhythmId as RhythmId);
+    useHeartStore.getState().setSound?.(true);
+    useSceneStore.getState().focusReference?.("cor_ventriculus_sinister", 1);
+  };
+
+  return (
+    <button
+      type="button"
+      onClick={handleClick}
+      title={fa ? `پخش ریتم قلبی ${label} در مدل سه‌بعدی` : `Play heart rhythm ${label} in 3D scene`}
+      className="mx-1 inline-flex items-center gap-1 rounded-full border border-rose-500/40 bg-rose-950/40 px-2 py-0.5 text-[11px] font-medium text-rose-300 shadow-sm transition hover:border-rose-400 hover:bg-rose-900/60 hover:text-white focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-rose-400"
+    >
+      <span className="inline-block animate-pulse text-rose-400">♥</span>
+      <span>{label}</span>
+    </button>
+  );
+}
+
+/**
+ * A tomographic slice interactive pill: clicking sets the scanner level to that vertebra or organ.
+ */
+function SlicePin({ target, label }: { target: string; label: string }) {
+  const fa = useInterfaceLanguage((s) => s.language === "fa");
+
+  const handleClick = () => {
+    useScanStore.setState({ enabled: true, axial: true });
+    useSceneStore.getState().applyCommand?.({ action: "scan_at_structure", organ_id: target });
+  };
+
+  return (
+    <button
+      type="button"
+      onClick={handleClick}
+      title={fa ? `حرکت مقطع اسکنر به تراز ${label}` : `Navigate CT slice to ${label}`}
+      className="mx-1 inline-flex items-center gap-1 rounded-full border border-cyan-500/40 bg-cyan-950/40 px-2 py-0.5 text-[11px] font-medium text-cyan-300 shadow-sm transition hover:border-cyan-400 hover:bg-cyan-900/60 hover:text-white focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-cyan-400"
+    >
+      <span className="inline-block text-cyan-400">⌖</span>
+      <span>{label}</span>
+    </button>
+  );
+}
+
+export const Markdown = memo(function Markdown({
+  children,
+  structurePins = true,
+}: {
   children: string;
   structurePins?: boolean;
 }) {
-  const organs = useSceneStore((s) => s.organs);
+  const organs = useSceneStore((s) => s?.organs);
 
-  // Markers are resolved against the structures actually loaded, so an id the
-  // model invented disappears instead of surfacing as literal brackets.
-  //
-  // Headings are repaired first, before the markers become links: the repair
-  // reads punctuation, and a marker resolved into `[3](anatria-ref:…)` puts a
-  // bracket between the full stop and the hashes where there was none.
   const source = useMemo(() => {
     const repaired = repairGluedHeadings(children);
     if (!structurePins) return repaired;
     const refs = collectOrganRefs(repaired, (organId) => organId in organs);
-    // Always, even with nothing to link. Skipping this when no marker resolved
-    // was a cheap-looking guard that switched off the cleanup in precisely the
-    // case that needed it: an answer whose *only* marker is one the model
-    // invented rendered it raw, and `[[heart]]` appeared in the prose. The
-    // atlas has no single heart mesh — it is seventeen parts — so that is not
-    // even an unlikely id for a model to reach for.
     return linkifyOrganRefs(repaired, refs);
   }, [children, organs, structurePins]);
 
@@ -116,28 +149,16 @@ export const Markdown = memo(function Markdown({ children, structurePins = true 
     <div className="space-y-2 text-[13px] leading-relaxed text-slate-200">
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
-        /*
-         * Let our own scheme through the URL sanitiser, and nothing else.
-         *
-         * react-markdown rewrites every href it does not recognise to the empty
-         * string — its allow-list is `http`, `https`, `mailto`, `xmpp` and
-         * `irc`. `hoomaan-ref:` is not on it, so the pins arrived with no href
-         * at all, the branch below never matched, and every numbered reference
-         * in every answer rendered as inert blue text. Nothing threw and
-         * nothing looked broken; the numbers were simply dead, and the reader
-         * had to scroll to the chips under the answer instead.
-         *
-         * **Delegating rather than returning the URL unchanged is the whole
-         * safety property.** This renders model output, and a model that writes
-         * `[click](javascript:…)` must still have it stripped. Only our own
-         * prefix — which nothing outside `organRefs.ts` can produce — skips the
-         * check.
-         */
         urlTransform={(url) =>
-          structurePins && (url.startsWith(REF_SCHEME) || url.startsWith("anatria-ref:")) ? url : defaultUrlTransform(url)
+          structurePins &&
+          (url.startsWith(REF_SCHEME) ||
+            url.startsWith("anatria-ref:") ||
+            url.startsWith(RHYTHM_SCHEME) ||
+            url.startsWith(SLICE_SCHEME))
+            ? url
+            : defaultUrlTransform(url)
         }
         components={{
-          // External prose is text-only: no remote images or structure actions.
           img: structurePins ? "img" : ({ alt }) => <span>{alt}</span>,
           h1: ({ children }) => (
             <h3 className="mt-3 text-sm font-semibold text-slate-100">{children}</h3>
@@ -167,9 +188,35 @@ export const Markdown = memo(function Markdown({ children, structurePins = true 
             </blockquote>
           ),
           a: ({ children, href }) => {
-            if (structurePins && href && (href.startsWith(REF_SCHEME) || href.startsWith("anatria-ref:"))) { const prefix = href.startsWith(REF_SCHEME) ? REF_SCHEME : "anatria-ref:"; return <OrganPin organId={href.slice(prefix.length)} label={String(children)} />; }
-            // Any other model-authored link must not navigate the app shell
-            // away from itself; render it as inert text.
+            if (
+              structurePins &&
+              href &&
+              (href.startsWith(REF_SCHEME) || href.startsWith("anatria-ref:"))
+            ) {
+              const prefix = href.startsWith(REF_SCHEME) ? REF_SCHEME : "anatria-ref:";
+              return (
+                <OrganPin
+                  organId={href.slice(prefix.length)}
+                  label={String(children)}
+                />
+              );
+            }
+            if (structurePins && href && href.startsWith(RHYTHM_SCHEME)) {
+              return (
+                <RhythmPin
+                  rhythmId={href.slice(RHYTHM_SCHEME.length)}
+                  label={String(children)}
+                />
+              );
+            }
+            if (structurePins && href && href.startsWith(SLICE_SCHEME)) {
+              return (
+                <SlicePin
+                  target={href.slice(SLICE_SCHEME.length)}
+                  label={String(children)}
+                />
+              );
+            }
             return (
               <span className="text-sky-400 underline decoration-dotted" title={href}>
                 {children}

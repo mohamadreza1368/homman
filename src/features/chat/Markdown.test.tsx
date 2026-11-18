@@ -1,6 +1,8 @@
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 
+import { useHeartStore } from "@/stores/heartStore";
+import { useScanStore } from "@/stores/scanStore";
 import { useSceneStore } from "@/stores/sceneStore";
 
 import { Markdown } from "./Markdown";
@@ -26,9 +28,7 @@ describe("Markdown", () => {
    */
   it("renders a heading the model welded to the previous sentence", () => {
     render(
-      <Markdown>{`...durante uno spavento.## 3. Il quadro comando
-
-Nel bulbo.`}</Markdown>,
+      <Markdown>{`...durante uno spavento.## 3. Il quadro comando\n\nNel bulbo.`}</Markdown>,
     );
 
     const heading = screen.getByText("3. Il quadro comando");
@@ -72,12 +72,6 @@ Nel bulbo.`}</Markdown>,
   });
 
   it("makes a numbered reference a control, not decoration", () => {
-    // The regression this exists for, and it was silent for a long time.
-    // react-markdown rewrites any href whose scheme is not on its allow-list to
-    // the empty string, so `hoomaan-ref:` arrived blank, the branch that builds
-    // the pin never matched, and every number in every answer rendered as inert
-    // blue text. Nothing threw. The feature was simply dead, and the only way
-    // to reach a structure was to scroll past the whole answer to the chips.
     useSceneStore.setState({
       organs: {
         hippocampus: {
@@ -99,9 +93,6 @@ Nel bulbo.`}</Markdown>,
   });
 
   it("still strips a dangerous scheme the model wrote", () => {
-    // The pin's exemption is for one prefix nothing outside `organRefs.ts` can
-    // produce. Everything else keeps going through react-markdown's sanitiser,
-    // and this is what proves the exemption did not become a hole.
     const { container } = render(
       <Markdown>{`[run](javascript:window.__pwned=true)`}</Markdown>,
     );
@@ -112,13 +103,44 @@ Nel bulbo.`}</Markdown>,
   });
 
   it("renders model links as inert text", () => {
-    // A clickable link in model output could navigate the app shell away from
-    // itself, and there is no back button in a desktop window.
     const { container } = render(
       <Markdown>{`See [the guide](https://example.invalid/x)`}</Markdown>,
     );
 
     expect(container.querySelector("a")).toBeNull();
     expect(screen.getByText("the guide")).toBeDefined();
+  });
+
+  it("renders interactive rhythm pins and triggers cardiac simulation", () => {
+    useHeartStore.setState({ enabled: false, rhythm: "normal" });
+
+    render(
+      <Markdown>{`The patient exhibits [Atrial Fibrillation](hoomaan-rhythm:atrial_fibrillation).`}</Markdown>,
+    );
+
+    const rhythmBtn = screen.getByRole("button", { name: /Atrial Fibrillation/i });
+    expect(rhythmBtn).toBeDefined();
+
+    fireEvent.click(rhythmBtn);
+
+    expect(useHeartStore.getState().enabled).toBe(true);
+    expect(useHeartStore.getState().rhythm).toBe("atrial_fibrillation");
+  });
+
+  it("renders interactive tomography slice pins and triggers scan_to command", () => {
+    useScanStore.setState({ enabled: false, axial: false });
+
+    render(
+      <Markdown>{`Compare with [Axial Slice T8](hoomaan-slice:vertebra_t8).`}</Markdown>,
+    );
+
+    const sliceBtn = screen.getByRole("button", { name: /Axial Slice T8/i });
+    expect(sliceBtn).toBeDefined();
+
+    fireEvent.click(sliceBtn);
+
+    expect(useScanStore.getState().enabled).toBe(true);
+    expect(useScanStore.getState().axial).toBe(true);
+    expect(useSceneStore.getState().scanRequest?.organId).toBe("vertebra_t8");
   });
 });

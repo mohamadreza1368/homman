@@ -13,9 +13,13 @@
 
 /** `[[organ_id]]` — ids are slugs, so the character class stays tight. */
 const MARKER = /\[\[([a-z0-9_]+)\]\]/gi;
+const RHYTHM_MARKER = /\[\[rhythm:([a-z0-9_]+)\]\]/gi;
+const SLICE_MARKER = /\[\[slice:([a-z0-9_]+)\]\]/gi;
 
-/** Custom href scheme; the Markdown renderer branches on it. */
+/** Custom href schemes; the Markdown renderer branches on them. */
 export const REF_SCHEME = "hoomaan-ref:";
+export const RHYTHM_SCHEME = "hoomaan-rhythm:";
+export const SLICE_SCHEME = "hoomaan-slice:";
 
 export interface OrganReference {
   organId: string;
@@ -51,11 +55,21 @@ export function linkifyOrganRefs(
   refs: OrganReference[],
 ): string {
   const indexOf = new Map(refs.map((ref) => [ref.organId, ref.index]));
-  return markdown.replace(MARKER, (_whole, rawId: string) => {
+  let result = markdown.replace(MARKER, (_whole, rawId: string) => {
     const index = indexOf.get(rawId);
     // Unknown or duplicate-beyond-first: drop the marker, keep the prose clean.
     return index === undefined ? "" : `[${index}](${REF_SCHEME}${rawId})`;
   });
+
+  result = result.replace(RHYTHM_MARKER, (_whole, rhythmId: string) => {
+    return `[ریتم قلبی](${RHYTHM_SCHEME}${rhythmId})`;
+  });
+
+  result = result.replace(SLICE_MARKER, (_whole, sliceId: string) => {
+    return `[برش توموگرافی](${SLICE_SCHEME}${sliceId})`;
+  });
+
+  return result;
 }
 
 /** Strip every marker — used for the copy-to-clipboard text. */
@@ -64,5 +78,6 @@ export function stripOrganRefs(markdown: string): string {
   // removing the marker alone would leave "ventricle  is" or a space stranded
   // in front of a full stop — visible damage in text the user is pasting
   // somewhere else.
-  return markdown.replace(/[ \t]?\[\[[a-z0-9_]+\]\]/gi, "");
+  return markdown
+    .replace(/[ \t]?\[\[(?:(?:rhythm|slice):)?[a-z0-9_]+\]\]/gi, "");
 }
