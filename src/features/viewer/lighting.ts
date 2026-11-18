@@ -99,6 +99,64 @@ export const STUDIO_FILL = "studio-fill";
 export const STUDIO_RIM = "studio-rim";
 export const STUDIO_AMBIENT = "studio-ambient";
 
+export type LightingPresetId = "studio" | "surgical" | "radiology";
+
+export interface LightingPreset {
+  id: LightingPresetId;
+  label: string;
+  labelFa: string;
+  keyIntensity: number;
+  fillIntensity: number;
+  rimIntensity: number;
+  fillColor: string;
+  rimColor: string;
+  bounceIntensity: number;
+  bounceColor: string;
+  ambientMultiplier: number;
+}
+
+export const LIGHTING_PRESETS: Record<LightingPresetId, LightingPreset> = {
+  studio: {
+    id: "studio",
+    label: "Studio Anatomy",
+    labelFa: "استودیوی کالبدشناسی",
+    keyIntensity: 1.85,
+    fillIntensity: 0.55,
+    rimIntensity: 0.85,
+    fillColor: "#a8cfe8",
+    rimColor: "#8fd4ff",
+    bounceIntensity: 0.22,
+    bounceColor: "#ffd8c0",
+    ambientMultiplier: 1.0,
+  },
+  surgical: {
+    id: "surgical",
+    label: "Surgical Theater",
+    labelFa: "اتاق عمل / جراحی",
+    keyIntensity: 2.3,
+    fillIntensity: 0.7,
+    rimIntensity: 0.95,
+    fillColor: "#e0f2fe",
+    rimColor: "#38bdf8",
+    bounceIntensity: 0.35,
+    bounceColor: "#fed7aa",
+    ambientMultiplier: 1.25,
+  },
+  radiology: {
+    id: "radiology",
+    label: "High Contrast / Bone",
+    labelFa: "کنتراست بالا / استخوان",
+    keyIntensity: 2.1,
+    fillIntensity: 0.3,
+    rimIntensity: 1.2,
+    fillColor: "#64748b",
+    rimColor: "#67e8f9",
+    bounceIntensity: 0.1,
+    bounceColor: "#cbd5e1",
+    ambientMultiplier: 0.8,
+  },
+};
+
 /** Placed out past everything; a directional light only carries a direction. */
 const REACH = 10;
 

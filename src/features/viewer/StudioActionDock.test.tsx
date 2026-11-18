@@ -16,8 +16,12 @@ describe("StudioActionDock", () => {
       cycleExplode: vi.fn(),
       showAllSystems: vi.fn(),
       resetView: vi.fn(),
+      setLightingPreset: vi.fn(),
+      setBackground: vi.fn(),
       isolatedOrganIds: null,
       explode: 0,
+      lightingPreset: "studio",
+      background: "dark",
     });
   });
 
@@ -27,6 +31,7 @@ describe("StudioActionDock", () => {
     expect(screen.getByRole("button", { name: "Views" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Dissect" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Physio" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Studio" })).toBeTruthy();
   });
 
   it("switches to Dissect tab and displays dissection controls", () => {
@@ -48,6 +53,24 @@ describe("StudioActionDock", () => {
     expect(screen.getByRole("button", { name: "Scanner" })).toBeTruthy();
   });
 
+  it("switches to Studio tab and controls lighting presets", () => {
+    const setLightingPresetSpy = vi.fn();
+    useSceneStore.setState({ setLightingPreset: setLightingPresetSpy });
+
+    render(<StudioActionDock />);
+    const studioTab = screen.getByRole("button", { name: "Studio" });
+    fireEvent.click(studioTab);
+
+    expect(screen.getByRole("button", { name: "Natural" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Surgical" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Contrast" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Dark" })).toBeTruthy();
+
+    const surgicalBtn = screen.getByRole("button", { name: "Surgical" });
+    fireEvent.click(surgicalBtn);
+    expect(setLightingPresetSpy).toHaveBeenCalledWith("surgical");
+  });
+
   it("calls fitView when Fit button is clicked in Views tab", () => {
     const fitViewSpy = vi.fn();
     useSceneStore.setState({ fitView: fitViewSpy });
@@ -67,6 +90,7 @@ describe("StudioActionDock", () => {
     expect(screen.getByRole("button", { name: /نماها/i })).toBeTruthy();
     expect(screen.getByRole("button", { name: /تشریح/i })).toBeTruthy();
     expect(screen.getByRole("button", { name: /فیزیولوژی/i })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /استودیو/i })).toBeTruthy();
     expect(screen.getByRole("button", { name: /کادر/i })).toBeTruthy();
   });
 });

@@ -371,30 +371,36 @@ export function tissueColour(organ: Tissue): THREE.Color {
  */
 const ROUGHNESS: Partial<Record<AnatomicalSystem, number>> = {
   skeletal: 0.78,
-  articular: 0.5,
-  muscular: 0.44,
-  cardiovascular: 0.38,
-  nervous: 0.6,
-  respiratory: 0.52,
-  digestive: 0.42,
-  integumentary: 0.66,
-  regional: 0.7,
+  articular: 0.44,
+  muscular: 0.38,
+  cardiovascular: 0.32,
+  nervous: 0.56,
+  lymphatic: 0.44,
+  respiratory: 0.46,
+  digestive: 0.32,
+  renal: 0.35,
+  endocrine: 0.38,
+  reproductive: 0.36,
+  integumentary: 0.62,
+  regional: 0.70,
 };
 
 export function tissueRoughness(system: AnatomicalSystem): number {
-  return ROUGHNESS[system] ?? 0.55;
+  return ROUGHNESS[system] ?? 0.50;
 }
 
 const METALNESS: Partial<Record<AnatomicalSystem, number>> = {
   skeletal: 0.02,
   articular: 0.08,
-  muscular: 0.04,
-  cardiovascular: 0.08,
-  digestive: 0.06,
+  muscular: 0.05,
+  cardiovascular: 0.10,
+  digestive: 0.08,
   respiratory: 0.04,
   nervous: 0.02,
-  endocrine: 0.05,
-  renal: 0.05,
+  lymphatic: 0.04,
+  endocrine: 0.06,
+  renal: 0.06,
+  reproductive: 0.05,
   integumentary: 0.02,
   regional: 0.02,
 };

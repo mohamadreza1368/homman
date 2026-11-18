@@ -9,6 +9,7 @@ import type {
   SectionPlane,
 } from "@/lib/schemas";
 import type { BackgroundMode } from "@/features/viewer/background";
+import type { LightingPresetId } from "@/features/viewer/lighting";
 import type { AnatomicalView } from "@/features/viewer/cameraViews";
 import { sameStack } from "@/features/viewer/depthStack";
 import { tissueFamily } from "@/features/viewer/palette";
@@ -527,6 +528,7 @@ interface SceneStore extends SceneViewState {
    * A preference like the others here, so it survives `reset_view`.
    */
   background: BackgroundMode;
+  lightingPreset: LightingPresetId;
   /**
    * Whether the depth reading is drawn beside the cursor.
    *
@@ -599,6 +601,7 @@ interface SceneStore extends SceneViewState {
   /** Step the body's appearance: as itself, drained of colour, carbon. */
   cycleBodyTone: () => void;
   setBackground: (mode: BackgroundMode) => void;
+  setLightingPreset: (preset: LightingPresetId) => void;
   /** Apply the view settings carried over from the last session. */
   restoreView: (preferences: Partial<ViewPreferences>) => void;
   /** Ctrl/Cmd-click toggles into the set; a plain click replaces it. */
@@ -705,6 +708,7 @@ export const useSceneStore = create<SceneStore>()((set, get) => ({
   connectiveIds: new Set<string>(),
   focusBadge: null,
   background: "dark",
+  lightingPreset: "studio",
 
   setManifest: (manifest) =>
     set({
@@ -787,6 +791,7 @@ export const useSceneStore = create<SceneStore>()((set, get) => ({
   cycleBodyTone: () => set((state) => ({ bodyTone: nextBodyTone(state.bodyTone) })),
 
   setBackground: (mode) => set({ background: mode }),
+  setLightingPreset: (preset) => set({ lightingPreset: preset }),
 
   /**
    * Only the keys that were actually stored are applied, so a preferences file

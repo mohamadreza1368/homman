@@ -66,6 +66,7 @@ import {
   STUDIO_KEY,
   STUDIO_RIM,
   studioLightDirections,
+  LIGHTING_PRESETS,
 } from "./lighting";
 import { keepsColour } from "./scan";
 import {
@@ -171,6 +172,8 @@ function ViewerBridge({
  */
 function StudioLights() {
   const background = useSceneStore((s) => s.background);
+  const lightingPreset = useSceneStore((s) => s.lightingPreset ?? "studio");
+  const preset = LIGHTING_PRESETS[lightingPreset] ?? LIGHTING_PRESETS.studio;
   const key = useRef<THREE.DirectionalLight>(null);
   const fill = useRef<THREE.DirectionalLight>(null);
   const rim = useRef<THREE.DirectionalLight>(null);
@@ -197,14 +200,14 @@ function StudioLights() {
       {/* Named so the axial pass can aim the same rig at its own camera for a
           frame. Adding a light of its own would recompile every material; see
           `aimStudioAt`. */}
-      <ambientLight name={STUDIO_AMBIENT} intensity={backgroundTheme(background).ambient} />
-      <directionalLight name={STUDIO_KEY} ref={key} intensity={1.75} />
-      <directionalLight name={STUDIO_FILL} ref={fill} intensity={0.5} color="#a8cfe8" />
-      <directionalLight name={STUDIO_RIM} ref={rim} intensity={0.75} color="#8fd4ff" />
+      <ambientLight name={STUDIO_AMBIENT} intensity={backgroundTheme(background).ambient * preset.ambientMultiplier} />
+      <directionalLight name={STUDIO_KEY} ref={key} intensity={preset.keyIntensity} />
+      <directionalLight name={STUDIO_FILL} ref={fill} intensity={preset.fillIntensity} color={preset.fillColor} />
+      <directionalLight name={STUDIO_RIM} ref={rim} intensity={preset.rimIntensity} color={preset.rimColor} />
       {/* The one light that stays put. A bounce from below is environmental —
           it belongs to the room, not to the viewer — and keeping it in world
           space leaves a cue that the body has an underside at all. */}
-      <directionalLight position={[0, -5, 1]} intensity={0.2} color="#ffd8c0" />
+      <directionalLight position={[0, -5, 1]} intensity={preset.bounceIntensity} color={preset.bounceColor} />
     </>
   );
 }

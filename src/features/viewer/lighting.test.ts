@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   aimStudioAt,
+  LIGHTING_PRESETS,
   rakingKey,
   SECTION_AMBIENT,
   STUDIO_AMBIENT,
@@ -187,5 +188,19 @@ describe("rakingKey", () => {
     const aimed = new THREE.Vector3(0, 1, 0);
     aimStudioAt(scene, LOOKING_DOWN, SLICE_UP, { key: aimed });
     expect(key.position.clone().normalize().y).toBeCloseTo(1, 12);
+  });
+});
+
+describe("LIGHTING_PRESETS", () => {
+  it("defines studio, surgical, and radiology presets with distinctive balances", () => {
+    expect(LIGHTING_PRESETS.studio).toBeDefined();
+    expect(LIGHTING_PRESETS.surgical).toBeDefined();
+    expect(LIGHTING_PRESETS.radiology).toBeDefined();
+
+    // Surgical theater provides brighter key light for deep cavity illumination
+    expect(LIGHTING_PRESETS.surgical.keyIntensity).toBeGreaterThan(LIGHTING_PRESETS.studio.keyIntensity);
+
+    // Radiology emphasizes rim light for contour and bone margin separation
+    expect(LIGHTING_PRESETS.radiology.rimIntensity).toBeGreaterThan(LIGHTING_PRESETS.studio.rimIntensity);
   });
 });

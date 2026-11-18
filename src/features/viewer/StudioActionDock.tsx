@@ -10,6 +10,7 @@ import {
   RotateCcw,
   Scan,
   Sparkles,
+  Sun,
   Wind,
   ZoomIn,
   ZoomOut,
@@ -49,7 +50,7 @@ const VIEW_HINT_FA: Record<AnatomicalView, string> = {
   superior: "نمای فوقانی (از بالا) — کلید S",
 };
 
-type DockTab = "views" | "dissect" | "physio";
+type DockTab = "views" | "dissect" | "physio" | "studio";
 
 export function StudioActionDock() {
   const fa = useInterfaceLanguage((s) => s.language === "fa");
@@ -71,6 +72,10 @@ export function StudioActionDock() {
   const cycleBodyTone = useSceneStore((s) => s.cycleBodyTone);
   const explode = useSceneStore((s) => s.explode);
   const cycleExplode = useSceneStore((s) => s.cycleExplode);
+  const lightingPreset = useSceneStore((s) => s.lightingPreset ?? "studio");
+  const setLightingPreset = useSceneStore((s) => s.setLightingPreset);
+  const background = useSceneStore((s) => s.background);
+  const setBackground = useSceneStore((s) => s.setBackground);
 
   // Simulation stores
   const heartEnabled = useHeartStore((s) => s.enabled);
@@ -156,6 +161,15 @@ export function StudioActionDock() {
             icon={<Activity className="h-3.5 w-3.5" />}
             label={fa ? "فیزیولوژی" : "Physio"}
             badge={heartEnabled || breathEnabled || scanEnabled}
+          />
+          <TabButton
+            active={activeTab === "studio" && !minimized}
+            onClick={() => {
+              setActiveTab("studio");
+              setMinimized(false);
+            }}
+            icon={<Sun className="h-3.5 w-3.5" />}
+            label={fa ? "استودیو" : "Studio"}
           />
         </div>
 
@@ -321,6 +335,45 @@ export function StudioActionDock() {
                   icon={<Scan className={`h-3.5 w-3.5 ${scanEnabled ? "text-amber-400" : ""}`} />}
                 >
                   {fa ? "اسکنر" : "Scanner"}
+                </ActionButton>
+              </>
+            )}
+
+            {activeTab === "studio" && (
+              <>
+                <ActionButton
+                  onClick={() => setLightingPreset?.("studio")}
+                  active={lightingPreset === "studio"}
+                  title={fa ? "نورپردازی استودیویی طبیعی کالبدشناسی" : "Studio balanced lighting"}
+                  icon={<Sun className="h-3.5 w-3.5 text-amber-300" />}
+                >
+                  {fa ? "طبیعی" : "Natural"}
+                </ActionButton>
+
+                <ActionButton
+                  onClick={() => setLightingPreset?.("surgical")}
+                  active={lightingPreset === "surgical"}
+                  title={fa ? "نور متمرکز و درخشان اتاق عمل جراحی" : "Surgical theater bright lighting"}
+                  icon={<Sparkles className="h-3.5 w-3.5 text-cyan-300" />}
+                >
+                  {fa ? "جراحی" : "Surgical"}
+                </ActionButton>
+
+                <ActionButton
+                  onClick={() => setLightingPreset?.("radiology")}
+                  active={lightingPreset === "radiology"}
+                  title={fa ? "نور کنتراست بالا برای تفکیک اسکلت و برجستگی‌ها" : "High contrast & bone rim lighting"}
+                >
+                  {fa ? "کنتراست" : "Contrast"}
+                </ActionButton>
+
+                <span aria-hidden className="h-3.5 w-px bg-slate-800" />
+
+                <ActionButton
+                  onClick={() => setBackground?.(background === "dark" ? "light" : "dark")}
+                  title={fa ? `تغییر پس‌زمینه (فعلی: ${background === "dark" ? "تیره" : "روشن"})` : `Toggle background (current: ${background})`}
+                >
+                  {background === "dark" ? (fa ? "تیره" : "Dark") : (fa ? "روشن" : "Light")}
                 </ActionButton>
               </>
             )}
