@@ -38,11 +38,6 @@
     ],
     "resources": {
       "../engine/dist/hoomaan-engine/": "hoomaan-engine/",
-      "../tools/hoomaan_mcp/atlas.py": "hoomaan-mcp/atlas.py",
-      "../tools/hoomaan_mcp/scene.py": "hoomaan-mcp/scene.py",
-      "../tools/hoomaan_mcp/bridge.py": "hoomaan-mcp/bridge.py",
-      "../tools/hoomaan_mcp/pipe_server.py": "hoomaan-mcp/pipe_server.py",
-      "../tools/hoomaan_mcp/INSTALLED.md": "hoomaan-mcp/INSTALLED.md",
       "../LICENSE": "LICENSE",
       "../LICENSES/Apache-2.0.txt": "LICENSES/Apache-2.0.txt",
       "../NOTICE": "NOTICE"

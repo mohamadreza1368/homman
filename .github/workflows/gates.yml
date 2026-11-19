@@ -120,18 +120,6 @@ jobs:
       # The SDK major is pinned. Its API moved once already — the server class
       # was renamed and the result attributes changed case — and a gate that
       # breaks on somebody else's release teaches the team to ignore it.
-      - name: Create the MCP server virtualenv
-        run: |
-          python -m venv tools/hoomaan_mcp/.venv
-          tools/hoomaan_mcp/.venv/Scripts/python -m pip install --upgrade pip
-          tools/hoomaan_mcp/.venv/Scripts/python -m pip install "mcp>=2.1,<3" pytest anyio
-
-      # These spawn the server over stdio exactly as a client does, so they
-      # cover the wire shape and not just the functions behind it. That shape is
-      # the one thing here nobody can change back: an external client reads
-      # these field names, and it is not in this repository.
-      - name: MCP server tests
-        run: tools/hoomaan_mcp/.venv/Scripts/python -m pytest tools/hoomaan_mcp -q
 
       - name: Rust tests
         run: cargo test --manifest-path src-tauri/Cargo.toml

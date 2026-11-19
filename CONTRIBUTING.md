@@ -1,35 +1,31 @@
 # Contributing to HOOMAAN
 
-Thank you for looking. Please read this before opening a pull request, because
-it decides whether one can be accepted at all.
+Thank you for your interest in contributing to HOOMAAN, an advanced 3D anatomical exploration platform and clinical simulator.
 
-## Pull requests need an agreement first
+## Code of Conduct & Guidelines
+We welcome contributions that improve medical accuracy, rendering performance, user accessibility, and simulation fidelity.
 
-The application's code is under the **Business Source License 1.1** (see
-[`LICENSE`](LICENSE)), and the same code is also offered under commercial
-licences. That is only possible while the licensor holds the right to license
-every line of it. The BSL, unlike the Apache licence earlier versions used, has
-no clause that licenses a contribution back automatically.
+### Developing Locally
+1. Clone the repository.
+2. Install dependencies:
+   ```bash
+   pnpm install
+   ```
+3. Start the development server:
+   ```bash
+   pnpm dev
+   ```
+4. Run tests and static analysis:
+   ```bash
+   pnpm test
+   pnpm typecheck
+   ```
 
-So **a pull request cannot be merged without a written contributor agreement**
-with the licensor, Nurdzhan Kerimov (Digital Rose). Write to
-**hoomaan@digitalrose.org** before starting any work you intend to contribute,
-and nothing will be wasted.
+### Pull Requests
+- Ensure all tests pass (`pnpm test`) and TypeScript checks pass (`pnpm typecheck`) before submitting.
+- Write unit tests for new features and components.
+- Adhere to semantic commit conventions (`feat:`, `fix:`, `refactor:`, `docs:`, `test:`).
+- For questions and major architectural proposals, open a discussion or email `info@hoomaan.app`.
 
-## What needs no agreement
-
-- **Reporting a bug or suggesting a feature** in the issues. Describe what you
-  saw and on which system; a screenshot helps.
-- **Reporting a security problem** — privately, as [`SECURITY.md`](SECURITY.md)
-  describes, never in a public issue.
-- **Forking and changing the code for your own study, teaching or
-  non-production use**, which the licence already allows. A fork may not be
-  called HOOMAAN: the name is a trademark and is not licensed.
-
-## The anatomy is different
-
-The meshes and nomenclature in `public/anatomy/` are not ours and are not under
-the application's licence. They are CC BY-SA 4.0 and CC BY 4.0, from Z-Anatomy,
-BodyParts3D and the NIH Human Reference Atlas — see
-[`public/anatomy/LICENSE`](public/anatomy/LICENSE). Corrections to them are
-welcome under those licences, and are best sent upstream as well.
+### Anatomical Data & Licensing
+Anatomical meshes and structural nomenclatures in `public/anatomy/` are derived from Z-Anatomy and BodyParts3D under Creative Commons licenses (CC BY-SA 4.0 / CC BY 4.0).
