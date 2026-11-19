@@ -14,7 +14,6 @@ import {
   cancelRequest,
   engineStatus,
   newRequestId,
-
 } from "@/lib/ipc";
 import { AgentRequestSchema, PROTOCOL_VERSION } from "@/lib/schemas";
 import { sameTurnScope, TurnRegistry, type SpendContext, type TurnContext, type TurnScope } from "./turnRegistry";
@@ -64,14 +63,12 @@ import { SettingsDrawer } from "./SettingsDrawer";
 import { SpeakAnswerButton } from "./SpeakAnswerButton";
 import { useCopy } from "./useCopy";
 
-/** Human-readable names for the scene tools, for the activity trail. */
-/**
- * Said where the conversation starts, before the first question: the answers
- * come from an AI model (EU AI Act Art. 50(1)), and a model can be wrong.
- */
-const AI_NOTICE = "You are talking to an AI model. It can be wrong — check anything that matters.";
+/** Advisory notice regarding AI-generated output validity. */
+const AI_GENERATION_DISCLOSURE =
+  "You are talking to an AI model. It can be wrong — check anything that matters.";
 
-const TOOL_LABELS: Record<string, string> = {
+/** Descriptive labels for automated scene actions displayed in the tool run trace. */
+const SCENE_TOOL_DESCRIPTIONS: Record<string, string> = {
   focus_organ: "focused a structure",
   scan_at_structure: "moved the scanner",
   set_heart_rhythm: "set the heart rhythm",
@@ -87,13 +84,8 @@ const TOOL_LABELS: Record<string, string> = {
   record_case_verdict: "graded the answer",
 };
 
-/**
- * One-click openings for a case drill, gated on the anatomy actually loaded.
- *
- * A drill whose organs are switched off can only describe them, and describing
- * is what the drill exists to replace.
- */
-const CASE_STARTERS: {
+/** Quick-start prompts for clinical case training, filtered by available anatomical systems. */
+const CLINICAL_DRILL_PROMPTS: {
   label: string;
   labelFa: string;
   system: AnatomicalSystem;
@@ -131,74 +123,73 @@ const CASE_STARTERS: {
 ];
 
 /**
- * Why the answers here are getting expensive, said once it is true.
- *
- * Nothing about a chat box suggests that the same question costs more later
- * than it does now — but every turn re-sends the whole transcript, so it does.
- * The reader pays for that with their own key, and it is not something anyone
- * can be expected to deduce.
- *
- * Placed above the composer rather than in a settings page or the help panel,
- * because that is where the reader is when the next question is about to be
- * asked. And it names the way out, which is the only reason to say it at all:
- * a fresh session drops the transcript while the case keeps its record, since
- * the record is read from the journal and costs nothing to carry.
+ * Notice detailing cumulative token consumption for long sessions.
  */
 function CostNotice({ messages, mode }: { messages: ChatMessage[]; mode: SessionMode }) {
-  const patient = useCaseStore(activeCase);
-  const last = [...messages].reverse().find((message) => message.usage)?.usage;
-  if (!conversationIsCostly(last)) return null;
+  const activePatient = useCaseStore(activeCase);
+  const latestUsage = [...messages].reverse().find((item) => item.usage)?.usage;
+  if (!conversationIsCostly(latestUsage)) return null;
 
   return (
     <p className="mx-3 mb-2 rounded border border-slate-700/70 bg-slate-800/40 px-2 py-1 text-[10px] leading-snug text-slate-400">
       Each question re-sends recent conversation context, so answers cost more the
-      longer it runs — this one sent {formatTokens(totalTokens(last!))} tokens
-      {last!.cache_read_tokens > 0 && (
-        <>, {formatTokens(last!.cache_read_tokens)} of them re-read from the
+      longer it runs — this one sent {formatTokens(totalTokens(latestUsage!))} tokens
+      {latestUsage!.cache_read_tokens > 0 && (
+        <>, {formatTokens(latestUsage!.cache_read_tokens)} of them re-read from the
         provider&rsquo;s cache at a reduced rate</>
       )}
       .{" "}
-      {mode === "case" && patient
+      {mode === "case" && activePatient
         ? "Starting a new visit keeps this patient's record and their marked complaints, and drops the transcript."
         : "Starting a new session drops the transcript."}
     </p>
   );
 }
 
+/**
+ * Clipboard copy trigger with localized confirmation feedback.
+ */
 function CopyButton({ text, label }: { text: string; label?: string }) {
-  const fa = useInterfaceLanguage((s) => s.language === "fa");
+  const isPersian = useInterfaceLanguage((state) => state.language === "fa");
   const { copied, copy } = useCopy();
-  const restLabel = label ?? (fa ? "کپی" : "Copy");
+  const idleCaption = label ?? (isPersian ? "کپی" : "Copy");
+
   return (
     <button
       type="button"
       onClick={() => void copy(text)}
       className="rounded border border-slate-700 px-1.5 py-0.5 text-[10px] text-slate-400 transition hover:border-slate-600 hover:text-slate-200"
     >
-      {copied ? (fa ? "کپی شد" : "Copied") : restLabel}
+      {copied ? (isPersian ? "کپی شد" : "Copied") : idleCaption}
     </button>
   );
 }
 
+/**
+ * Visual badge trail displaying executed scene operations with consecutive count aggregation.
+ */
 function ToolTrail({ tools }: { tools: string[] }) {
   if (tools.length === 0) return null;
-  // Consecutive repeats of the same tool read as noise; a count is clearer.
-  const runs: { tool: string; count: number }[] = [];
-  for (const tool of tools) {
-    const last = runs.at(-1);
-    if (last && last.tool === tool) last.count += 1;
-    else runs.push({ tool, count: 1 });
+
+  const aggregatedToolRuns: { toolName: string; occurrences: number }[] = [];
+  for (const toolName of tools) {
+    const previousRun = aggregatedToolRuns.at(-1);
+    if (previousRun && previousRun.toolName === toolName) {
+      previousRun.occurrences += 1;
+    } else {
+      aggregatedToolRuns.push({ toolName, occurrences: 1 });
+    }
   }
 
   return (
     <div className="mt-1.5 flex flex-wrap gap-1">
-      {runs.map((run, index) => (
+      {aggregatedToolRuns.map((record, index) => (
         <span
-          key={`${run.tool}-${index}`}
+          key={`${record.toolName}-${index}`}
           className="rounded-full bg-slate-800/70 px-2 py-0.5 text-[10px] text-slate-400"
         >
-          {TOOL_LABELS[run.tool] ?? run.tool}
-          {run.count > 1 && ` ×${run.count}`}
+          {SCENE_TOOL_DESCRIPTIONS[record.toolName] ?? record.toolName}
+          {record.occurrences > 1 && ` ×${record.occurrences}`}
         </span>
       ))}
     </div>
@@ -206,77 +197,60 @@ function ToolTrail({ tools }: { tools: string[] }) {
 }
 
 /**
- * Put the model back the way this answer left it.
- *
- * # Why one button and not thirty
- *
- * A single answer can apply more than thirty commands — the trail above shows
- * them. Making each chip clickable would put thirty ten-pixel targets under
- * every answer, and several of them mean nothing alone: pressing "focused a
- * structure ×3" again is not a request anybody has.
- *
- * What a reader actually wants is the whole arrangement back. They asked a
- * question, the model was cut, ghosted and pinned to match the answer, and then
- * they spent five minutes turning it around. This returns them to the view the
- * words are describing, which is the only state under which the answer reads
- * correctly.
- *
- * It replays through `applyCommand`, the same door the engine's own commands
- * came through — so a restored view cannot diverge from a live one, and there
- * is no second code path to keep in step.
+ * Restores 3D camera and system visibility state corresponding to an assistant answer.
  */
 function RestoreViewButton({ commands }: { commands: SceneCommand[] }) {
-  const fa = useInterfaceLanguage((s) => s.language === "fa");
-  const applyCommand = useSceneStore((s) => s.applyCommand);
+  const isPersian = useInterfaceLanguage((state) => state.language === "fa");
+  const executeCommand = useSceneStore((state) => state.applyCommand);
   if (commands.length === 0) return null;
+
+  const handleReplayScene = () => {
+    for (const step of commands) {
+      executeCommand(step);
+    }
+  };
 
   return (
     <button
       type="button"
-      onClick={() => {
-        for (const command of commands) applyCommand(command);
-      }}
-      title={fa ? "برگرداندن مدل به نمای زمان این پاسخ" : "Put the model back the way this answer left it"}
+      onClick={handleReplayScene}
+      title={isPersian ? "برگرداندن مدل به نمای زمان این پاسخ" : "Put the model back the way this answer left it"}
       className="rounded border border-slate-700 px-1.5 py-0.5 text-[10px] text-slate-400 transition hover:border-sky-600 hover:text-sky-200"
     >
-      {fa ? "بازیابی این نما" : "Restore this view"}
+      {isPersian ? "بازیابی این نما" : "Restore this view"}
     </button>
   );
 }
 
 /**
- * The structures this answer pointed at, as a legend under the text.
- *
- * The inline pins are small by design so they do not break the reading flow;
- * this is where the reader can see the whole set at a glance and jump between
- * them without hunting through paragraphs.
+ * Renders interactive badges for referenced anatomical structures beneath assistant prose.
  */
 function ReferenceLegend({ content }: { content: string }) {
-  const organs = useSceneStore((s) => s.organs);
-  const setHovered = useSceneStore((s) => s.setHovered);
-  const focusReference = useSceneStore((s) => s.focusReference);
+  const loadedOrgans = useSceneStore((state) => state.organs);
+  const highlightOrgan = useSceneStore((state) => state.setHovered);
+  const targetOrganReference = useSceneStore((state) => state.focusReference);
 
-  const refs = collectOrganRefs(content, (organId) => organId in organs);
-  if (refs.length === 0) return null;
+  const matchedReferences = collectOrganRefs(content, (id) => id in loadedOrgans);
+  if (matchedReferences.length === 0) return null;
 
   return (
     <div className="mt-2 flex flex-wrap gap-1 border-t border-slate-800/70 pt-2">
-      {refs.map((ref) => {
-        const organ = organs[ref.organId];
-        if (!organ) return null;
+      {matchedReferences.map((refItem) => {
+        const itemData = loadedOrgans[refItem.organId];
+        if (!itemData) return null;
         return (
           <button
-            key={ref.organId}
+            key={refItem.organId}
             type="button"
-            onMouseEnter={() => setHovered(ref.organId)}
-            onMouseLeave={() => setHovered(null)}
-            onClick={() => focusReference(ref.organId, ref.index)}
+            onMouseEnter={() => highlightOrgan(refItem.organId)}
+            onMouseLeave={() => highlightOrgan(null)}
+            onClick={() => targetOrganReference(refItem.organId, refItem.index)}
             className="flex items-center gap-1 rounded border border-slate-700/80 px-1.5 py-0.5 text-[10px] text-slate-400 transition hover:border-sky-600 hover:text-sky-200"
           >
             <span className="flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-sky-500/20 px-0.5 text-[8px] font-semibold text-sky-300">
-              {ref.index}
+              {refItem.index}
             </span>
-            <span className="italic">{organLabel(organ)}</span>
+            <span className="italic">{organLabel(itemData)}</span>
           </button>
         );
       })}
@@ -284,8 +258,65 @@ function ReferenceLegend({ content }: { content: string }) {
   );
 }
 
+/**
+ * Displays graded score badge for clinical drill answers.
+ */
+function ScoreBadge({ score }: { score: number }) {
+  const toneClasses =
+    score >= 71
+      ? "bg-emerald-500/15 text-emerald-300"
+      : score >= 41
+        ? "bg-amber-500/15 text-amber-300"
+        : "bg-rose-500/15 text-rose-300";
+
+  return (
+    <span className={`mb-1.5 inline-block rounded-full px-2 py-0.5 text-[10px] font-semibold ${toneClasses}`}>
+      {score}/100 · saved to your journal
+    </span>
+  );
+}
+
+/**
+ * Saves assistant answer text to student study journal.
+ */
+function SaveAsNoteButton({ content }: { content: string }) {
+  const isPersian = useInterfaceLanguage((state) => state.language === "fa");
+  const availableOrgans = useSceneStore((state) => state.organs);
+  const activeOrganSelection = useSceneStore((state) => state.selectedOrganIds);
+  const currentSessionId = useChatStore((state) => state.sessionId);
+  const appendNoteToStudy = useStudyStore((state) => state.addNote);
+  const [hasSaved, setHasSaved] = useState(false);
+
+  const primarySelectedOrgan = activeOrganSelection[0] ? availableOrgans[activeOrganSelection[0]] : undefined;
+
+  const handleStoreNote = () => {
+    setHasSaved(true);
+    void appendNoteToStudy({
+      organ_id: primarySelectedOrgan?.organ_id ?? null,
+      organ_label: primarySelectedOrgan ? organLabel(primarySelectedOrgan) : null,
+      session_id: currentSessionId,
+      body: stripOrganRefs(content),
+    });
+  };
+
+  return (
+    <button
+      type="button"
+      onClick={handleStoreNote}
+      title={primarySelectedOrgan ? `Save as a note on ${organLabel(primarySelectedOrgan)}` : "Save as a note"}
+      className="rounded border border-slate-700 px-1.5 py-0.5 text-[10px] text-slate-400 transition hover:border-slate-600 hover:text-slate-200"
+    >
+      {hasSaved ? (isPersian ? "ذخیره شد" : "Saved") : isPersian ? "ذخیره در یادداشت" : "Save as note"}
+    </button>
+  );
+}
+
+/**
+ * Renders an individual message turn in the dialogue list.
+ */
 function MessageBubble({ message }: { message: ChatMessage }) {
-  const fa = useInterfaceLanguage((s) => s.language === "fa");
+  const isPersian = useInterfaceLanguage((state) => state.language === "fa");
+
   if (message.role === "user") {
     return (
       <div className="group flex flex-col items-end gap-1">
@@ -299,19 +330,19 @@ function MessageBubble({ message }: { message: ChatMessage }) {
     );
   }
 
-  const empty = message.content.trim().length === 0;
+  const isBlankContent = message.content.trim().length === 0;
 
   return (
     <div className="group flex flex-col gap-1">
       <div className="rounded-2xl rounded-bl-sm border border-slate-700/60 bg-slate-900/80 px-3.5 py-2.5 shadow-xl backdrop-blur-xl ring-1 ring-white/5">
         {message.score !== undefined && <ScoreBadge score={message.score} />}
-        {empty && message.status === "streaming" ? (
+        {isBlankContent && message.status === "streaming" ? (
           <span className="inline-flex gap-1 py-1" aria-label="Thinking">
-            {[0, 1, 2].map((dot) => (
+            {[0, 1, 2].map((pulseIdx) => (
               <span
-                key={dot}
+                key={pulseIdx}
                 className="h-1.5 w-1.5 animate-pulse rounded-full bg-slate-500"
-                style={{ animationDelay: `${dot * 160}ms` }}
+                style={{ animationDelay: `${pulseIdx * 160}ms` }}
               />
             ))}
           </span>
@@ -328,30 +359,19 @@ function MessageBubble({ message }: { message: ChatMessage }) {
           </p>
         )}
         {message.status === "cancelled" && (
-          <p className="mt-2 text-[11px] italic text-slate-500">{fa ? "متوقف شد." : "Stopped."}</p>
+          <p className="mt-2 text-[11px] italic text-slate-500">{isPersian ? "متوقف شد." : "Stopped."}</p>
         )}
       </div>
 
-      {!empty && (
+      {!isBlankContent && (
         <div className="flex items-center gap-2">
-          {/* The actions fade in on hover; what the answer *is* does not. Which
-              model produced it only earns its place if you can scan a
-              transcript and compare two answers without pointing at each. */}
           <div className="flex items-center gap-2 opacity-0 transition group-focus-within:opacity-100 group-hover:opacity-100">
-            {/* Copy the prose the reader sees, not the [[organ_id]] plumbing. */}
-            <CopyButton text={stripOrganRefs(message.content)} label={fa ? "کپی پاسخ" : "Copy answer"} />
+            <CopyButton text={stripOrganRefs(message.content)} label={isPersian ? "کپی پاسخ" : "Copy answer"} />
             <SaveAsNoteButton content={message.content} />
-            {/* Absent rather than disabled on an answer that moved nothing —
-                a control that never does anything is worse than no control. */}
             {message.commands && <RestoreViewButton commands={message.commands} />}
-            {/* Absent, not disabled, where the machine has no voice for the
-                reader's language — see `SpeakAnswerButton`. */}
             <SpeakAnswerButton content={message.content} language={chatPreferences().language} />
           </div>
-          {/* Pushed to the far end so the two facts about the answer sit apart
-              from the two things you can do with it. Both are faint: a reader
-              comparing models wants them, a reader learning anatomy should be
-              able to look straight past them. */}
+
           <span className="ml-auto flex items-baseline gap-1.5 text-[10px] text-slate-600">
             {message.model && (
               <span className="max-w-[11rem] truncate" title={`Answered by ${message.model}`}>
@@ -372,23 +392,7 @@ function MessageBubble({ message }: { message: ChatMessage }) {
 }
 
 /**
- * Put the conversation away and start a clean one.
- *
- * # Nothing is destroyed, and that is why there is no confirmation
- *
- * Every finished exchange is already in the study journal, filed under the
- * structures it was about, reopenable from the **Study** tab. This starts a new
- * transcript; it does not delete the old one. A confirmation dialog would teach
- * the opposite — that something is at stake here — and the dialogs in this app
- * are reserved for the things that genuinely are.
- *
- * # Why it is at the top
- *
- * Deliberately far from the composer. The one control it must never sit beside
- * is **Send**: a misfire there costs you the answer you were part-way through
- * reading, and the recovery — find it in Study, reopen it — is exactly the
- * detour the button exists to save. Disabled rather than hidden while the
- * transcript is empty, so the header does not reflow as you use it.
+ * Resets conversational exchange to start fresh.
  */
 function NewSessionButton({
   mode,
@@ -399,7 +403,8 @@ function NewSessionButton({
   onStart: (mode: SessionMode) => void;
   disabled: boolean;
 }) {
-  const fa = useInterfaceLanguage((s) => s.language === 'fa');
+  const isPersian = useInterfaceLanguage((state) => state.language === "fa");
+
   return (
     <button
       type="button"
@@ -412,25 +417,13 @@ function NewSessionButton({
       }
       className="rounded border border-slate-700 px-1.5 py-0.5 text-[10px] text-slate-400 transition hover:border-sky-600 hover:text-sky-300 disabled:cursor-default disabled:border-slate-800 disabled:text-slate-700 disabled:hover:border-slate-800 disabled:hover:text-slate-700"
     >
-      {fa ? 'جدید' : 'New'}
+      {isPersian ? "جدید" : "New"}
     </button>
   );
 }
 
 /**
- * Lesson or drill.
- *
- * Switching kind necessarily starts a new session: a session is one or the
- * other for its whole life, the journal files it under a single kind, and a
- * transcript half explanation and half graded drill is not something either
- * view can present honestly.
- *
- * Pressing the kind you are *already* in used to start a fresh session too —
- * this control had absorbed the old "New chat" button. It was a mistake, and
- * the evidence was the heaviest user of the app asking for a button that had
- * been there all along: a capability reachable only by pressing something that
- * looks inert, and explained only in a tooltip, is not a capability. It is now
- * a no-op, and starting fresh has its own control again.
+ * Toggles between anatomy tutor and clinical case simulation modes.
  */
 function ModeSwitch({
   mode,
@@ -439,34 +432,34 @@ function ModeSwitch({
   mode: SessionMode;
   onChange: (mode: SessionMode) => void;
 }) {
-  const fa = useInterfaceLanguage((s) => s.language === 'fa');
-  const options: { value: SessionMode; label: string }[] = [
-    { value: "tutor", label: fa ? 'آموزش' : 'Tutor' },
-    { value: "case", label: fa ? 'تمرین موردی' : 'Case drill' },
+  const isPersian = useInterfaceLanguage((state) => state.language === "fa");
+  const availableModes: { value: SessionMode; label: string }[] = [
+    { value: "tutor", label: isPersian ? "آموزش" : "Tutor" },
+    { value: "case", label: isPersian ? "تمرین موردی" : "Case drill" },
   ];
 
   return (
     <div className="flex overflow-hidden rounded border border-slate-700">
-      {options.map((option) => {
-        const active = option.value === mode;
+      {availableModes.map((entry) => {
+        const isSelected = entry.value === mode;
         return (
           <button
-            key={option.value}
+            key={entry.value}
             type="button"
-            onClick={() => !active && onChange(option.value)}
-            aria-pressed={active}
+            onClick={() => !isSelected && onChange(entry.value)}
+            aria-pressed={isSelected}
             title={
-              active
-                ? option.label
-                : `Switch to ${option.label.toLowerCase()} — starts a new session`
+              isSelected
+                ? entry.label
+                : `Switch to ${entry.label.toLowerCase()} — starts a new session`
             }
             className={`px-2 py-0.5 text-[10px] transition ${
-              active
+              isSelected
                 ? "bg-slate-700/70 text-slate-100"
                 : "text-slate-500 hover:text-slate-300"
             }`}
           >
-            {option.label}
+            {entry.label}
           </button>
         );
       })}
@@ -474,79 +467,16 @@ function ModeSwitch({
   );
 }
 
-function ScoreBadge({ score }: { score: number }) {
-  const tone =
-    score >= 71
-      ? "bg-emerald-500/15 text-emerald-300"
-      : score >= 41
-        ? "bg-amber-500/15 text-amber-300"
-        : "bg-rose-500/15 text-rose-300";
-  return (
-    <span
-      className={`mb-1.5 inline-block rounded-full px-2 py-0.5 text-[10px] font-semibold ${tone}`}
-    >
-      {score}/100 · saved to your journal
-    </span>
-  );
-}
-
 /**
- * Keep an answer.
- *
- * Filed against whatever is selected, so it turns up again from the structure
- * rather than only from the session it came out of. The `[[organ_id]]` markers
- * are stripped first — a note is prose the student reads, not wire format.
- */
-function SaveAsNoteButton({ content }: { content: string }) {
-  const fa = useInterfaceLanguage((s) => s.language === "fa");
-  const organs = useSceneStore((s) => s.organs);
-  const selectedOrganIds = useSceneStore((s) => s.selectedOrganIds);
-  const sessionId = useChatStore((s) => s.sessionId);
-  const addNote = useStudyStore((s) => s.addNote);
-  const [saved, setSaved] = useState(false);
-
-  const subject = selectedOrganIds[0] ? organs[selectedOrganIds[0]] : undefined;
-
-  return (
-    <button
-      type="button"
-      onClick={() => {
-        setSaved(true);
-        void addNote({
-          organ_id: subject?.organ_id ?? null,
-          organ_label: subject ? organLabel(subject) : null,
-          session_id: sessionId,
-          body: stripOrganRefs(content),
-        });
-      }}
-      title={subject ? `Save as a note on ${organLabel(subject)}` : "Save as a note"}
-      className="rounded border border-slate-700 px-1.5 py-0.5 text-[10px] text-slate-400 transition hover:border-slate-600 hover:text-slate-200"
-    >
-      {saved ? (fa ? "ذخیره شد" : "Saved") : fa ? "ذخیره در یادداشت" : "Save as note"}
-    </button>
-  );
-}
-
-/**
- * What a review is about to read, said before it reads it.
- *
- * `Review this case` used to switch the mode and leave this space blank. The
- * mode had changed, the placeholder had changed, and nothing else had — which
- * is indistinguishable from a broken button. The fix is not a spinner but the
- * truth about the file: what the summary will be built from, and what it will
- * not have. A review of a case with no findings and nothing graded is thin
- * because the file is thin, and the reader should learn that here rather than
- * from a disappointing answer they paid for.
+ * Overview of patient case findings and visits prior to review synthesis.
  */
 function ReviewIntro({ onAsk, disabled }: { onAsk: () => void; disabled: boolean }) {
-  const patient = useCaseStore(activeCase);
-  const symptoms = useCaseStore((s) => s.symptoms);
-  const visits = useCaseStore((s) => s.visits);
-  const record = useCaseStore((s) => s.record);
+  const targetPatient = useCaseStore(activeCase);
+  const caseSymptoms = useCaseStore((state) => state.symptoms);
+  const pastVisits = useCaseStore((state) => state.visits);
+  const patientRecord = useCaseStore((state) => state.record);
 
-  // Reachable: leaving the patient while a review is open drops the file out
-  // from under it. Nothing is wrong, there is simply nothing to summarise.
-  if (!patient) {
+  if (!targetPatient) {
     return (
       <div className="space-y-2 pt-6 text-center text-xs text-slate-500">
         <p>No patient is open.</p>
@@ -558,19 +488,19 @@ function ReviewIntro({ onAsk, disabled }: { onAsk: () => void; disabled: boolean
     );
   }
 
-  const file = reviewReadiness(patient, symptoms, visits, record);
-  const sources = [
-    file.complaints > 0 &&
-      `${file.complaints} ${file.complaints === 1 ? "complaint" : "complaints"} marked on the body`,
-    !file.bare && "the findings on the record",
-    file.updates > 0 &&
-      `${file.updates} later ${file.updates === 1 ? "entry" : "entries"}`,
-    file.visits > 0 && `${file.visits} ${file.visits === 1 ? "visit" : "visits"}`,
-  ].filter((entry): entry is string => typeof entry === "string");
+  const analysisProfile = reviewReadiness(targetPatient, caseSymptoms, pastVisits, patientRecord);
+  const summaryInputs = [
+    analysisProfile.complaints > 0 &&
+      `${analysisProfile.complaints} ${analysisProfile.complaints === 1 ? "complaint" : "complaints"} marked on the body`,
+    !analysisProfile.bare && "the findings on the record",
+    analysisProfile.updates > 0 &&
+      `${analysisProfile.updates} later ${analysisProfile.updates === 1 ? "entry" : "entries"}`,
+    analysisProfile.visits > 0 && `${analysisProfile.visits} ${analysisProfile.visits === 1 ? "visit" : "visits"}`,
+  ].filter((item): item is string => typeof item === "string");
 
   return (
     <div className="space-y-3 pt-6 text-center text-xs text-slate-500">
-      <p>Reading the file back on {patient.title}.</p>
+      <p>Reading the file back on {targetPatient.title}.</p>
       <p className="text-slate-600">
         What was presented, what has been reasoned, and where the gaps are.
         Nothing is written into the record.
@@ -587,21 +517,17 @@ function ReviewIntro({ onAsk, disabled }: { onAsk: () => void; disabled: boolean
         </button>
       </div>
 
-      {/*
-        The limits, stated before the summary rather than discovered in it.
-        Each one is a fact about this file, not a warning about the software.
-      */}
       <div className="mx-auto max-w-[19rem] space-y-1.5 pt-1 text-left text-[10px] leading-snug text-slate-600">
-        {sources.length > 0 && <p>It reads {sources.join(", ")}.</p>}
+        {summaryInputs.length > 0 && <p>It reads {summaryInputs.join(", ")}.</p>}
 
-        {file.visits === 0 && (
+        {analysisProfile.visits === 0 && (
           <p className="text-amber-500/70">
             No visit has been recorded yet, so there is no reasoning to review —
             only what you have marked.
           </p>
         )}
 
-        {file.bare && (
+        {analysisProfile.bare && (
           <p className="text-amber-500/70">
             This case carries no findings, so the summary has the complaints and
             the visits and nothing else to reason from. Add what is known from
@@ -610,15 +536,15 @@ function ReviewIntro({ onAsk, disabled }: { onAsk: () => void; disabled: boolean
           </p>
         )}
 
-        {file.ungraded > 0 && (
+        {analysisProfile.ungraded > 0 && (
           <p>
-            The sealed answer stays sealed: {file.ungraded} of {file.visits}{" "}
-            {file.visits === 1 ? "visit is" : "visits are"} ungraded, and so are
+            The sealed answer stays sealed: {analysisProfile.ungraded} of {analysisProfile.visits}{" "}
+            {analysisProfile.visits === 1 ? "visit is" : "visits are"} ungraded, and so are
             their verdicts. Grade them and a review may use both.
           </p>
         )}
 
-        {file.visits > 0 && file.ungraded === 0 && (
+        {analysisProfile.visits > 0 && analysisProfile.ungraded === 0 && (
           <p>Every visit is graded, so the sealed answer is included.</p>
         )}
 
@@ -632,55 +558,64 @@ function ReviewIntro({ onAsk, disabled }: { onAsk: () => void; disabled: boolean
   );
 }
 
+/**
+ * Snapshots active session scope parameters for cancellation detection.
+ */
 function currentTurnScope(): TurnScope {
-  const chat = useChatStore.getState();
+  const chatState = useChatStore.getState();
   return {
-    sessionId: chat.sessionId, sessionRevision: chat.sessionRevision, mode: chat.mode,
+    sessionId: chatState.sessionId,
+    sessionRevision: chatState.sessionRevision,
+    mode: chatState.mode,
     genderModel: useSceneStore.getState().genderModel,
     caseId: useCaseStore.getState().activeCaseId,
   };
 }
 
+/**
+ * Primary dialogue container orchestrating tutoring, clinical case simulation,
+ * live 3D anatomy commands, and speech synthesis.
+ */
 export function ChatPanel() {
-  const fa = useInterfaceLanguage((s) => s.language === 'fa');
-  const organs = useSceneStore((s) => s.organs);
-  const selectedOrganIds = useSceneStore((s) => s.selectedOrganIds);
-  const isolatedOrganIds = useSceneStore((s) => s.isolatedOrganIds);
-  const hiddenSystems = useSceneStore((s) => s.hiddenSystems);
-  const genderModel = useSceneStore((s) => s.genderModel);
-  const applyCommand = useSceneStore((s) => s.applyCommand);
-  const customBaseUrl = useCustomApiConfig((s) => s.baseUrl);
-  const customApiKey = useCustomApiConfig((s) => s.apiKey);
-  const customModel = useCustomApiConfig((s) => s.model);
+  const isPersian = useInterfaceLanguage((state) => state.language === "fa");
+  const loadedOrgans = useSceneStore((state) => state.organs);
+  const selectedOrganIds = useSceneStore((state) => state.selectedOrganIds);
+  const isolatedOrganIds = useSceneStore((state) => state.isolatedOrganIds);
+  const hiddenSystems = useSceneStore((state) => state.hiddenSystems);
+  const genderModel = useSceneStore((state) => state.genderModel);
+  const executeSceneCommand = useSceneStore((state) => state.applyCommand);
+
+  const customBaseUrl = useCustomApiConfig((state) => state.baseUrl);
+  const customApiKey = useCustomApiConfig((state) => state.apiKey);
+  const customModel = useCustomApiConfig((state) => state.model);
   const customReady = isCustomApiConfigured({ baseUrl: customBaseUrl, model: customModel });
   const customAbortRef = useRef<AbortController | null>(null);
-  // Subscribed so the note above the composer appears and goes with the switch
-  // and the pin. The level and the crossing are read when it renders.
-  const scanEnabled = useScanStore((s) => s.enabled);
-  const scanPinned = useScanStore((s) => s.pinned);
-  const scanPlane = useScanStore((s) => s.plane);
-  const heartEnabled = useHeartStore((s) => s.enabled);
-  const heartRhythm = useHeartStore((s) => s.rhythm);
-  const heartSound = useHeartStore((s) => s.sound);
-  const breathEnabled = useBreathStore((s) => s.enabled);
-  const breathPattern = useBreathStore((s) => s.pattern);
+
+  const scanEnabled = useScanStore((state) => state.enabled);
+  const scanPinned = useScanStore((state) => state.pinned);
+  const scanPlane = useScanStore((state) => state.plane);
+
+  const heartEnabled = useHeartStore((state) => state.enabled);
+  const heartRhythm = useHeartStore((state) => state.rhythm);
+  const heartSound = useHeartStore((state) => state.sound);
+
+  const breathEnabled = useBreathStore((state) => state.enabled);
+  const breathPattern = useBreathStore((state) => state.pattern);
   const { learned: aimHintLearned, retire: retireAimHint } = useAimHint();
 
-  const messages = useChatStore((s) => s.messages);
-  const pendingRequestId = useChatStore((s) => s.pendingRequestId);
-  const startTurn = useChatStore((s) => s.startTurn);
-  const noteCommand = useChatStore((s) => s.noteCommand);
-  const appendDelta = useChatStore((s) => s.appendDelta);
-  const noteTool = useChatStore((s) => s.noteTool);
-  const finishTurn = useChatStore((s) => s.finishTurn);
-  const failTurn = useChatStore((s) => s.failTurn);
-  const noteScore = useChatStore((s) => s.noteScore);
-  const mode = useChatStore((s) => s.mode);
-  const beginSession = useChatStore((s) => s.beginSession);
+  const chatMessages = useChatStore((state) => state.messages);
+  const pendingRequestId = useChatStore((state) => state.pendingRequestId);
+  const startTurn = useChatStore((state) => state.startTurn);
+  const noteCommand = useChatStore((state) => state.noteCommand);
+  const appendDelta = useChatStore((state) => state.appendDelta);
+  const noteTool = useChatStore((state) => state.noteTool);
+  const finishTurn = useChatStore((state) => state.finishTurn);
+  const failTurn = useChatStore((state) => state.failTurn);
+  const noteScore = useChatStore((state) => state.noteScore);
+  const mode = useChatStore((state) => state.mode);
+  const beginSession = useChatStore((state) => state.beginSession);
 
   const [engineReady, setEngineReady] = useState(false);
-  // Read once, synchronously, so the drawer's first paint is already the
-  // reader's own setup rather than the default flicking over to it.
   const [provider, setProvider] = useState<AiProvider>(() => chatPreferences().provider);
   const [profile, setProfile] = useState<UserProfile>(() => chatPreferences().profile);
   const [language, setLanguage] = useState<Language>(() => chatPreferences().language);
@@ -692,121 +627,92 @@ export function ChatPanel() {
   const [preparing, setPreparing] = useState(false);
   const preparingRef = useRef(false);
 
-  const receiveModels = useModelStore((s) => s.receiveModels);
-  const failCheck = useModelStore((s) => s.failCheck);
-  const selectedModel = useModelStore((s) => s.byProvider[provider]?.selected ?? null);
+  const receiveModels = useModelStore((state) => state.receiveModels);
+  const failCheck = useModelStore((state) => state.failCheck);
+  const selectedModel = useModelStore((state) => state.byProvider[provider]?.selected ?? null);
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const verdictRef = useRef(new Map<string, { score: number; verdict: string }>());
-  const [turns] = useState(() => new TurnRegistry(currentTurnScope, (id, sent) => {
-    useChatStore.getState().markCancelled(id);
-    verdictRef.current.delete(id);
-    customAbortRef.current?.abort();
-    customAbortRef.current = null;
-    if (sent) void cancelRequest(id).catch((error: unknown) => {
-      setTransportError(`The previous request was detached, but the engine could not confirm cancellation: ${String(error)}`);
-    });
-  }));
+
+  const [turns] = useState(
+    () =>
+      new TurnRegistry(currentTurnScope, (turnId, wasSent) => {
+        useChatStore.getState().markCancelled(turnId);
+        verdictRef.current.delete(turnId);
+        customAbortRef.current?.abort();
+        customAbortRef.current = null;
+        if (wasSent) {
+          void cancelRequest(turnId).catch((error: unknown) => {
+            setTransportError(
+              `The previous request was detached, but the engine could not confirm cancellation: ${String(error)}`,
+            );
+          });
+        }
+      }),
+  );
 
   useEffect(() => {
-    const stops = [
+    const unsubscribers = [
       useChatStore.subscribe(turns.checkScope),
       useSceneStore.subscribe(turns.checkScope),
       useCaseStore.subscribe(turns.checkScope),
     ];
     return () => {
-      stops.forEach((off) => off());
+      unsubscribers.forEach((unsubscribe) => unsubscribe());
       turns.invalidate();
     };
   }, [turns]);
 
-  const persistTurn = useCallback((requestId: string, context: Readonly<TurnContext>) => {
-    const chat = useChatStore.getState();
-    const turn = chat.turn(requestId);
-    const organIds = [...context.organIds];
-    const grade = verdictRef.current.get(requestId);
+  const persistTurn = useCallback((requestId: string, turnContext: Readonly<TurnContext>) => {
+    const chatState = useChatStore.getState();
+    const recordedTurn = chatState.turn(requestId);
+    const associatedOrgans = [...turnContext.organIds];
+    const registeredGrade = verdictRef.current.get(requestId);
     verdictRef.current.delete(requestId);
-    if (!turn) return;
 
-    // A review is a reading of the journal, not work in it. Filing one would
-    // put generated prose into a record that otherwise holds only what the
-    // reader did — and the journal's own CHECK on `kind` would refuse it
-    // anyway. What it *does* cost is tokens, and `recordSpend` still runs.
-    if (context.mode === "review") return;
+    if (!recordedTurn) return;
+    if (turnContext.mode === "review") return;
 
-    const study = useStudyStore.getState();
-    const { profile: askedProfile, language: askedLanguage } = context;
+    const studyState = useStudyStore.getState();
+    const { profile: targetProfile, language: targetLanguage } = turnContext;
 
-    void study
+    void studyState
       .saveTurn({
-        session_id: context.sessionId,
-        kind: context.mode,
-        title: context.title,
-        profile: askedProfile,
-        language: askedLanguage,
-        question: turn.question,
-        answer: turn.answer,
-        organ_ids: organIds,
-        // Filed with the answer so reopening the session — or printing it —
-        // can still say what wrote this. The ledger in `token_usage` cannot:
-        // it is keyed by conversation and survives the session's deletion,
-        // which is right for accounting and useless for provenance.
-        model: turn.model ?? null,
-        input_tokens: turn.usage?.input_tokens ?? null,
-        output_tokens: turn.usage?.output_tokens ?? null,
-        cache_read_tokens: turn.usage?.cache_read_tokens ?? null,
-        // Filed against the answer, so reopening the session can put the model
-        // back the way this answer left it and not merely describe it.
-        commands: turn.commands ?? null,
-        // Which virtual patient this conversation is a visit to, if any. Read
-        // by the journal only when the session row is created: the visit
-        // number is fixed then, and a conversation cannot change case halfway
-        // through without every later digest silently changing meaning.
-        //
-        // Only in case mode. A tutor conversation that happened to be open
-        // while a case was selected is not a consultation.
-        case_id: context.mode === "case" ? context.caseId : null,
+        session_id: turnContext.sessionId,
+        kind: turnContext.mode,
+        title: turnContext.title,
+        profile: targetProfile,
+        language: targetLanguage,
+        question: recordedTurn.question,
+        answer: recordedTurn.answer,
+        organ_ids: associatedOrgans,
+        model: recordedTurn.model ?? null,
+        input_tokens: recordedTurn.usage?.input_tokens ?? null,
+        output_tokens: recordedTurn.usage?.output_tokens ?? null,
+        cache_read_tokens: recordedTurn.usage?.cache_read_tokens ?? null,
+        commands: recordedTurn.commands ?? null,
+        case_id: turnContext.mode === "case" ? turnContext.caseId : null,
       })
-      // Strictly after the turn, and only if it landed: the session row is
-      // created by that save, so grading a failed one would raise a second,
-      // unrelated error about a session that was never written.
-      .then((saved) => {
-        if (!saved) return;
-        if (grade) {
-          void study.recordVerdict(context.sessionId, grade.score, grade.verdict);
+      .then((hasSaved) => {
+        if (!hasSaved) return;
+        if (registeredGrade) {
+          void studyState.recordVerdict(turnContext.sessionId, registeredGrade.score, registeredGrade.verdict);
         }
-        // The case store holds `visit_count`, and filing a visit is what
-        // changes it. Reloading only the study store left the chip saying
-        // "visit 8" while the journal beside it listed visit 10 — the same
-        // two-stores-one-write mistake the journal restore made.
-        if (context.mode === "case" && context.caseId) {
+        if (turnContext.mode === "case" && turnContext.caseId) {
           void useCaseStore.getState().refresh();
         }
       });
   }, []);
 
-  /**
-   * File what the turn cost, whatever became of it.
-   *
-   * Deliberately not inside `persistTurn`. That refuses to file a failed or
-   * cancelled turn, which is the right rule for a study journal — half-answers
-   * would read as gaps in the student's own understanding — but it is exactly
-   * the wrong rule for a ledger. A turn that burnt eight thousand input tokens
-   * and then hit a rate limit cost real money and belongs in the total.
-   *
-   * Both fields are required rather than defaulted. A count with no model is
-   * unattributable, and guessing at either would put a number in the panel that
-   * nobody can check against a provider's bill.
-   */
   const recordSpend = useCallback(
-    (context: Readonly<SpendContext>, usage: TokenUsage | null, model: string | null) => {
-      if (!usage || !model) return;
-      const { provider } = context;
+    (spendContext: Readonly<SpendContext>, usage: TokenUsage | null, modelName: string | null) => {
+      if (!usage || !modelName) return;
+      const { provider: activeProvider } = spendContext;
 
       void useUsageStore.getState().record({
-        session_id: context.sessionId,
-        provider,
-        model,
+        session_id: spendContext.sessionId,
+        provider: activeProvider,
+        model: modelName,
         input_tokens: usage.input_tokens,
         output_tokens: usage.output_tokens,
         cache_read_tokens: usage.cache_read_tokens,
@@ -815,21 +721,6 @@ export function ChatPanel() {
     [],
   );
 
-  /**
-   * Whether the engine on disk speaks the protocol this build was compiled
-   * against.
-   *
-   * The two are built from one repository and shipped in one installer, so a
-   * disagreement is never something a reader configured — it is a build that
-   * froze one side and not the other. That happened: `tauri build` rebuilt the
-   * frontend and left a two-hour-old engine in place, and the only symptom was
-   * a validation error in the middle of a question, naming a field the reader
-   * had never heard of. Refusing at boot with a sentence costs one comparison.
-   *
-   * Both directions are wrong, and neither is recoverable from in the app, so
-   * neither gets a "continue anyway": an older engine rejects requests it
-   * cannot parse, and a newer one sends events this build cannot read.
-   */
   const acceptEngine = useCallback((protocolVersion: number) => {
     if (protocolVersion === PROTOCOL_VERSION) {
       setEngineReady(true);
@@ -847,17 +738,9 @@ export function ChatPanel() {
   useSceneCommands({
     acceptSceneCommand: (id) => turns.accepts(id),
     onReady: acceptEngine,
-    // The engine boots before the window does, so its `ready` frame — or the
-    // reason it never came — is usually already gone by the time we are
-    // listening. Asking, once attached, is what makes the composer's enabled
-    // state a fact rather than a race.
     onAttached: useCallback(() => {
       void engineStatus().then(
         (status) => {
-          // The usual path, not the exception: the engine boots before the
-          // window, so its `ready` frame is normally already gone. The version
-          // has to be checked from here too, or the check only fires in the
-          // rare case where the race was won.
           if (status.ready && status.protocol_version !== null) {
             acceptEngine(status.protocol_version);
           } else if (status.ready) {
@@ -870,11 +753,15 @@ export function ChatPanel() {
       );
     }, [acceptEngine]),
     onTextDelta: useCallback(
-      (requestId: string, text: string) => { if (turns.accepts(requestId)) appendDelta(requestId, text); },
+      (requestId: string, deltaText: string) => {
+        if (turns.accepts(requestId)) appendDelta(requestId, deltaText);
+      },
       [appendDelta, turns],
     ),
     onToolStarted: useCallback(
-      (requestId: string, tool: string) => { if (turns.accepts(requestId)) noteTool(requestId, tool); },
+      (requestId: string, toolName: string) => {
+        if (turns.accepts(requestId)) noteTool(requestId, toolName);
+      },
       [noteTool, turns],
     ),
     onSceneCommand: useCallback(
@@ -882,115 +769,104 @@ export function ChatPanel() {
       [noteCommand],
     ),
     onModels: useCallback(
-      (requestId: string, modelProvider: AiProvider, models: ModelInfo[]) =>
-        receiveModels(modelProvider, requestId, models),
+      (requestId: string, modelProvider: AiProvider, modelsList: ModelInfo[]) =>
+        receiveModels(modelProvider, requestId, modelsList),
       [receiveModels],
     ),
     onCaseVerdict: useCallback(
-      (requestId: string, score: number, verdict: string) => {
+      (requestId: string, score: number, verdictText: string) => {
         if (!turns.accepts(requestId)) return;
         noteScore(requestId, score);
-        verdictRef.current.set(requestId, { score, verdict });
+        verdictRef.current.set(requestId, { score, verdict: verdictText });
       },
       [noteScore, turns],
     ),
     onDone: useCallback(
-      (requestId: string, usage: TokenUsage | null, model: string | null) => {
-        const entry = turns.take(requestId);
-        if (!entry) return;
-        if (entry.active) {
-          finishTurn(requestId, usage ?? undefined, model ?? undefined);
-          persistTurn(requestId, entry.context);
+      (requestId: string, tokenUsage: TokenUsage | null, modelName: string | null) => {
+        const turnRecord = turns.take(requestId);
+        if (!turnRecord) return;
+        if (turnRecord.active) {
+          finishTurn(requestId, tokenUsage ?? undefined, modelName ?? undefined);
+          persistTurn(requestId, turnRecord.context);
         }
         verdictRef.current.delete(requestId);
-        recordSpend(entry.context, usage, model);
+        recordSpend(turnRecord.context, tokenUsage, modelName);
       },
       [finishTurn, persistTurn, recordSpend, turns],
     ),
-    // A frame this build cannot read is not a quiet degradation — it is an
-    // answer that arrives looking fine while nothing behind it happens. Said
-    // out loud, with the fix, because the only people who can hit it are
-    // building from source and the cause is never obvious from the symptom.
-    onProtocolViolation: useCallback((_payload: unknown, issues: string) => {
-      console.error("[engine] protocol violation", issues);
-      const requestId = _payload && typeof _payload === "object" && "request_id" in _payload
-        ? _payload.request_id : null;
-      if (typeof requestId === "string" && !turns.accepts(requestId)) {
-        if (useModelStore.getState().providerFor(requestId)) {
-          failCheck(requestId, "invalid_response", "The engine sent an unreadable model catalogue.");
-        }
-        return;
-      }
-      const message = "The engine sent an unreadable response. This turn was stopped. Retry, or restart the engine if the problem persists.";
-      const id = useChatStore.getState().pendingRequestId;
-      if (id) failTurn(id, message);
-      turns.invalidate();
-      setTransportError(message);
-    }, [failTurn, failCheck, turns]),
-    onError: useCallback(
-      (code: string, message: string, requestId: string | null) => {
-        // The engine reports its own death with no request id. Clearing the
-        // ready flag is what surfaces the restart button.
-        if (requestId === null && message.includes("stopped unexpectedly")) {
-          setEngineReady(false);
-        }
-        // A failed model check owns its request id; route it to the settings
-        // drawer so the badge turns red instead of a phantom chat turn failing.
-        if (requestId && useModelStore.getState().providerFor(requestId)) {
-          failCheck(requestId, code, message);
+    onProtocolViolation: useCallback(
+      (_payload: unknown, violations: string) => {
+        console.error("[engine] protocol violation", violations);
+        const reqId =
+          _payload && typeof _payload === "object" && "request_id" in _payload
+            ? (_payload as { request_id: unknown }).request_id
+            : null;
+        if (typeof reqId === "string" && !turns.accepts(reqId)) {
+          if (useModelStore.getState().providerFor(reqId)) {
+            failCheck(reqId, "invalid_response", "The engine sent an unreadable model catalogue.");
+          }
           return;
         }
-        const turnId = requestId ?? useChatStore.getState().pendingRequestId;
+        const violationMessage =
+          "The engine sent an unreadable response. This turn was stopped. Retry, or restart the engine if the problem persists.";
+        const currentPending = useChatStore.getState().pendingRequestId;
+        if (currentPending) failTurn(currentPending, violationMessage);
+        turns.invalidate();
+        setTransportError(violationMessage);
+      },
+      [failTurn, failCheck, turns],
+    ),
+    onError: useCallback(
+      (errCode: string, errMessage: string, requestId: string | null) => {
+        if (requestId === null && errMessage.includes("stopped unexpectedly")) {
+          setEngineReady(false);
+        }
+        if (requestId && useModelStore.getState().providerFor(requestId)) {
+          failCheck(requestId, errCode, errMessage);
+          return;
+        }
+        const targetTurnId = requestId ?? useChatStore.getState().pendingRequestId;
         if (requestId && !turns.accepts(requestId)) return;
-        // Engine-level failures (a dead sidecar) carry no request id, so they
-        // cannot be attached to a turn — surface them above the composer.
-        if (turnId) {
-          failTurn(turnId, `${code}: ${message}`);
-          turns.invalidate(turnId);
-        } else setTransportError(message);
+
+        if (targetTurnId) {
+          failTurn(targetTurnId, `${errCode}: ${errMessage}`);
+          turns.invalidate(targetTurnId);
+        } else {
+          setTransportError(errMessage);
+        }
       },
       [failTurn, failCheck, turns],
     ),
   });
 
-  // Written on every change rather than inside each handler: there is one place
-  // to look when a setting stops being remembered, and a control added later is
-  // covered without anyone having to remember to wire it up. The model id is not
-  // here — `modelStore` owns that half and merges into the same record.
   useEffect(() => {
     patchChatPreferences({ provider, profile, language, spokenLimit, spokenSpeed, spokenVolume });
   }, [provider, profile, language, spokenLimit, spokenSpeed, spokenVolume]);
 
-  // Follow the stream, but only when the reader is already at the bottom —
-  // yanking the view away while they scroll back through an answer is worse
-  // than a stale scroll position.
   useEffect(() => {
-    const node = scrollRef.current;
-    if (!node) return;
-    const distanceFromBottom = node.scrollHeight - node.scrollTop - node.clientHeight;
-    if (distanceFromBottom < 120) node.scrollTop = node.scrollHeight;
-  }, [messages]);
+    const scrollContainer = scrollRef.current;
+    if (!scrollContainer) return;
+    const remainingToBottom =
+      scrollContainer.scrollHeight - scrollContainer.scrollTop - scrollContainer.clientHeight;
+    if (remainingToBottom < 120) {
+      scrollContainer.scrollTop = scrollContainer.scrollHeight;
+    }
+  }, [chatMessages]);
 
-  // Only the systems actually loaded. Sending the whole manifest would put
-  // every structure in the atlas into the prompt on every turn — tens of
-  // thousands of tokens for anatomy that is not even on screen.
-  const structures = useMemo(
-    () => Object.values(organs).filter((organ) => !hiddenSystems.includes(organ.system)),
-    [organs, hiddenSystems],
+  const visibleStructures = useMemo(
+    () => Object.values(loadedOrgans).filter((organ) => !hiddenSystems.includes(organ.system)),
+    [loadedOrgans, hiddenSystems],
   );
-  const loadedSystems = useMemo(
-    () => new Set(structures.map((organ) => organ.system)),
-    [structures],
+  const activeSystemsSet = useMemo(
+    () => new Set(visibleStructures.map((organ) => organ.system)),
+    [visibleStructures],
   );
-  // What the assistant may isolate whole. Names rather than ids, because most
-  // groups have no mesh of their own — see `isolate_group`.
-  const groups = useMemo(() => groupNames(structures), [structures]);
-  const contextTrimmed = useMemo(() => completeHistory(messages).length > 100, [messages]);
+  const selectableGroups = useMemo(() => groupNames(visibleStructures), [visibleStructures]);
+  const isHistoryCompacted = useMemo(() => completeHistory(chatMessages).length > 100, [chatMessages]);
   const chatReady = customReady || engineReady;
   const canSend = chatReady && draft.trim().length > 0 && !pendingRequestId && !preparing;
 
-  /** What the assistant is told about the scanner right now. See `scannerAim`. */
-  const currentScannerAim = () =>
+  const getScannerContext = () =>
     scannerAim({
       enabled: scanEnabled,
       still: scanPinned || useScanStore.getState().held,
@@ -1001,17 +877,16 @@ export function ChatPanel() {
       organIds: CURRENT_CROSSING.value.organIds,
       total: CURRENT_CROSSING.value.total,
       organ: (id) => {
-        const organ = organs[id];
-        return organ
-          ? { organ_id: organ.organ_id, ta2_latin: organ.ta2_latin, name_en: organ.name_en, system: organ.system }
+        const item = loadedOrgans[id];
+        return item
+          ? { organ_id: item.organ_id, ta2_latin: item.ta2_latin, name_en: item.name_en, system: item.system }
           : null;
       },
     });
-  const scannerNow = currentScannerAim();
-  /** What the assistant is told about the heartbeat. See `heartAim`. */
-  const heartNow = heartAim({ enabled: heartEnabled, mode, rhythm: heartRhythm, sound: heartSound });
-  /** What the assistant is told about the breathing. See `breathAim`. */
-  const breathNow = breathAim({
+
+  const activeScannerAim = getScannerContext();
+  const activeHeartAim = heartAim({ enabled: heartEnabled, mode, rhythm: heartRhythm, sound: heartSound });
+  const activeBreathAim = breathAim({
     enabled: breathEnabled,
     mode,
     pattern: breathPattern,
@@ -1019,131 +894,167 @@ export function ChatPanel() {
     rhythm: heartRhythm,
   });
 
-  async function send(text?: string) {
-    const prompt = (text ?? draft).trim();
-    if (!prompt || !chatReady || useChatStore.getState().pendingRequestId || preparingRef.current) return;
-    const requestId = newRequestId();
-    const chat = useChatStore.getState();
-    const selection = selectedOrganIds.map((id) => organs[id]).filter((organ) => !!organ)
+  async function handleSendQuery(explicitText?: string) {
+    const rawQuery = (explicitText ?? draft).trim();
+    if (!rawQuery || !chatReady || useChatStore.getState().pendingRequestId || preparingRef.current) return;
+
+    const newTurnId = newRequestId();
+    const chatStoreState = useChatStore.getState();
+    const selectedOrgansList = selectedOrganIds
+      .map((id) => loadedOrgans[id])
+      .filter((organ): organ is NonNullable<typeof organ> => Boolean(organ))
       .map(({ organ_id, ta2_latin, name_en, system }) => ({ organ_id, ta2_latin, name_en, system }));
-    // Read at the moment of sending, not from the last render: the wheel moves
-    // the plane without re-rendering this panel.
-    const scanner = currentScannerAim();
-    if (prompt.length > 8000 || selection.length > 64) {
-      setTransportError(prompt.length > 8000
-        ? "Use at most 8,000 characters per question. Your draft has been kept."
-        : "Select at most 64 structures before asking. Your draft has been kept.");
+
+    const realtimeScannerState = getScannerContext();
+
+    if (rawQuery.length > 8000 || selectedOrgansList.length > 64) {
+      setTransportError(
+        rawQuery.length > 8000
+          ? "Use at most 8,000 characters per question. Your draft has been kept."
+          : "Select at most 64 structures before asking. Your draft has been kept.",
+      );
       return;
     }
 
     preparingRef.current = true;
     setPreparing(true);
-    const context: TurnContext = {
-      ...currentTurnScope(), provider, model: selectedModel, profile, language,
-      organIds: selection.map((organ) => organ.organ_id),
-      title: chat.messages.find((message) => message.role === "user")?.content ?? prompt,
+
+    const turnContextData: TurnContext = {
+      ...currentTurnScope(),
+      provider,
+      model: selectedModel,
+      profile,
+      language,
+      organIds: selectedOrgansList.map((organ) => organ.organ_id),
+      title: chatStoreState.messages.find((item) => item.role === "user")?.content ?? rawQuery,
     };
-    turns.begin(requestId, context);
-    let dispatched = false;
+
+    turns.begin(newTurnId, turnContextData);
+    let wasDispatched = false;
+
     try {
-      const patient = mode === "case" || mode === "review"
-        ? await virtualPatientContext(context.sessionId, (id) => organs[id] ? organLabel(organs[id]) : null, mode)
-        : {};
-      // Preparation can await the journal. Its result belongs to the original scope.
-      if (!turns.accepts(requestId)) return;
-      const request = AgentRequestSchema.parse({
-        request_id: requestId, query: prompt, history: chat.history(), provider,
+      const patientData =
+        mode === "case" || mode === "review"
+          ? await virtualPatientContext(
+              turnContextData.sessionId,
+              (id) => (loadedOrgans[id] ? organLabel(loadedOrgans[id]) : null),
+              mode,
+            )
+          : {};
+
+      if (!turns.accepts(newTurnId)) return;
+
+      const outboundAgentRequest = AgentRequestSchema.parse({
+        request_id: newTurnId,
+        query: rawQuery,
+        history: chatStoreState.history(),
+        provider,
         ...(selectedModel ? { model: selectedModel } : {}),
-        profile, language, gender_model: genderModel, mode, selection,
-        available_organs: structures.map(({ mesh_file: _f, node: _n, ...meta }) => meta),
-        available_groups: groups, ...patient,
-        ...(scanner ? { scanner } : {}),
-        ...(heartNow ? { heart: heartNow } : {}),
-        ...(breathNow ? { breathing: breathNow } : {}),
+        profile,
+        language,
+        gender_model: genderModel,
+        mode,
+        selection: selectedOrgansList,
+        available_organs: visibleStructures.map(({ mesh_file: _mesh, node: _node, ...meta }) => meta),
+        available_groups: selectableGroups,
+        ...patientData,
+        ...(realtimeScannerState ? { scanner: realtimeScannerState } : {}),
+        ...(activeHeartAim ? { heart: activeHeartAim } : {}),
+        ...(activeBreathAim ? { breathing: activeBreathAim } : {}),
       });
-      if (!turns.markSent(requestId)) return;
-      startTurn(requestId, prompt);
+
+      if (!turns.markSent(newTurnId)) return;
+
+      startTurn(newTurnId, rawQuery);
       setTransportError(null);
-      dispatched = true;
+      wasDispatched = true;
+
       if (customReady) {
-        const controller = new AbortController();
-        customAbortRef.current = controller;
-        const result = await streamCustomChat({
+        const streamAbortController = new AbortController();
+        customAbortRef.current = streamAbortController;
+
+        const streamResult = await streamCustomChat({
           baseUrl: customBaseUrl,
           apiKey: customApiKey,
           model: customModel,
           systemPrompt: buildCustomSystemPrompt({
-            fa,
+            fa: isPersian,
             profile,
             genderModel,
             mode,
-            selection,
-            organCount: structures.length,
+            selection: selectedOrgansList,
+            organCount: visibleStructures.length,
           }),
-          history: chat.history(),
-          query: prompt,
+          history: chatStoreState.history(),
+          query: rawQuery,
           mode,
-          signal: controller.signal,
+          signal: streamAbortController.signal,
           onDelta: (chunk) => {
-            if (turns.accepts(requestId)) appendDelta(requestId, chunk);
+            if (turns.accepts(newTurnId)) appendDelta(newTurnId, chunk);
           },
           onToolStarted: (tool) => {
-            if (turns.accepts(requestId)) noteTool(requestId, tool);
+            if (turns.accepts(newTurnId)) noteTool(newTurnId, tool);
           },
-          onSceneCommand: (command) => {
-            if (turns.accepts(requestId)) {
-              noteCommand(requestId, command);
-              applyCommand(command);
+          onSceneCommand: (cmd) => {
+            if (turns.accepts(newTurnId)) {
+              noteCommand(newTurnId, cmd);
+              executeSceneCommand(cmd);
             }
           },
-          onCaseVerdict: (score, verdict) => {
-            if (turns.accepts(requestId)) {
-              noteScore(requestId, score);
-              verdictRef.current.set(requestId, { score, verdict });
+          onCaseVerdict: (scr, vrd) => {
+            if (turns.accepts(newTurnId)) {
+              noteScore(newTurnId, scr);
+              verdictRef.current.set(newTurnId, { score: scr, verdict: vrd });
             }
           },
         });
+
         customAbortRef.current = null;
-        const entry = turns.take(requestId);
-        if (entry && entry.active) {
-          finishTurn(requestId, result.usage ?? undefined, result.model);
-          persistTurn(requestId, entry.context);
-          recordSpend(entry.context, result.usage, result.model);
+        const finalizedRecord = turns.take(newTurnId);
+        if (finalizedRecord && finalizedRecord.active) {
+          finishTurn(newTurnId, streamResult.usage ?? undefined, streamResult.model);
+          persistTurn(newTurnId, finalizedRecord.context);
+          recordSpend(finalizedRecord.context, streamResult.usage, streamResult.model);
         }
       } else {
-        await askAgent(request);
+        await askAgent(outboundAgentRequest);
       }
-      // Preserve edits made while the IPC acknowledgement was pending.
-      if (text === undefined && sameTurnScope(context, currentTurnScope())) {
-        setDraft((current) => current.trim() === prompt ? "" : current);
+
+      if (explicitText === undefined && sameTurnScope(turnContextData, currentTurnScope())) {
+        setDraft((prevDraft) => (prevDraft.trim() === rawQuery ? "" : prevDraft));
       }
-      if (selection.length > 0) retireAimHint();
-    } catch (error) {
-      if (turns.accepts(requestId)) {
-        if (dispatched) failTurn(requestId, String(error));
+      if (selectedOrgansList.length > 0) {
+        retireAimHint();
+      }
+    } catch (sendError) {
+      if (turns.accepts(newTurnId)) {
+        if (wasDispatched) failTurn(newTurnId, String(sendError));
         setTransportError(
-          fa
-            ? `ارسال سؤال انجام نشد. پیش‌نویس شما ذخیره شد. ${String(error)}`
-            : `Could not send the question. Your draft has been kept. ${String(error)}`
+          isPersian
+            ? `ارسال سؤال انجام نشد. پیش‌نویس شما ذخیره شد. ${String(sendError)}`
+            : `Could not send the question. Your draft has been kept. ${String(sendError)}`,
         );
       }
-      turns.invalidate(requestId);
+      turns.invalidate(newTurnId);
     } finally {
       preparingRef.current = false;
       setPreparing(false);
     }
   }
 
-  function stop() {
+  function handleStopTurn() {
     customAbortRef.current?.abort();
     customAbortRef.current = null;
     turns.invalidate(useChatStore.getState().pendingRequestId);
   }
 
   return (
-    <div dir={fa ? "rtl" : "ltr"} className="relative flex h-full min-h-0 flex-col bg-slate-900/95 backdrop-blur-2xl">
+    <div dir={isPersian ? "rtl" : "ltr"} className="relative flex h-full min-h-0 flex-col bg-slate-900/95 backdrop-blur-2xl">
       <header className="flex items-center gap-2 border-b border-slate-800 px-3 py-2">
-        <h1 className="flex items-center gap-1.5" aria-label="HOOMAAN"><BrandLogo variant="mark-dark" className="h-6 w-auto shrink-0" decorative /><BrandLogo variant="wordmark" className="h-4 w-auto shrink-0" alt="HOOMAAN — هومان" /></h1>
+        <h1 className="flex items-center gap-1.5" aria-label="HOOMAAN">
+          <BrandLogo variant="mark-dark" className="h-6 w-auto shrink-0" decorative />
+          <BrandLogo variant="wordmark" className="h-4 w-auto shrink-0" alt="HOOMAAN — هومان" />
+        </h1>
         <span
           className={`rounded-full px-1.5 py-0.5 text-[9px] font-medium uppercase ${
             chatReady
@@ -1151,21 +1062,19 @@ export function ChatPanel() {
               : "bg-amber-500/15 text-amber-300"
           }`}
         >
-          {chatReady ? (fa ? "آماده" : "ready") : fa ? "نیازمند API" : "API needed"}
+          {chatReady ? (isPersian ? "آماده" : "ready") : isPersian ? "نیازمند API" : "API needed"}
         </span>
         <BridgeIndicator />
         <div className="ms-auto flex items-center gap-1.5">
           <NewSessionButton
             mode={mode}
             onStart={beginSession}
-            disabled={messages.length === 0}
+            disabled={chatMessages.length === 0}
           />
           <ModeSwitch mode={mode} onChange={beginSession} />
         </div>
       </header>
 
-      {/* Only in case mode: a one-off drill has no patient to belong to, and a
-          tutor conversation is not a consultation. */}
       {(mode === "case" || mode === "review") && (
         <CaseBar profile={profile} language={language} />
       )}
@@ -1186,46 +1095,52 @@ export function ChatPanel() {
       />
 
       <div ref={scrollRef} className="min-h-0 flex-1 space-y-4 overflow-y-auto px-3 py-3">
-        {messages.length === 0 && mode === "tutor" && (
+        {chatMessages.length === 0 && mode === "tutor" && (
           <div className="space-y-2 pt-6 text-center text-xs text-slate-500">
-            <p>{fa ? "دربارهٔ هر ساختاری در نمای سه‌بعدی سؤال کنید." : "Ask about any structure in the viewport."}</p>
+            <p>{isPersian ? "دربارهٔ هر ساختاری در نمای سه‌بعدی سؤال کنید." : "Ask about any structure in the viewport."}</p>
             {!chatReady && (
               <p className="text-[11px] text-amber-300/90">
-                {fa
+                {isPersian
                   ? "برای شروع گفتگو، آدرس Custom API و نام مدل را در بخش تنظیمات بالا وارد کنید."
                   : "Enter your Custom API Base URL and model in Settings above to start chatting."}
               </p>
             )}
             <p className="text-slate-600">
-              {fa ? 'دستیار هنگام توضیح، دوربین را حرکت می‌دهد.' : 'The assistant moves the camera as it explains.'}
+              {isPersian ? "دستیار هنگام توضیح، دوربین را حرکت می‌دهد." : "The assistant moves the camera as it explains."}
             </p>
-            <p className="text-[10px] text-slate-600">{fa ? 'با یک مدل هوش مصنوعی گفتگو می‌کنید؛ پاسخ‌ها ممکن است اشتباه باشند.' : AI_NOTICE}</p>
+            <p className="text-[10px] text-slate-600">
+              {isPersian ? "با یک مدل هوش مصنوعی گفتگو می‌کنید؛ پاسخ‌ها ممکن است اشتباه باشند." : AI_GENERATION_DISCLOSURE}
+            </p>
             <p className="text-[10px] text-slate-700">
-              {fa ? `${structures.length} ساختار بارگذاری شده؛ دستگاه‌های دیگر را از پنل اطلس فعال کنید.` : `${structures.length} structures loaded — switch on more systems in the left panel`}
+              {isPersian
+                ? `${visibleStructures.length} ساختار بارگذاری شده؛ دستگاه‌های دیگر را از پنل اطلس فعال کنید.`
+                : `${visibleStructures.length} structures loaded — switch on more systems in the left panel`}
             </p>
           </div>
         )}
 
-        {messages.length === 0 && mode === "case" && (
+        {chatMessages.length === 0 && mode === "case" && (
           <div className="space-y-3 pt-6 text-center text-xs text-slate-500">
-            <p>{fa ? "یک سناریوی تمرینی انتخاب کنید یا خودتان بنویسید." : "Pick a scenario, or describe one yourself."}</p>
+            <p>{isPersian ? "یک سناریوی تمرینی انتخاب کنید یا خودتان بنویسید." : "Pick a scenario, or describe one yourself."}</p>
             <p className="text-slate-600">
-              {fa
+              {isPersian
                 ? "یک بیمار شبیه‌سازی‌شده و سؤال تمرینی دریافت می‌کنید و پاسخ شما برای مطالعهٔ شخصی نمره‌گذاری و ذخیره می‌شود."
                 : "You will get an invented patient, the anatomy marked on the model, and a question to answer. Your answer gets a score for your own study — not a formal assessment — and is kept."}
             </p>
-            <p className="text-[10px] text-slate-600">{fa ? "با یک مدل هوش مصنوعی گفتگو می‌کنید؛ پاسخ‌ها ممکن است خطا داشته باشند." : AI_NOTICE}</p>
+            <p className="text-[10px] text-slate-600">
+              {isPersian ? "با یک مدل هوش مصنوعی گفتگو می‌کنید؛ پاسخ‌ها ممکن است خطا داشته باشند." : AI_GENERATION_DISCLOSURE}
+            </p>
             <div className="flex flex-wrap justify-center gap-1.5 pt-1">
-              {CASE_STARTERS.filter((starter) => loadedSystems.has(starter.system)).map(
+              {CLINICAL_DRILL_PROMPTS.filter((item) => activeSystemsSet.has(item.system)).map(
                 (starter) => (
                   <button
                     key={starter.label}
                     type="button"
                     disabled={!chatReady}
-                    onClick={() => void send(fa ? starter.promptFa : starter.prompt)}
+                    onClick={() => void handleSendQuery(isPersian ? starter.promptFa : starter.prompt)}
                     className="rounded-full border border-slate-700 px-2.5 py-1 text-[11px] text-slate-300 transition hover:border-amber-600 hover:text-amber-200 disabled:opacity-30"
                   >
-                    {fa ? starter.labelFa : starter.label}
+                    {isPersian ? starter.labelFa : starter.label}
                   </button>
                 ),
               )}
@@ -1233,28 +1148,28 @@ export function ChatPanel() {
                 type="button"
                 disabled={!chatReady}
                 onClick={() =>
-                  void send(
-                    fa
+                  void handleSendQuery(
+                    isPersian
                       ? "یک تمرین بالینی غیرمنتظره روی دستگاه‌های بارگذاری‌شده شروع کن."
                       : "Start a case drill on any system currently loaded. Pick something I am unlikely to have practised.",
                   )
                 }
                 className="rounded-full border border-slate-700 px-2.5 py-1 text-[11px] text-slate-300 transition hover:border-amber-600 hover:text-amber-200 disabled:opacity-30"
               >
-                {fa ? "سناریوی تصادفی" : "Surprise me"}
+                {isPersian ? "سناریوی تصادفی" : "Surprise me"}
               </button>
             </div>
             <p className="text-[10px] text-slate-700">
-              {fa ? "بیماران شبیه‌سازی‌شده؛ صرفاً جهت تمرین آموزشی." : "Simulated patients, invented for practice."}
+              {isPersian ? "بیماران شبیه‌سازی‌شده؛ صرفاً جهت تمرین آموزشی." : "Simulated patients, invented for practice."}
             </p>
           </div>
         )}
 
-        {messages.length === 0 && mode === "review" && (
+        {chatMessages.length === 0 && mode === "review" && (
           <ReviewIntro
             disabled={!chatReady}
             onAsk={() =>
-              void send(
+              void handleSendQuery(
                 "Summarise this case: what was presented, what has been reasoned " +
                   "across the visits, and where the gaps are.",
               )
@@ -1262,8 +1177,8 @@ export function ChatPanel() {
           />
         )}
 
-        {messages.map((message) => (
-          <MessageBubble key={message.id} message={message} />
+        {chatMessages.map((msg) => (
+          <MessageBubble key={msg.id} message={msg} />
         ))}
       </div>
 
@@ -1275,81 +1190,75 @@ export function ChatPanel() {
         </p>
       )}
 
-      {contextTrimmed && (
+      {isHistoryCompacted && (
         <p role="status" className="mx-3 mb-2 text-[11px] text-slate-400">
-          {fa
+          {isPersian
             ? "دستیار ۵۰ تبادل کامل اخیر را دریافت می‌کند. یادداشت‌ها و سوابق کامل شما نگهداری می‌شوند."
             : "The assistant receives the latest 50 complete exchanges. Your full journal is kept."}
         </p>
       )}
-      <CostNotice messages={messages} mode={mode} />
+
+      <CostNotice messages={chatMessages} mode={mode} />
 
       {shouldShowAimHint({
         drafting: draft.trim().length > 0,
-        hasAim: selectedOrganIds.length > 0 || isolatedOrganIds !== null || scannerNow !== null,
+        hasAim: selectedOrganIds.length > 0 || isolatedOrganIds !== null || activeScannerAim !== null,
         mode,
         learned: aimHintLearned,
       }) && <AimHint onDismiss={retireAimHint} />}
 
-      {/*
-        Said while typing, because it changes what the question means: with the
-        light held at a level, "here" is that level. Saying so is what lets the
-        reader rely on it — and notice when it is not what they meant.
-      */}
-      {scannerNow && draft.trim().length > 0 && (
+      {activeScannerAim && draft.trim().length > 0 && (
         <p
           role="status"
           title={
-            fa
+            isPersian
               ? "یک ساختار را برای پرسش درباره آن انتخاب کنید: ساختار انتخابی بر اسکنر اولویت دارد."
               : "Select a structure to ask about it instead: a selection comes before the scanner."
           }
           className="mx-3 mb-2 text-[11px] text-cyan-400/80"
         >
-          {fa
-            ? `دستیار می‌داند اسکنر در ارتفاع ${scannerNow.level ?? "این سطح"} قرار دارد: «اینجا» و «این بخش» به این مقطع اشاره دارند.`
-            : `The assistant knows the scanner is at ${scannerNow.level ?? "this height"}: “here” and “this part” mean this level.`}
-        </p>
-      )}
-      {heartNow && draft.trim().length > 0 && (
-        <p role="status" className="mx-3 mb-2 text-[11px] text-rose-300/80">
-          {fa
-            ? `دستیار می‌داند ریتم قلب در حالت ${heartNow.rhythm} است: بپرسید این چیست و چگونه رخ می‌دهد.`
-            : `The assistant knows the heart is showing ${heartNow.rhythm}: ask what it is and how it happens.`}
+          {isPersian
+            ? `دستیار می‌داند اسکنر در ارتفاع ${activeScannerAim.level ?? "این سطح"} قرار دارد: «اینجا» و «این بخش» به این مقطع اشاره دارند.`
+            : `The assistant knows the scanner is at ${activeScannerAim.level ?? "this height"}: “here” and “this part” mean this level.`}
         </p>
       )}
 
-      {/*
-        Never squeezed, because it is the one part that must not be.
-        
-        Flexbox shrinks every child that has not said otherwise, and in a short
-        window it was taking the height out of the composer — the box the
-        reader types into — while the message list above it, which has its own
-        scrollbar and can give up any amount of space harmlessly, kept its own.
-        Reported on a 766-pixel-high window: the input came out clipped.
-      */}
+      {activeHeartAim && draft.trim().length > 0 && (
+        <p role="status" className="mx-3 mb-2 text-[11px] text-rose-300/80">
+          {isPersian
+            ? `دستیار می‌داند ریتم قلب در حالت ${activeHeartAim.rhythm} است: بپرسید این چیست و چگونه رخ می‌دهد.`
+            : `The assistant knows the heart is showing ${activeHeartAim.rhythm}: ask what it is and how it happens.`}
+        </p>
+      )}
+
       <div className="shrink-0 border-t border-slate-800 p-3">
         <div className="relative">
           <GrowingTextarea
             value={draft}
             onChange={(event) => setDraft(event.target.value)}
             onKeyDown={(event) => {
-              // Enter sends, Shift+Enter breaks the line. Composing (IME) must
-              // pass through untouched or Cyrillic input would send mid-word.
               if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
                 event.preventDefault();
-                void send();
+                void handleSendQuery();
               }
             }}
             rows={3}
             placeholder={
               !chatReady
-                ? (fa ? "ابتدا آدرس و مدل Custom API را در تنظیمات وارد کنید…" : "Configure Custom API Base URL and model first…")
+                ? isPersian
+                  ? "ابتدا آدرس و مدل Custom API را در تنظیمات وارد کنید…"
+                  : "Configure Custom API Base URL and model first…"
                 : mode === "review"
-                  ? (fa ? "دربارهٔ پرونده سؤال کنید…" : "Ask for the summary, or about anything in the file…")
+                  ? isPersian
+                    ? "دربارهٔ پرونده سؤال کنید…"
+                    : "Ask for the summary, or about anything in the file…"
                   : mode === "case"
-                    ? (fa ? "به تمرین پاسخ دهید یا تمرین جدید بخواهید…" : "Answer the case, or ask for a new one…")
-                  : (fa ? "دربارهٔ آناتومی سؤال کنید…" : "Ask about the anatomy…")
+                    ? isPersian
+                      ? "به تمرین پاسخ دهید یا تمرین جدید بخواهید…"
+                      : "Answer the case, or ask for a new one…"
+                    : isPersian
+                      ? "دربارهٔ آناتومی سؤال کنید…"
+                      : "Ask about the anatomy…"
             }
             disabled={!chatReady}
             className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 pr-16 text-[13px] outline-none placeholder:text-slate-600 focus:border-sky-600 disabled:opacity-50"
@@ -1357,25 +1266,25 @@ export function ChatPanel() {
           {pendingRequestId ? (
             <button
               type="button"
-              onClick={() => void stop()}
+              onClick={() => void handleStopTurn()}
               className="absolute bottom-2 right-2 rounded bg-slate-700 px-2.5 py-1 text-[11px] font-medium text-slate-100"
             >
-              {fa ? 'توقف' : 'Stop'}
+              {isPersian ? "توقف" : "Stop"}
             </button>
           ) : (
             <button
               type="button"
-              onClick={() => void send()}
+              onClick={() => void handleSendQuery()}
               disabled={!canSend}
               className="absolute bottom-2 right-2 rounded bg-sky-600 px-2.5 py-1 text-[11px] font-medium disabled:opacity-30"
             >
-              {fa ? 'ارسال' : 'Send'}
+              {isPersian ? "ارسال" : "Send"}
             </button>
           )}
         </div>
         <div className="mt-1.5 flex items-start gap-2">
           <p className="flex-1 text-[10px] text-slate-600">
-            {fa ? 'فقط برای آموزش؛ برای تشخیص یا درمان نیست.' : 'Educational use only — not for diagnosis or treatment.'}
+            {isPersian ? "فقط برای آموزش؛ برای تشخیص یا درمان نیست." : "Educational use only — not for diagnosis or treatment."}
           </p>
           <AskingGuide />
         </div>

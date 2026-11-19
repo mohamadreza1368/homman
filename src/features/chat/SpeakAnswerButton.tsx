@@ -1,65 +1,66 @@
 import type { Language } from "@/lib/schemas";
-
+import { useInterfaceLanguage } from "@/stores/interfaceLanguage";
 import { effectiveLanguage } from "./speech";
 import { useSpokenAnswer } from "./useSpokenAnswer";
-import { useInterfaceLanguage } from "@/stores/interfaceLanguage";
 
-/**
- * Read one answer aloud, on request.
- *
- * **Opt-in per answer, deliberately.** Speaking every answer automatically
- * would be the wrong default for a study tool: a voice starting unprompted is
- * intrusive in a library, in a lecture, or beside somebody else working, and
- * the reader who wants it can ask for it in one click. It also keeps the
- * written answer — the copy carrying the on-screen compliance notice — as the
- * thing that always happens, with speech as an addition to it.
- *
- * The button is absent, not disabled, when the machine has no voice for the
- * reader's language. A control that is always there and always fails teaches
- * the reader that the app is broken; one that is simply not offered says the
- * truth, which is that this computer cannot do it.
- */
-
-interface Props {
+interface SpeakAnswerButtonProps {
   content: string;
   language: Language;
 }
 
-export function SpeakAnswerButton({ content, language }: Props) {
-  const spoken = useSpokenAnswer();
-  const fa = useInterfaceLanguage((s) => s.language === "fa");
-  const speaking = spoken.state === "speaking";
+/**
+ * Opt-in action button for synthesizing text-to-speech narration of a specific assistant response.
+ */
+export function SpeakAnswerButton({ content, language }: SpeakAnswerButtonProps) {
+  const speechManager = useSpokenAnswer();
+  const isPersian = useInterfaceLanguage((state) => state.language === "fa");
+  const isSpeaking = speechManager.state === "speaking";
 
-  // On `auto` this is the language the answer turned out to be written in, not
-  // the setting — see `effectiveLanguage`. The button therefore tracks whether
-  // *this* answer can be read, which is the question the reader is asking.
-  const spokenIn = effectiveLanguage(language, content);
+  const resolvedLocale = effectiveLanguage(language, content);
 
-  // `null` is an answer in a language this app cannot place — the assistant
-  // replies in the reader's own language, which may be one of many it has no
-  // voice for. Silence beats reading it in the wrong one.
-  //
-  // `supports` is false until the platform has enumerated its voices, so the
-  // button appears a moment after the answer rather than before it can work.
-  if (!spokenIn || !spoken.supports(spokenIn)) return null;
+  if (!resolvedLocale || !speechManager.supports(resolvedLocale)) {
+    return null;
+  }
+
+  const actionAria = isSpeaking
+    ? isPersian
+      ? "توقف خواندن صوتی"
+      : "Stop reading aloud"
+    : isPersian
+      ? "خواندن صوتی این پاسخ"
+      : "Read this answer aloud";
+
+  const actionLabel = isSpeaking
+    ? isPersian
+      ? "توقف"
+      : "Stop"
+    : isPersian
+      ? "خواندن صوتی"
+      : "Read aloud";
+
+  const handleToggleSpeech = () => {
+    if (isSpeaking) {
+      speechManager.stop();
+    } else {
+      speechManager.speak(content, resolvedLocale);
+    }
+  };
 
   return (
     <>
       <button
         type="button"
-        onClick={() => {
-          if (speaking) spoken.stop();
-          else spoken.speak(content, spokenIn);
-        }}
-        aria-label={speaking ? (fa ? "توقف خواندن صوتی" : "Stop reading aloud") : (fa ? "خواندن صوتی این پاسخ" : "Read this answer aloud")}
-        title={speaking ? (fa ? "توقف خواندن صوتی" : "Stop reading aloud") : (fa ? "خواندن صوتی این پاسخ" : "Read this answer aloud")}
+        onClick={handleToggleSpeech}
+        aria-label={actionAria}
+        title={actionAria}
         className="text-[11px] text-slate-400 transition hover:text-slate-200"
       >
-        {speaking ? (fa ? "توقف" : "Stop") : (fa ? "خواندن صوتی" : "Read aloud")}
+        {actionLabel}
       </button>
-      {spoken.error && (
+
+      {speechManager.error && (
         <span className="text-[10px] text-amber-400" role="status">
-          {spoken.error}
+          {speechManager.error}
         </span>
       )}
     </>

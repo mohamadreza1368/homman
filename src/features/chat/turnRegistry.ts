@@ -18,76 +18,116 @@ export interface TurnContext extends TurnScope {
 }
 
 export type SpendContext = Pick<TurnContext, "sessionId" | "provider">;
-type Entry =
+
+export type TurnRegistryEntry =
   | { active: true; context: Readonly<TurnContext>; sent: boolean }
   | { active: false; context: Readonly<SpendContext>; sent: true };
 
-export function sameTurnScope(a: TurnScope, b: TurnScope): boolean {
-  return a.sessionId === b.sessionId && a.sessionRevision === b.sessionRevision &&
-    a.mode === b.mode && a.genderModel === b.genderModel && a.caseId === b.caseId;
+/**
+ * Checks equality of session routing scope across dialogue turns.
+ */
+export function sameTurnScope(first: TurnScope, second: TurnScope): boolean {
+  return (
+    first.sessionId === second.sessionId &&
+    first.sessionRevision === second.sessionRevision &&
+    first.mode === second.mode &&
+    first.genderModel === second.genderModel &&
+    first.caseId === second.caseId
+  );
 }
 
-/** The transcript may disappear; cost attribution must survive until `done`. */
+/**
+ * Manages conversation request turn lifecycles, ensuring thread safety, scope matching,
+ * cost attribution persistence, and orderly invalidation upon session navigation.
+ */
 export class TurnRegistry {
-  private entries = new Map<string, Entry>();
-  private current: string | null = null;
+  private records = new Map<string, TurnRegistryEntry>();
+  private activeId: string | null = null;
 
   constructor(
-    private scope: () => TurnScope,
-    private onInvalidate: (id: string, sent: boolean) => void,
+    private readonly currentScopeProvider: () => TurnScope,
+    private readonly handleInvalidate: (id: string, wasDispatched: boolean) => void,
   ) {}
 
-  begin(id: string, context: TurnContext): void {
+  begin(turnId: string, turnContext: TurnContext): void {
     this.invalidate();
-    this.entries.set(id, {
-      context: Object.freeze({ ...context, organIds: Object.freeze([...context.organIds]) }),
+
+    const immutableSnapshot: TurnContext = Object.freeze({
+      ...turnContext,
+      organIds: Object.freeze([...turnContext.organIds]),
+    });
+
+    this.records.set(turnId, {
       active: true,
+      context: immutableSnapshot,
       sent: false,
     });
-    this.current = id;
+    this.activeId = turnId;
   }
 
   checkScope = (): void => {
-    if (!this.current) return;
-    const entry = this.entries.get(this.current);
-    if (entry?.active && !sameTurnScope(entry.context, this.scope())) {
-      this.invalidate();
+    if (!this.activeId) return;
+
+    const item = this.records.get(this.activeId);
+    if (item && item.active) {
+      const activeScope = this.currentScopeProvider();
+      if (!sameTurnScope(item.context, activeScope)) {
+        this.invalidate();
+      }
     }
   };
 
-  accepts(id: string): boolean {
+  accepts(turnId: string): boolean {
     this.checkScope();
-    return this.current === id && this.entries.get(id)?.active === true;
+    return this.activeId === turnId && this.records.get(turnId)?.active === true;
   }
 
-  markSent(id: string): boolean {
-    if (!this.accepts(id)) return false;
-    this.entries.get(id)!.sent = true;
+  markSent(turnId: string): boolean {
+    if (!this.accepts(turnId)) {
+      return false;
+    }
+    const item = this.records.get(turnId);
+    if (item) {
+      item.sent = true;
+    }
     return true;
   }
 
-  invalidate(id: string | null = this.current): void {
-    if (!id) return;
-    const entry = this.entries.get(id);
-    if (!entry?.active) return;
-    if (this.current === id) this.current = null;
-    // A preparation cancelled before dispatch cannot ever produce usage.
-    if (!entry.sent) this.entries.delete(id);
-    else this.entries.set(id, {
-      active: false, sent: true,
-      // Cancellation need not produce a terminal frame. Keep only attribution,
-      // never a growing collection of abandoned questions and anatomy arrays.
-      context: Object.freeze({ sessionId: entry.context.sessionId, provider: entry.context.provider }),
-    });
-    this.onInvalidate(id, entry.sent);
+  invalidate(turnId: string | null = this.activeId): void {
+    if (!turnId) return;
+
+    const item = this.records.get(turnId);
+    if (!item || !item.active) return;
+
+    if (this.activeId === turnId) {
+      this.activeId = null;
+    }
+
+    if (!item.sent) {
+      this.records.delete(turnId);
+    } else {
+      const minimalProvenance: SpendContext = Object.freeze({
+        sessionId: item.context.sessionId,
+        provider: item.context.provider,
+      });
+
+      this.records.set(turnId, {
+        active: false,
+        sent: true,
+        context: minimalProvenance,
+      });
+    }
+
+    this.handleInvalidate(turnId, item.sent);
   }
 
-  /** Claims completion once, including a late completion of a cancelled turn. */
-  take(id: string): Entry | undefined {
+  take(turnId: string): TurnRegistryEntry | undefined {
     this.checkScope();
-    const entry = this.entries.get(id);
-    this.entries.delete(id);
-    if (this.current === id) this.current = null;
+    const entry = this.records.get(turnId);
+    this.records.delete(turnId);
+    if (this.activeId === turnId) {
+      this.activeId = null;
+    }
     return entry;
   }
 }

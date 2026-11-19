@@ -1,48 +1,10 @@
 /**
- * What to hand an outside agent so it can drive this window.
- *
- * # Why this exists
- *
- * Reported from the field: an agent that was not already configured with the
- * MCP server worked the bridge out by reading the repository — it found the
- * named pipe, the frame shape and the client module on its own, and spent its
- * first attempt on a refusal. Every part of that was discoverable and none of
- * it was *offered*, so the reader paid for the discovery in round trips.
- *
- * A capable agent finding its own way to the answer is not a success. It is the
- * application failing to say something it already knows.
- *
- * # Why it must stand alone
- *
- * The first version of this text sent the agent to `tools/hoomaan_mcp/atlas.py`.
- * That worked in testing and would have failed for every real reader: the
- * installer bundled the frozen sidecar and nothing else, so on a machine where
- * somebody installed the `.exe` the file did not exist. The test only passed
- * because the repository happened to be on the same disk.
- *
- * Two things came out of that. The server now ships with the application, so
- * the path here is the one on *this* machine, resolved at runtime rather than
- * written down. And the pipe half carries a whole client rather than a
- * description of one, for the reader who has no Python at all.
- *
- * # The three things that cost an attempt
- *
- * **The API wants the bare name**, not the `\\.\pipe\` path — passing the whole
- * path to `NamedPipeClientStream` fails in a way that reads like the bridge
- * being down. **One client at a time**, so a configured MCP client holding the
- * pipe will refuse a second connection, which reads like the switch being off.
- * And the encoding: a byte order mark is now tolerated, but writing without one
- * is still the correct thing to do.
+ * Generates an instructional briefing for external autonomous AI agents connecting
+ * to the HOOMAAN anatomical 3D control bridge via MCP or local Windows Named Pipes.
  */
 export function agentBriefing(pipe: string, server: string | null): string {
-  // `\\.\pipe\name` → `name`. The Win32 API takes the last segment alone, and
-  // handing it the full path is the commonest way to fail at this.
   const name = pipe.replace(/^\\\\\.\\pipe\\/, "");
 
-  // The installed server if this build carries one, the checkout path if it
-  // does not. Naming a file that is not there is how the first version of this
-  // briefing failed, and it failed silently: the agent went looking, found
-  // nothing, and fell back to guessing at the transport.
   const serverPath = server
     ? `${server}\\atlas.py`
     : "tools/hoomaan_mcp/atlas.py (in the HOOMAAN source)";

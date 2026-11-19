@@ -1,11 +1,16 @@
 import { useBridgeStore } from "@/stores/bridgeStore";
-
 import { Markdown } from "./Markdown";
 
-/** External prose is deliberately not a MessageBubble or a journal entry. */
+/**
+ * Dedicated viewport message feed displaying unpersisted text dispatched
+ * through external automation pipes, explicitly demarcated from AI tutor dialogues.
+ */
 export function BridgeProse() {
-  const entries = useBridgeStore((s) => s.prose);
-  if (entries.length === 0) return null;
+  const bufferedEntries = useBridgeStore((state) => state.prose);
+
+  if (bufferedEntries.length === 0) {
+    return null;
+  }
 
   return (
     <section
@@ -17,10 +22,13 @@ export function BridgeProse() {
         Not the HOOMAAN assistant. Not saved or sent to your provider.
         Latest 20 messages; cleared when the bridge is turned off.
       </p>
-      {entries.map((entry) => (
-        <article key={entry.id} className="border-l-2 border-amber-700 pl-3">
-          <p className="mb-1 text-[11px] font-semibold text-amber-300">via the control bridge</p>
-          <Markdown structurePins={false}>{entry.text}</Markdown>
+
+      {bufferedEntries.map((item) => (
+        <article key={item.id} className="border-l-2 border-amber-700 pl-3">
+          <p className="mb-1 text-[11px] font-semibold text-amber-300">
+            via the control bridge
+          </p>
+          <Markdown structurePins={false}>{item.text}</Markdown>
         </article>
       ))}
     </section>

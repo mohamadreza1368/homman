@@ -4,45 +4,32 @@ import { useBridgeStore } from "@/stores/bridgeStore";
 import { useInterfaceLanguage } from "@/stores/interfaceLanguage";
 
 /**
- * Says, from the header, that something outside this window may be driving it.
- *
- * # Why it is not inside the settings panel
- *
- * The panel is where the bridge is turned on. This is where it is *noticed*.
- * A reader who has forgotten they switched it on, or who left the app running
- * and came back to it, must be able to see that the door is open without
- * opening a drawer to check — otherwise the only way to learn that a program
- * is entitled to move the viewport is to catch it moving.
- *
- * Absent when the bridge is off, rather than shown greyed out. A permanent
- * pill reading "bridge: off" is furniture, and furniture stops being read;
- * something that is only ever there when it matters keeps its meaning.
- *
- * This also owns the one status read the window makes at startup, because it
- * is the piece that is always mounted — the settings drawer is collapsed by
- * default and would answer only for readers who opened it.
+ * Top bar status badge indicating that the IPC/Named Pipe control bridge is active
+ * and listening for external viewport automation commands.
  */
 export function BridgeIndicator() {
-  const running = useBridgeStore((s) => s.status?.running ?? false);
-  const refresh = useBridgeStore((s) => s.refresh);
-  const fa = useInterfaceLanguage((s) => s.language === "fa");
+  const isBridgeActive = useBridgeStore((state) => state.status?.running ?? false);
+  const triggerRefresh = useBridgeStore((state) => state.refresh);
+  const isPersian = useInterfaceLanguage((state) => state.language === "fa");
 
   useEffect(() => {
-    void refresh();
-  }, [refresh]);
+    void triggerRefresh();
+  }, [triggerRefresh]);
 
-  if (!running) return null;
+  if (!isBridgeActive) {
+    return null;
+  }
+
+  const badgeTooltip = isPersian
+    ? "پل کنترلی هومان فعال است: برنامه‌ای در این رایانه می‌تواند نما را کنترل کند و پیام‌های خارجی را نمایش دهد. در تنظیمات می‌توانید آن را غیرفعال کنید."
+    : "The control bridge is on: a program on this computer may control the view and display external, unsaved messages. Turn it off in Settings.";
 
   return (
     <span
       className="rounded-full bg-sky-500/15 px-1.5 py-0.5 text-[9px] font-medium uppercase text-sky-300"
-      title={
-        fa
-          ? "پل کنترلی هومان فعال است: برنامه‌ای در این رایانه می‌تواند نما را کنترل کند و پیام‌های خارجی را نمایش دهد. در تنظیمات می‌توانید آن را غیرفعال کنید."
-          : "The control bridge is on: a program on this computer may control the view and display external, unsaved messages. Turn it off in Settings."
-      }
+      title={badgeTooltip}
     >
-      {fa ? "پل کنترل" : "bridge"}
+      {isPersian ? "پل کنترل" : "bridge"}
     </span>
   );
 }

@@ -1,45 +1,18 @@
 import type { ManifestOrgan } from "@/lib/schemas";
 
-/**
- * The atlas structures a local model's answer names, so the reader can show
- * them with one click.
- *
- * # Why the reader clicks and the model does not act
- *
- * The local model has no tools by design (`local_chat.py`): a small model
- * guesses at structure ids, and a guess that moved the atlas would teach
- * something false with the atlas's authority. Here the model only *names*
- * structures, and a name becomes a button only when it is exactly a
- * Terminologia Anatomica name the atlas has. An invented or misspelt Latin name
- * offers nothing — it cannot point at the wrong structure — and nothing moves
- * until the reader asks.
- *
- * # Why Latin
- *
- * The answer is in the reader's language and the atlas is labelled in Latin and
- * English. The Latin is the one spelling shared by every answer, so the model is
- * asked to put it in parentheses after each structure it names.
- *
- * - A Latin name **in parentheses** is matched even when it is one word
- *   ("(Hepar)"), because that is where the model was asked to put it.
- * - A Latin name **of two words or more** is matched anywhere in the text: long
- *   enough that "ventriculus sinister" cannot be an accident.
- * - A one-word Latin name outside parentheses is not, because short words turn up
- *   inside ordinary prose in Spanish and Bulgarian transliteration.
- */
-
-/** A button: one Latin name, and every loaded structure that carries it. */
 export interface Mention {
   latin: string;
   organIds: string[];
 }
 
-/** Buttons offered under one answer, at most. */
+/** Maximum number of quick-jump structure buttons presented beneath an answer. */
 export const MAX_MENTIONS = 8;
 
-/** Lower case, accents gone, runs of space made one: the form both sides are compared in. */
-export function normalise(text: string): string {
-  return text
+/**
+ * Normalizes text to lowercase, stripped of diacritical marks/accents and collapsed spaces.
+ */
+export function normalise(input: string): string {
+  return input
     .normalize("NFD")
     .replace(/\p{M}/gu, "")
     .toLowerCase()
@@ -47,44 +20,77 @@ export function normalise(text: string): string {
     .trim();
 }
 
-/** Latin name → the loaded structures named so, built once per set of structures. */
+/**
+ * Builds an index mapping normalized Latin anatomical names (TA2) to organs and their IDs.
+ */
 export function latinIndex(organs: readonly ManifestOrgan[]): Map<string, Mention> {
-  const index = new Map<string, Mention>();
+  const dictionary = new Map<string, Mention>();
+
   for (const organ of organs) {
     const key = normalise(organ.ta2_latin);
     if (!key) continue;
-    const entry = index.get(key);
-    if (entry) entry.organIds.push(organ.organ_id);
-    else index.set(key, { latin: organ.ta2_latin, organIds: [organ.organ_id] });
+
+    const existing = dictionary.get(key);
+    if (existing) {
+      existing.organIds.push(organ.organ_id);
+    } else {
+      dictionary.set(key, {
+        latin: organ.ta2_latin,
+        organIds: [organ.organ_id],
+      });
+    }
   }
-  return index;
+
+  return dictionary;
 }
 
-function escapeRegExp(text: string): string {
-  return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+function escapeForRegex(str: string): string {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-/** The structures `answer` names, in the order it first names them. */
-export function mentionedStructures(answer: string, index: ReadonlyMap<string, Mention>): Mention[] {
-  const text = normalise(answer);
-  const found = new Map<string, number>();
-  const note = (key: string, at: number) => {
-    if (index.has(key) && (!found.has(key) || found.get(key)! > at)) found.set(key, at);
+/**
+ * Scans generated dialogue responses for mentions of recognized anatomical structures,
+ * prioritizing parenthesized Latin names and multi-word Latin nomenclature.
+ */
+export function mentionedStructures(
+  responseText: string,
+  index: ReadonlyMap<string, Mention>,
+): Mention[] {
+  const normalizedText = normalise(responseText);
+  const matchedPositions = new Map<string, number>();
+
+  const recordMatch = (term: string, position: number) => {
+    if (index.has(term)) {
+      const prior = matchedPositions.get(term);
+      if (prior === undefined || prior > position) {
+        matchedPositions.set(term, position);
+      }
+    }
   };
 
-  // Inside parentheses: each comma- or semicolon-separated part is a candidate.
-  for (const match of text.matchAll(/\(([^()]{2,120})\)/g)) {
-    for (const part of match[1]!.split(/[,;]/)) note(part.trim(), match.index ?? 0);
+  // Check parenthesized expressions for explicit Latin citations
+  for (const match of normalizedText.matchAll(/\(([^()]{2,120})\)/g)) {
+    const content = match[1];
+    if (content) {
+      const tokens = content.split(/[,;]/);
+      for (const token of tokens) {
+        recordMatch(token.trim(), match.index ?? 0);
+      }
+    }
   }
 
-  // Anywhere: Latin names of two words or more, on word boundaries.
-  for (const key of index.keys()) {
+  // Check full text for multi-word Latin phrases on word boundaries
+  for (const [key] of index.entries()) {
     if (!key.includes(" ")) continue;
-    const at = text.search(new RegExp(`(^|[^\\p{L}])${escapeRegExp(key)}($|[^\\p{L}])`, "u"));
-    if (at >= 0) note(key, at);
+
+    const pattern = new RegExp(`(^|[^\\p{L}])${escapeForRegex(key)}($|[^\\p{L}])`, "u");
+    const offset = normalizedText.search(pattern);
+    if (offset >= 0) {
+      recordMatch(key, offset);
+    }
   }
 
-  return [...found.entries()]
+  return Array.from(matchedPositions.entries())
     .sort((a, b) => a[1] - b[1])
     .slice(0, MAX_MENTIONS)
     .map(([key]) => index.get(key)!);
