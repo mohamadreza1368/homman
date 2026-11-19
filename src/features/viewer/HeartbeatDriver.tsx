@@ -5,7 +5,6 @@ import * as THREE from "three";
 import type { ManifestOrgan } from "@/lib/schemas";
 import { useHeartStore } from "@/stores/heartStore";
 import { useSceneStore } from "@/stores/sceneStore";
-
 import {
   BEAT_ATRIA,
   BEAT_BASE_ATRIA,
@@ -48,16 +47,16 @@ import { rhythm, RhythmPlayer } from "./rhythms";
 import { BreathPacer } from "./sinusArrhythmia";
 
 /**
- * The longest a single frame may advance the heart, in seconds.
- *
- * A stall — a shader compiling, the window dragged — would otherwise arrive as
- * one enormous step, and the heart would jump a whole beat with its sounds
- * crammed into one frame. Clamped, the heart simply runs a little slow for that
- * moment, which nobody can see.
+ * HOOMAAN Cardiac Dynamics Driver.
+ * Coordinates atrial and ventricular contraction cycles, pulse wave emission,
+ * cardiac seam freedom vertex attributes, vessel distance flow maps,
+ * arrhythmia sound synthesis, and ECG waveform tracking.
  */
-const LONGEST_STEP_S = 0.1;
 
-function pointsOf(entry: BeatingMesh): ChamberPoints {
+const MAX_FRAME_DELTA_S = 0.1;
+const PATH_SETTLE_FRAMES = 20;
+
+function extractChamberPoints(entry: BeatingMesh): ChamberPoints {
   return {
     chamber: entry.chamber,
     vertices: entry.mesh.geometry.getAttribute("position"),
@@ -65,97 +64,66 @@ function pointsOf(entry: BeatingMesh): ChamberPoints {
   };
 }
 
-/**
- * Give every beating geometry its seam attribute. See `seamFreedom`.
- *
- * Run when what is beating changes, not per frame: it reads every vertex of the
- * heart, and the answer does not change while the heart stays where it is.
- */
-function measureSeams(): void {
-  const started = performance.now();
-  const walls: ChamberPoints[] = [];
-  for (const entry of BEATING.values()) if (entry.wall) walls.push(pointsOf(entry));
-  const grid = seamGrid(walls);
-  for (const entry of BEATING.values()) {
-    const free = seamFreedom(grid, pointsOf(entry));
-    entry.mesh.geometry.setAttribute(SEAM_ATTRIBUTE, new THREE.BufferAttribute(free, 1));
+function computeCardiacSeams(): void {
+  const t0 = performance.now();
+  const chamberWalls: ChamberPoints[] = [];
+  for (const item of BEATING.values()) {
+    if (item.wall) chamberWalls.push(extractChamberPoints(item));
   }
-  HEART_PROBE.seamMs = performance.now() - started;
+  const grid = seamGrid(chamberWalls);
+  for (const item of BEATING.values()) {
+    const freedom = seamFreedom(grid, extractChamberPoints(item));
+    item.mesh.geometry.setAttribute(SEAM_ATTRIBUTE, new THREE.BufferAttribute(freedom, 1));
+  }
+  HEART_PROBE.seamMs = performance.now() - t0;
 }
 
-/**
- * Measure how far along the vessels every lit vertex is. See `flowPaths.ts`.
- *
- * Each kind of vessel is its own network, from its own chamber: the arteries do
- * not borrow a path through a vein that happens to lie against them.
- */
-function measurePaths(centres: ReadonlyMap<string, THREE.Vector3>): void {
-  const started = performance.now();
-  let vertices = 0;
-  for (const kind of Object.keys(FLOW_CHAMBER) as FlowKind[]) {
-    const origin = centres.get(FLOW_CHAMBER[kind]);
-    const entries = [...FLOWING.values()].filter((entry) => entry.kind === kind);
-    if (!origin || entries.length === 0) continue;
-    const meshes: PathMesh[] = entries.map((entry) => {
-      entry.mesh.updateWorldMatrix(true, false);
-      const position = entry.mesh.geometry.getAttribute("position");
-      vertices += position.count;
-      return { vertices: position, matrixWorld: entry.mesh.matrixWorld, seed: entry.seed };
+function computeVesselFlowPaths(chamberCenters: ReadonlyMap<string, THREE.Vector3>): void {
+  const t0 = performance.now();
+  let vertexTotal = 0;
+
+  for (const type of Object.keys(FLOW_CHAMBER) as FlowKind[]) {
+    const rootCenter = chamberCenters.get(FLOW_CHAMBER[type]);
+    const vesselList = [...FLOWING.values()].filter((item) => item.kind === type);
+    if (!rootCenter || vesselList.length === 0) continue;
+
+    const pathMeshes: PathMesh[] = vesselList.map((item) => {
+      item.mesh.updateWorldMatrix(true, false);
+      const posAttr = item.mesh.geometry.getAttribute("position");
+      vertexTotal += posAttr.count;
+      return { vertices: posAttr, matrixWorld: item.mesh.matrixWorld, seed: item.seed };
     });
-    const paths = flowPaths(meshes, origin);
-    entries.forEach((entry, i) => {
-      entry.mesh.geometry.setAttribute(FLOW_PATH_ATTRIBUTE, new THREE.BufferAttribute(paths[i]!, 1));
+
+    const distances = flowPaths(pathMeshes, rootCenter);
+    vesselList.forEach((item, idx) => {
+      item.mesh.geometry.setAttribute(
+        FLOW_PATH_ATTRIBUTE,
+        new THREE.BufferAttribute(distances[idx]!, 1),
+      );
     });
   }
-  FLOW_PROBE.pathMs = performance.now() - started;
-  FLOW_PROBE.vertices = vertices;
+
+  FLOW_PROBE.pathMs = performance.now() - t0;
+  FLOW_PROBE.vertices = vertexTotal;
 }
 
-/**
- * Frames the vessel registry must stay unchanged before the paths are measured.
- *
- * Systems load a few meshes a frame, and turning the body to glass mounts six
- * hundred lights over several frames. Measuring on every change would measure
- * the network hundreds of times while it was still arriving.
- */
-const PATH_SETTLE_FRAMES = 20;
-
-/**
- * The clock the heart beats to, run once per frame for the whole heart.
- *
- * Mounted always and idle unless the heartbeat is on. Each frame it writes the
- * two shared contraction values from the chosen rhythm, keeps every beating
- * mesh's chamber centre in that mesh's own coordinates — so an exploded or
- * moved heart still contracts towards the right point — and plays the heart
- * sounds the rhythm laid down for that frame.
- *
- * Two clocks: real seconds, and the heart's own. They are the same unless the
- * body is breathing too and the rhythm is one the breath reaches, when the
- * heart's runs a little faster as the breath comes in and slower as it goes
- * out — see `sinusArrhythmia.ts`. The rhythm is played on the heart's clock;
- * everything that has to be true in real seconds stays on the real one: the
- * flash guard, which counts flashes a second, the blood's travel, and the ECG
- * strip's sweep.
- */
 export function HeartbeatDriver({
   boxes,
   organs,
   revision,
 }: {
-  /** The scene's measured boxes, filled in place as systems load. */
   boxes: ReadonlyMap<string, THREE.Box3>;
   organs: readonly ManifestOrgan[];
-  /** Bumped when `boxes` changes, which its identity never says. */
   revision: number;
 }) {
   const enabled = useHeartStore((s) => s.enabled);
   const rhythmId = useHeartStore((s) => s.rhythm);
-  const centres = useMemo(
+
+  const centers = useMemo(
     () => (enabled ? chamberCentres(boxes, organs) : null),
     [enabled, boxes, organs, revision],
   );
 
-  // Where the base is held. Written when the heart is measured, not per frame.
   useEffect(() => {
     if (!enabled) return;
     const holds = chamberHolds(boxes, organs);
@@ -165,48 +133,38 @@ export function HeartbeatDriver({
     BEAT_REACH_VENTRICLES.value = holds.ventricles?.reach ?? 0;
   }, [enabled, boxes, organs, revision]);
 
-  /** Seconds of heartbeat so far, on the heart's clock. Restarts at the top of a cycle each time. */
-  const clock = useRef(0);
-  /** The same, in real seconds. */
-  const real = useRef(0);
-  /** Whether nothing was contracting in the last frame: only then may the breath move the clock. */
-  const resting = useRef(true);
-  const pacer = useMemo(() => new BreathPacer(), []);
-  /** The registry version the seams were last measured for. */
-  const measured = useRef(-1);
-  /** The vessel registry version the paths were measured for, and how long it has held. */
-  const pathsMeasured = useRef(-1);
-  const pathsSeen = useRef({ version: -1, frames: 0 });
-  /** The rhythm being played, made on the first frame after it was chosen. */
-  const player = useRef<RhythmPlayer | null>(null);
-  /** The blood the contractions push. See `bloodFlow.ts`. */
+  const cardiacClock = useRef(0);
+  const wallClock = useRef(0);
+  const isResting = useRef(true);
+  const respiratoryPacer = useMemo(() => new BreathPacer(), []);
+  const lastSeamVersion = useRef(-1);
+  const lastFlowVersion = useRef(-1);
+  const flowStability = useRef({ version: -1, frames: 0 });
+  const activePlayer = useRef<RhythmPlayer | null>(null);
   const pulses = useMemo(() => new PulseTrain(), []);
-  /** One guard per group of chambers, so a fast atrium does not calm a slow ventricle. */
   const guards = useMemo(() => ({ atria: new LightGuard(), ventricles: new LightGuard() }), []);
+  const invMatrix = useMemo(() => new THREE.Matrix4(), []);
 
-  // A new rhythm starts from the top, from a heart at rest.
   useEffect(() => {
-    player.current = null;
-    clock.current = 0;
-    real.current = 0;
-    resting.current = true;
-    pacer.reset();
+    activePlayer.current = null;
+    cardiacClock.current = 0;
+    wallClock.current = 0;
+    isResting.current = true;
+    respiratoryPacer.reset();
     HEART_TRACE.clock.reset();
     pulses.reset();
-  }, [rhythmId, pulses, pacer]);
-  const inverse = useMemo(() => new THREE.Matrix4(), []);
+  }, [rhythmId, pulses, respiratoryPacer]);
 
   useEffect(() => {
     if (enabled) return;
-    // Back to rest, so the next time it starts it starts from a heart at rest.
-    clock.current = 0;
-    real.current = 0;
-    resting.current = true;
-    pacer.reset();
+    cardiacClock.current = 0;
+    wallClock.current = 0;
+    isResting.current = true;
+    respiratoryPacer.reset();
     HEART_TRACE.clock.reset();
-    measured.current = -1;
-    pathsMeasured.current = -1;
-    player.current = null;
+    lastSeamVersion.current = -1;
+    lastFlowVersion.current = -1;
+    activePlayer.current = null;
     BEAT_ATRIA.value = 0;
     BEAT_VENTRICLES.value = 0;
     BEAT_GLOW.value = 0;
@@ -218,76 +176,90 @@ export function HeartbeatDriver({
     pulses.reset();
     FLOW_UNIFORMS.uPulseStrength.value.fill(0);
     FLOW_UNIFORMS.uVenous.value = 0;
-  }, [enabled, pulses, guards, pacer]);
+  }, [enabled, pulses, guards, respiratoryPacer]);
 
   useFrame((_, delta) => {
-    if (!enabled || !centres) return;
+    if (!enabled || !centers) return;
 
-    if (measured.current !== BEATING_VERSION.value) {
-      measured.current = BEATING_VERSION.value;
-      measureSeams();
+    if (lastSeamVersion.current !== BEATING_VERSION.value) {
+      lastSeamVersion.current = BEATING_VERSION.value;
+      computeCardiacSeams();
     }
 
-    const version = FLOWING_VERSION.value;
-    if (version !== pathsMeasured.current && FLOWING.size > 0) {
-      const seen = pathsSeen.current;
-      if (seen.version !== version) {
-        seen.version = version;
-        seen.frames = 0;
-      } else if (++seen.frames >= PATH_SETTLE_FRAMES) {
-        pathsMeasured.current = version;
-        measurePaths(centres);
+    const currentFlowVer = FLOWING_VERSION.value;
+    if (currentFlowVer !== lastFlowVersion.current && FLOWING.size > 0) {
+      const stableCheck = flowStability.current;
+      if (stableCheck.version !== currentFlowVer) {
+        stableCheck.version = currentFlowVer;
+        stableCheck.frames = 0;
+      } else if (++stableCheck.frames >= PATH_SETTLE_FRAMES) {
+        lastFlowVersion.current = currentFlowVer;
+        computeVesselFlowPaths(centers);
       }
     }
 
-    const step = Math.min(delta, LONGEST_STEP_S);
-    const definition = rhythm(rhythmId);
-    const swing = BREATH_NOW.swing * (definition.followsBreath ?? 0);
-    const before = clock.current;
-    const after = before + pacer.advance(step, swing, resting.current);
-    clock.current = after;
-    real.current += step;
-    const now = real.current;
+    const dt = Math.min(delta, MAX_FRAME_DELTA_S);
+    const pattern = rhythm(rhythmId);
+    const respiratoryOffset = BREATH_NOW.swing * (pattern.followsBreath ?? 0);
+    const tStart = cardiacClock.current;
+    const tEnd = tStart + respiratoryPacer.advance(dt, respiratoryOffset, isResting.current);
+    cardiacClock.current = tEnd;
+    wallClock.current += dt;
+    const currentWallTime = wallClock.current;
 
-    player.current ??= new RhythmPlayer(definition);
-    const beat = player.current.advance(before, after);
-    resting.current = beat.atria === 0 && beat.ventricles === 0;
-    HEART_TRACE.player = player.current;
-    HEART_TRACE.now = now;
-    HEART_TRACE.clock.push(now, after);
-    BEAT_ATRIA.value = beat.atria;
-    BEAT_VENTRICLES.value = beat.ventricles;
+    activePlayer.current ??= new RhythmPlayer(pattern);
+    const cycle = activePlayer.current.advance(tStart, tEnd);
+    isResting.current = cycle.atria === 0 && cycle.ventricles === 0;
 
-    for (const entry of BEATING.values()) {
-      const centre = centres.get(entry.chamber);
-      if (!centre) continue;
-      entry.centre.value.copy(centre).applyMatrix4(inverse.copy(entry.mesh.matrixWorld).invert());
+    HEART_TRACE.player = activePlayer.current;
+    HEART_TRACE.now = currentWallTime;
+    HEART_TRACE.clock.push(currentWallTime, tEnd);
+
+    BEAT_ATRIA.value = cycle.atria;
+    BEAT_VENTRICLES.value = cycle.ventricles;
+
+    for (const item of BEATING.values()) {
+      const c = centers.get(item.chamber);
+      if (!c) continue;
+      item.centre.value.copy(c).applyMatrix4(invMatrix.copy(item.mesh.matrixWorld).invert());
     }
 
-    // The chambers light only when the blood's light is showing too.
     BEAT_GLOW.value = (useSceneStore.getState().systemOpacity.cardiovascular ?? 1) < 1 ? 1 : 0;
-    // The light follows the beat only while that is safe to watch.
-    const calm = prefersReducedMotion();
-    BEAT_LIGHT_ATRIA.value = guards.atria.next(now, step, beat.atria / SQUEEZE.atria, calm);
-    BEAT_LIGHT_VENTRICLES.value = guards.ventricles.next(now, step, beat.ventricles / SQUEEZE.ventricles, calm);
+    const reducedMotion = prefersReducedMotion();
+    BEAT_LIGHT_ATRIA.value = guards.atria.next(
+      currentWallTime,
+      dt,
+      cycle.atria / SQUEEZE.atria,
+      reducedMotion,
+    );
+    BEAT_LIGHT_VENTRICLES.value = guards.ventricles.next(
+      currentWallTime,
+      dt,
+      cycle.ventricles / SQUEEZE.ventricles,
+      reducedMotion,
+    );
     FLOW_UNIFORMS.uFlowSteady.value = guards.ventricles.steady ? 1 : 0;
 
-    // The blood follows the contractions, heard or not.
-    for (const level of beat.lub) pulses.launch(now, level);
-    pulses.advance(now, step, FLOW_UNIFORMS.uPulseAge.value, FLOW_UNIFORMS.uPulseStrength.value);
+    for (const intensity of cycle.lub) pulses.launch(currentWallTime, intensity);
+    pulses.advance(
+      currentWallTime,
+      dt,
+      FLOW_UNIFORMS.uPulseAge.value,
+      FLOW_UNIFORMS.uPulseStrength.value,
+    );
     FLOW_UNIFORMS.uVenous.value = pulses.venous;
-    FLOW_UNIFORMS.uFlowTime.value = now;
+    FLOW_UNIFORMS.uFlowTime.value = currentWallTime;
+
     for (const kind of Object.keys(FLOW_CHAMBER) as FlowKind[]) {
-      const centre = centres.get(FLOW_CHAMBER[kind]);
-      if (centre) FLOW_SOURCES[kind].value.copy(centre);
+      const chamberCoord = centers.get(FLOW_CHAMBER[kind]);
+      if (chamberCoord) FLOW_SOURCES[kind].value.copy(chamberCoord);
     }
 
-    // Read rather than subscribed: a preference nobody changes mid-frame.
     if (useHeartStore.getState().sound) {
-      for (const level of beat.lub) playLub(level);
-      for (const level of beat.dub) playDub(level);
-      for (const murmur of beat.murmurs) playMurmur(murmur);
-      for (const kind of beat.extras) playExtra(kind);
+      for (const val of cycle.lub) playLub(val);
+      for (const val of cycle.dub) playDub(val);
+      for (const murmur of cycle.murmurs) playMurmur(murmur);
+      for (const ext of cycle.extras) playExtra(ext);
     }
   });
 

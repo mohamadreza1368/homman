@@ -1,9 +1,9 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 import type { ManifestOrgan } from "@/lib/schemas";
 import { activeCase, useCaseStore } from "@/stores/caseStore";
-import { organLabel, regionMembersByNode, useSceneStore } from "@/stores/sceneStore";
 import { useInterfaceLanguage } from "@/stores/interfaceLanguage";
+import { organLabel, regionMembersByNode, useSceneStore } from "@/stores/sceneStore";
 
 export interface MenuTarget {
   organId: string;
@@ -11,183 +11,190 @@ export interface MenuTarget {
   y: number;
 }
 
-/**
- * Right-click menu for isolating a structure or any group that contains it.
- *
- * This exists because the obvious gesture does not work: **the atlas has no
- * mesh called "Heart"**. The heart is a *collection* holding seventeen parts,
- * so there is nothing to double-click that means "the whole organ" — clicking a
- * chamber can only ever isolate that chamber.
- *
- * The ancestry is the answer. Right-clicking a chamber offers the chamber, then
- * the heart, then the cardiovascular system, each with the count it would show.
- * Picking the level of detail is the reader's decision, not a guess we make for
- * them.
- */
-export function StructureMenu({
-  target,
-  onClose,
-}: {
+interface StructureMenuProps {
   target: MenuTarget | null;
   onClose: () => void;
-}) {
-  const organs = useSceneStore((s) => s.organs);
-  const studyOrgan = useSceneStore((s) => s.studyOrgan);
-  const selectedOrganIds = useSceneStore((s) => s.selectedOrganIds);
-  const isolateSelection = useSceneStore((s) => s.isolateSelection);
-  const hideSelection = useSceneStore((s) => s.hideSelection);
-  const studyGroup = useSceneStore((s) => s.studyGroup);
-  const applyCommand = useSceneStore((s) => s.applyCommand);
-  const depthProbeVisible = useSceneStore((s) => s.depthProbeVisible);
-  const setDepthProbeVisible = useSceneStore((s) => s.setDepthProbeVisible);
-  const showAllSystems = useSceneStore((s) => s.showAllSystems);
-  const setHovered = useSceneStore((s) => s.setHovered);
-  const activePatient = useCaseStore(activeCase);
-  const symptoms = useCaseStore((s) => s.symptoms);
-  const unmark = useCaseStore((s) => s.unmark);
-  const menuRef = useRef<HTMLDivElement>(null);
-  const [marking, setMarking] = useState(false);
-  const fa = useInterfaceLanguage((s) => s.language === "fa");
+}
 
-  const organ = target ? organs[target.organId] : undefined;
-  /** What is already recorded here, so the menu shows it rather than duplicating it. */
-  const marked = symptoms.filter((entry) => entry.organ_id === target?.organId);
+/**
+ * Contextual radial/floating menu triggered by right-clicking anatomical geometry in the 3D scene.
+ * Exposes hierarchy-aware isolation, selection grouping, camera targeting, and clinical notation.
+ */
+export function StructureMenu({ target, onClose }: StructureMenuProps) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [isRecordingSymptom, setIsRecordingSymptom] = useState(false);
 
-  /**
-   * Ancestry, innermost group first. Reversed because the group that contains
-   * this structure most closely is the one most likely wanted.
-   */
-  const groups = useMemo(() => {
-    if (!organ) return [];
-    return [...organ.path]
+  const isPersian = useInterfaceLanguage((state) => state.language === "fa");
+  const organCatalog = useSceneStore((state) => state.organs);
+  const isolateOrgan = useSceneStore((state) => state.studyOrgan);
+  const activeSelection = useSceneStore((state) => state.selectedOrganIds);
+  const isolateCurrentSelection = useSceneStore((state) => state.isolateSelection);
+  const hideCurrentSelection = useSceneStore((state) => state.hideSelection);
+  const isolateParentGroup = useSceneStore((state) => state.studyGroup);
+  const executeCommand = useSceneStore((state) => state.applyCommand);
+  const isDepthProbeActive = useSceneStore((state) => state.depthProbeVisible);
+  const setDepthProbeActive = useSceneStore((state) => state.setDepthProbeVisible);
+  const restoreAllSystems = useSceneStore((state) => state.showAllSystems);
+  const setHoveredOrgan = useSceneStore((state) => state.setHovered);
+
+  const currentCase = useCaseStore(activeCase);
+  const clinicalSymptoms = useCaseStore((state) => state.symptoms);
+  const removeSymptom = useCaseStore((state) => state.unmark);
+
+  const targetedOrgan = target ? organCatalog[target.organId] : undefined;
+  const existingSymptoms = clinicalSymptoms.filter((s) => s.organ_id === target?.organId);
+
+  // Traverse ancestor branches from innermost to outermost group
+  const ancestorHierarchies = useMemo(() => {
+    if (!targetedOrgan) return [];
+    return [...targetedOrgan.path]
       .reverse()
-      .map((node) => ({ node, count: regionMembersByNode(organs, node).length }))
-      .filter((entry) => entry.count > 1);
-  }, [organ, organs]);
+      .map((ancestorName) => ({
+        node: ancestorName,
+        count: regionMembersByNode(organCatalog, ancestorName).length,
+      }))
+      .filter((branch) => branch.count > 1);
+  }, [targetedOrgan, organCatalog]);
 
+  // Handle outside click / pointer down and Escape key dismissals
   useEffect(() => {
     if (!target) return;
-    const dismiss = (event: MouseEvent) => {
-      if (!menuRef.current?.contains(event.target as Node)) onClose();
+
+    const handlePointerDown = (evt: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(evt.target as Node)) {
+        onClose();
+      }
     };
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
+
+    const handleKeyDown = (evt: KeyboardEvent) => {
+      if (evt.key === "Escape") {
+        onClose();
+      }
     };
-    // `pointerdown` rather than `click`: dismissing on click would let the same
-    // press that closes the menu also select whatever is behind it.
-    window.addEventListener("pointerdown", dismiss);
-    window.addEventListener("keydown", onKey);
+
+    window.addEventListener("pointerdown", handlePointerDown);
+    window.addEventListener("keydown", handleKeyDown);
     return () => {
-      window.removeEventListener("pointerdown", dismiss);
-      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("pointerdown", handlePointerDown);
+      window.removeEventListener("keydown", handleKeyDown);
     };
   }, [target, onClose]);
 
-  if (!target || !organ) return null;
+  if (!target || !targetedOrgan) return null;
 
-  const act = (run: () => void) => () => {
-    run();
-    setHovered(null);
+  const triggerAction = (callback: () => void) => () => {
+    callback();
+    setHoveredOrgan(null);
     onClose();
   };
 
   return (
     <div
-      ref={menuRef}
-      // Nudged off the cursor so the pointer is not sitting on the first item.
+      ref={containerRef}
       style={{ left: target.x + 2, top: target.y + 2 }}
-      className="absolute z-50 w-64 overflow-hidden rounded-lg border border-slate-700 bg-slate-900/98 py-1 text-xs shadow-2xl backdrop-blur"
       role="menu"
+      dir={isPersian ? "rtl" : "ltr"}
+      className="absolute z-50 w-64 overflow-hidden rounded-lg border border-slate-700 bg-slate-900/98 py-1 text-xs shadow-2xl backdrop-blur"
     >
-      <div className="border-b border-slate-800 px-3 py-1.5">
-        <p className="truncate italic text-slate-200">{organLabel(organ)}</p>
-        <p className="truncate text-[10px] text-slate-500">{organ.name_en}</p>
-      </div>
+      <header className="border-b border-slate-800 px-3 py-1.5">
+        <p className="truncate italic text-slate-200">{organLabel(targetedOrgan)}</p>
+        <p className="truncate text-[10px] text-slate-500">{targetedOrgan.name_en}</p>
+      </header>
 
-      <MenuItem onClick={act(() => studyOrgan(organ.organ_id))}>
-        {fa ? "جداسازی این ساختار" : "Isolate this structure"}
-      </MenuItem>
+      <ContextMenuItem onClick={triggerAction(() => isolateOrgan(targetedOrgan.organ_id))}>
+        {isPersian ? "جداسازی این ساختار" : "Isolate this structure"}
+      </ContextMenuItem>
 
-      {selectedOrganIds.length > 1 && (
+      {activeSelection.length > 1 && (
         <>
-          <MenuItem onClick={act(isolateSelection)}>
-            {fa ? "جداسازی انتخاب‌شده‌ها" : "Isolate selection"}
-            <span className="ml-auto text-[10px] text-slate-500">
-              {selectedOrganIds.length}
+          <ContextMenuItem onClick={triggerAction(isolateCurrentSelection)}>
+            <span>{isPersian ? "جداسازی انتخاب‌شده‌ها" : "Isolate selection"}</span>
+            <span className={`${isPersian ? "mr-auto" : "ml-auto"} text-[10px] text-slate-500`}>
+              {activeSelection.length}
             </span>
-          </MenuItem>
-          <MenuItem onClick={act(hideSelection)}>{fa ? "پنهان کردن انتخاب‌شده‌ها" : "Hide selection"}</MenuItem>
+          </ContextMenuItem>
+          <ContextMenuItem onClick={triggerAction(hideCurrentSelection)}>
+            {isPersian ? "پنهان کردن انتخاب‌شده‌ها" : "Hide selection"}
+          </ContextMenuItem>
         </>
       )}
 
-      {groups.length > 0 && (
-        <>
+      {ancestorHierarchies.length > 0 && (
+        <section aria-label="Groups">
           <p className="px-3 pb-0.5 pt-2 text-[9px] uppercase tracking-wider text-slate-600">
-            {fa ? "جداسازی گروه مربوطه" : "Isolate the group it belongs to"}
+            {isPersian ? "جداسازی گروه مربوطه" : "Isolate the group it belongs to"}
           </p>
-          {groups.map((group) => (
-            <MenuItem key={group.node} onClick={act(() => studyGroup(group.node))}>
-              <span className="truncate">{group.node}</span>
-              <span className="ml-auto shrink-0 text-[10px] text-slate-500">
-                {group.count}
+          {ancestorHierarchies.map((grp) => (
+            <ContextMenuItem key={grp.node} onClick={triggerAction(() => isolateParentGroup(grp.node))}>
+              <span className="truncate">{grp.node}</span>
+              <span className={`${isPersian ? "mr-auto" : "ml-auto"} shrink-0 text-[10px] text-slate-500`}>
+                {grp.count}
               </span>
-            </MenuItem>
+            </ContextMenuItem>
           ))}
-        </>
+        </section>
       )}
 
-      <div className="my-1 border-t border-slate-800" />
+      <hr className="my-1 border-t border-slate-800" />
 
-      <MenuItem
-        onClick={act(() =>
-          applyCommand({ action: "focus_organ", organ_id: organ.organ_id }),
+      <ContextMenuItem
+        onClick={triggerAction(() =>
+          executeCommand({ action: "focus_organ", organ_id: targetedOrgan.organ_id })
         )}
       >
-        {fa ? "پرواز به این ساختار" : "Fly to this structure"}
-      </MenuItem>
-      <MenuItem onClick={act(showAllSystems)}>{fa ? "نمایش همهٔ ساختارها" : "Show everything"}</MenuItem>
-      <MenuItem onClick={act(() => setDepthProbeVisible(!depthProbeVisible))}>
-        {depthProbeVisible
-          ? (fa ? "پنهان کردن فهرست مکان‌نما" : "Hide the cursor list")
-          : (fa ? "نمایش فهرست مکان‌نما" : "Show the cursor list")}
-      </MenuItem>
+        {isPersian ? "پرواز به این ساختار" : "Fly to this structure"}
+      </ContextMenuItem>
 
-      {/* Only with a patient open: a complaint has to belong to someone, and
-          there is nowhere to file one otherwise. */}
-      {activePatient && (
-        <>
-          <div className="my-1 border-t border-slate-800" />
-          {marking ? (
+      <ContextMenuItem onClick={triggerAction(restoreAllSystems)}>
+        {isPersian ? "نمایش همهٔ ساختارها" : "Show everything"}
+      </ContextMenuItem>
+
+      <ContextMenuItem onClick={triggerAction(() => setDepthProbeActive(!isDepthProbeActive))}>
+        {isDepthProbeActive
+          ? isPersian
+            ? "پنهان کردن فهرست مکان‌نما"
+            : "Hide the cursor list"
+          : isPersian
+            ? "نمایش فهرست مکان‌نما"
+            : "Show the cursor list"}
+      </ContextMenuItem>
+
+      {currentCase && (
+        <section aria-label="Case Clinical Records">
+          <hr className="my-1 border-t border-slate-800" />
+          {isRecordingSymptom ? (
             <SymptomComposer
-              organ={organ}
-              caseId={activePatient.id}
+              organ={targetedOrgan}
+              caseId={currentCase.id}
               onDone={() => {
-                setMarking(false);
-                setHovered(null);
+                setIsRecordingSymptom(false);
+                setHoveredOrgan(null);
                 onClose();
               }}
-              onCancel={() => setMarking(false)}
+              onCancel={() => setIsRecordingSymptom(false)}
             />
           ) : (
             <>
               <p className="px-3 pb-0.5 pt-1 text-[9px] uppercase tracking-wider text-slate-600">
-                {activePatient.title}
+                {currentCase.title}
               </p>
-              <MenuItem onClick={() => setMarking(true)}>{fa ? "ثبت علامت یا شکایت در اینجا" : "Mark a complaint here"}</MenuItem>
-              {marked.length > 0 && (
-                <div className="px-3 pb-1.5 pt-0.5 space-y-0.5">
-                  {marked.map((entry) => (
-                    <div key={entry.id} className="flex items-center gap-1.5">
+              <ContextMenuItem onClick={() => setIsRecordingSymptom(true)}>
+                {isPersian ? "ثبت علامت یا شکایت در اینجا" : "Mark a complaint here"}
+              </ContextMenuItem>
+              {existingSymptoms.length > 0 && (
+                <div className="space-y-0.5 px-3 pb-1.5 pt-0.5">
+                  {existingSymptoms.map((symptomItem) => (
+                    <div key={symptomItem.id} className="flex items-center gap-1.5">
                       <span className="min-w-0 flex-1 truncate text-[10px] text-amber-300/90">
-                        {entry.symptom}
-                        {entry.severity !== null && (
-                          <span className="text-slate-500"> · {entry.severity}/10</span>
+                        {symptomItem.symptom}
+                        {symptomItem.severity !== null && (
+                          <span className="text-slate-500"> · {symptomItem.severity}/10</span>
                         )}
                       </span>
                       <button
                         type="button"
-                        onClick={() => void unmark(entry.id)}
-                        title={fa ? "حذف این شکایت" : "Remove this complaint"}
+                        onClick={() => void removeSymptom(symptomItem.id)}
+                        title={isPersian ? "حذف این شکایت" : "Remove this complaint"}
                         className="shrink-0 text-[10px] text-slate-600 transition hover:text-rose-400"
                       >
                         ✕
@@ -198,64 +205,53 @@ export function StructureMenu({
               )}
             </>
           )}
-        </>
+        </section>
       )}
     </div>
   );
 }
 
-/**
- * Marking what the reader says hurts here.
- *
- * **Where they point, not where the cause is.** Nothing tries to be clever
- * about relocating a complaint to the organ it suggests — pain down an arm
- * belonging to a heart is the reasoning the case exists to teach, and quietly
- * filing it under the heart would delete the exercise.
- */
-function SymptomComposer({
-  organ,
-  caseId,
-  onDone,
-  onCancel,
-}: {
+interface SymptomComposerProps {
   organ: ManifestOrgan;
   caseId: string;
   onDone: () => void;
   onCancel: () => void;
-}) {
-  const mark = useCaseStore((s) => s.mark);
-  const [text, setText] = useState("");
-  const [severity, setSeverity] = useState(5);
-  const [busy, setBusy] = useState(false);
-  const fa = useInterfaceLanguage((s) => s.language === "fa");
+}
 
-  async function save() {
-    if (text.trim().length === 0) return;
-    setBusy(true);
-    const marked = await mark({
+/** Form panel for annotating a clinical symptom or patient complaint to a specific organ geometry. */
+function SymptomComposer({ organ, caseId, onDone, onCancel }: SymptomComposerProps) {
+  const submitMark = useCaseStore((state) => state.mark);
+  const [description, setDescription] = useState("");
+  const [severityLevel, setSeverityLevel] = useState(5);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const isPersian = useInterfaceLanguage((state) => state.language === "fa");
+
+  const handlePersist = async () => {
+    const trimmed = description.trim();
+    if (!trimmed) return;
+    setIsSubmitting(true);
+    const result = await submitMark({
       case_id: caseId,
       organ_id: organ.organ_id,
-      // Stored beside the id so the complaint can still name where it was
-      // marked when this structure's system is switched off.
       organ_label: organLabel(organ),
-      symptom: text.trim(),
-      severity,
+      symptom: trimmed,
+      severity: severityLevel,
     });
-    setBusy(false);
-    if (marked) onDone();
-  }
+    setIsSubmitting(false);
+    if (result) onDone();
+  };
 
   return (
     <div className="space-y-1.5 px-3 py-2">
       <input
         autoFocus
-        value={text}
-        onChange={(event) => setText(event.target.value)}
-        onKeyDown={(event) => {
-          if (event.key === "Enter") void save();
-          if (event.key === "Escape") onCancel();
+        value={description}
+        onChange={(e) => setDescription(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") void handlePersist();
+          if (e.key === "Escape") onCancel();
         }}
-        placeholder={fa ? "بیمار در این ناحیه چه مشکلی گزارش می‌کند؟" : "What does the patient report here?"}
+        placeholder={isPersian ? "بیمار در این ناحیه چه مشکلی گزارش می‌کند؟" : "What does the patient report here?"}
         className="w-full rounded border border-slate-700 bg-slate-950 px-2 py-1 text-[11px] outline-none placeholder:text-slate-600 focus:border-amber-600"
       />
       <div className="flex items-center gap-2">
@@ -263,48 +259,47 @@ function SymptomComposer({
           type="range"
           min={0}
           max={10}
-          value={severity}
-          onChange={(event) => setSeverity(Number(event.target.value))}
+          value={severityLevel}
+          onChange={(e) => setSeverityLevel(Number(e.target.value))}
           className="h-1 flex-1 accent-amber-500"
         />
         <span className="w-8 shrink-0 text-right text-[10px] tabular-nums text-slate-400">
-          {severity}/10
+          {severityLevel}/10
         </span>
       </div>
       <div className="flex gap-1.5">
         <button
           type="button"
-          onClick={() => void save()}
-          disabled={busy || text.trim().length === 0}
+          onClick={() => void handlePersist()}
+          disabled={isSubmitting || description.trim().length === 0}
           className="flex-1 rounded border border-amber-700/60 bg-amber-500/15 px-2 py-1 text-[10px] text-amber-200 transition hover:bg-amber-500/25 disabled:opacity-40"
         >
-          {fa ? "ثبت علامت" : "Mark it"}
+          {isPersian ? "ثبت علامت" : "Mark it"}
         </button>
         <button
           type="button"
           onClick={onCancel}
           className="rounded px-2 py-1 text-[10px] text-slate-500 transition hover:text-slate-200"
         >
-          {fa ? "انصراف" : "cancel"}
+          {isPersian ? "انصراف" : "cancel"}
         </button>
       </div>
     </div>
   );
 }
 
-function MenuItem({
-  children,
-  onClick,
-}: {
-  children: React.ReactNode;
+interface ContextMenuItemProps {
+  children: ReactNode;
   onClick: () => void;
-}) {
+}
+
+function ContextMenuItem({ children, onClick }: ContextMenuItemProps) {
   return (
     <button
       type="button"
       role="menuitem"
       onClick={onClick}
-      className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-slate-300 hover:bg-sky-600/20 hover:text-sky-200"
+      className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-slate-300 transition-colors hover:bg-sky-600/20 hover:text-sky-200"
     >
       {children}
     </button>

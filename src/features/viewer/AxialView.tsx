@@ -37,59 +37,22 @@ import { CURRENT_LEVEL } from "./vertebralLevel";
 import { tissueColour } from "./palette";
 
 /**
- * The cross-section, once it has left the GPU.
- *
- * # Why this is a plain canvas and not part of the scene
- *
- * Because a section only has to be right while the plane is still. Rendered
- * into the 3D view it would be redrawn sixty times a second for a picture that
- * changes when the reader lets go of a slider — measured on this atlas, a
- * second pass of the body costs about eight milliseconds even after the slab is
- * culled, which as a per-frame cost would take the viewport from fifty frames
- * to thirty.
- *
- * Read back into an ordinary canvas element it costs that once, and then
- * nothing at all. The render loop does not know this exists.
- *
- * # Why there is one canvas and two sizes
- *
- * The pass is rendered far larger than the panel because its cost is draw
- * calls rather than pixels, so resolution is nearly free on the render side —
- * but a panel that size would cover the body it is a section of. It sits small
- * until somebody asks to see it,
- * and the enlarged view is the *same* canvas element moved, not a copy: two
- * canvases would mean painting twice, and the producer knows about one.
+ * HOOMAAN Axial & Cross-Section Viewer Component.
+ * Displays real-time offscreen cross-sectional canvas representations with
+ * interactive magnification windowing, caliper distance measurement tools,
+ * radiological density presets, and slice capture capabilities.
  */
-/**
- * What the section contains, as a short table.
- *
- * # Why six and not all of them
- *
- * A slab through the chest holds three hundred and eighty structures, and a
- * list of three hundred and eighty is not a table — it is the same nothing the
- * picture already shows. Six is what a person reads, and the rest are counted,
- * which is the honest half of the sentence.
- *
- * It is deliberately the *same* rule and the same source the crossing panel
- * uses. Two lists of "what is here" that disagreed because they ranked
- * differently would be worse than one list.
- *
- * # Why the colours are the tissue's own
- *
- * They are the colours in the picture beside them. A legend whose swatches did
- * not match the image would be a decoration; matching, it is the only thing
- * turning an outline into a reading.
- */
+
 function SliceTable({ compact }: { compact: boolean }) {
-  const organs = useSceneStore((s) => s.organs);
+  const organMap = useSceneStore((s) => s.organs);
   const { organIds, total } = CURRENT_CROSSING.value;
   if (organIds.length === 0) return null;
-  const rest = Math.max(0, total - organIds.length);
+  const remainingCount = Math.max(0, total - organIds.length);
 
   return (
     <ul className={compact ? "mt-1 space-y-0.5" : "space-y-1"}>
       {organIds.map((organId) => {
-        const organ = organs[organId];
+        const organ = organMap[organId];
         return (
           <li key={organId} className="flex items-center gap-1.5">
             <span
@@ -111,9 +74,9 @@ function SliceTable({ compact }: { compact: boolean }) {
           </li>
         );
       })}
-      {rest > 0 && (
+      {remainingCount > 0 && (
         <li className={compact ? "text-[9px] text-slate-500" : "text-[11px] text-slate-500"}>
-          and {rest} more
+          and {remainingCount} more
         </li>
       )}
     </ul>
@@ -131,564 +94,409 @@ const WINDOW_FILTERS: Record<WindowPreset, string> = {
 };
 
 export function AxialView() {
-  const fa = useInterfaceLanguage((s) => s.language === "fa");
+  const isPersian = useInterfaceLanguage((s) => s.language === "fa");
   const [windowPreset, setWindowPreset] = useState<WindowPreset>("natural");
-  const canvas = useRef<HTMLCanvasElement>(null);
-  const enabled = useScanStore((s) => s.enabled);
-  const axial = useScanStore((s) => s.axial);
-  /**
-   * Subscribed so a new section brings a fresh table with it.
-   *
-   * `CURRENT_CROSSING` is a plain object the render loop writes into, and
-   * nothing re-renders when it changes — deliberately, because it changes
-   * several times a second. This counter changes once per section, after the
-   * picture has been painted, which is the one instant where the table and the
-   * image are describing the same level.
-   *
-   * It used to watch the finger instead, which worked only because a section
-   * was only ever taken by letting go. The wheel takes one without the finger
-   * moving at all.
-   */
-  const sections = useScanStore((s) => s.sections);
-  const held = useScanStore((s) => s.held);
-  const cut = useScanStore((s) => s.cut);
-  const torch = useScanStore((s) => s.torch);
-  // Subscribed only so the panel re-renders when the size changes: the canvas
-  // is resized by the painter, but the point past which magnifying invents
-  // detail moves the moment the setting does.
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const isScanEnabled = useScanStore((s) => s.enabled);
+  const isAxialActive = useScanStore((s) => s.axial);
+  const sectionCount = useScanStore((s) => s.sections);
+  const isScannerHeld = useScanStore((s) => s.held);
+  const isCutMode = useScanStore((s) => s.cut);
+  const isTorchActive = useScanStore((s) => s.torch);
+
   useScanStore((s) => s.detail);
-  /** Which plane the scanner is set to. What is on screen is `AXIAL_PROBE.plane`. */
-  const plane = useScanStore((s) => s.plane);
-  const [full, setFull] = useState(false);
-  /**
-   * The square of body the section is framed on, or null for the whole thing.
-   *
-   * Kept in metres rather than as a magnification, because the plane moves: the
-   * automatic frame is 108 cm at the chest and a third of that at the neck, so
-   * a window remembered as a fraction of the picture would swing across the
-   * body as the reader stepped through it. In metres it stays over the same
-   * anatomy, which is the point of being able to step while magnified.
-   *
-   * Mirrored into React state as well as the module value, because the panel
-   * reads it while rendering and the render loop reads it while rendering.
-   */
-  const [shown, setShown] = useState<SliceWindow | null>(null);
-  /** The last pointer position of a drag, so moves are deltas. */
-  const dragging = useRef<{ x: number; y: number } | null>(null);
-  /**
-   * The caliper: whether it is out, and what it is across.
-   *
-   * A visible control rather than a held modifier. Shift-drag was the obvious
-   * shape and it is the wrong one for the same reasons the pin was: it binds a
-   * feature to a keyboard layout, it cannot be discovered by looking, and it is
-   * unreachable on a machine driven by touch or one hand.
-   */
-  const [measuring, setMeasuring] = useState(false);
-  /**
-   * Every measurement drawn since the panel opened, each stamped with the level
-   * it was drawn on. Only those of the level on screen are shown; see `onLevel`.
-   */
-  const [measures, setMeasures] = useState<SectionMeasure[]>([]);
-  /** The line being dragged out now, not yet kept. */
-  const [draft, setDraft] = useState<SectionMeasure | null>(null);
-  /**
-   * The same line, for the pointer handlers.
-   *
-   * Letting go has to keep exactly the line the last move drew. Read from state
-   * it would be whatever the last render saw, which is not guaranteed to have
-   * caught up with the last move.
-   */
-  const drafting = useRef<SectionMeasure | null>(null);
-  /** The save, and whatever it had to say afterwards. */
-  const [saving, setSaving] = useState(false);
-  const [saved, setSaved] = useState<string | null>(null);
-  /**
-   * How wide the enlarged window actually is, in screen pixels.
-   *
-   * Measured rather than assumed, because it is sized in viewport units: a
-   * laptop and this desktop get different numbers, and neither changes in a
-   * way React would re-render for. It is what decides whether magnifying has
-   * run past the source, and a guess there is exactly the bug being fixed.
-   */
-  const frame = useRef<HTMLDivElement>(null);
-  const [frameWidth, setFrameWidth] = useState(0);
-  /**
-   * How this section was arrived at, which changes what the panel may claim.
-   *
-   * "Where you let go" is the truth about a section taken by releasing the
-   * light and a small lie about one reached with the wheel, and a caption that
-   * quietly stops being true is how a reader learns to ignore captions.
-   */
-  const [stepped, setStepped] = useState(false);
-  /** Wheel movement not yet worth a step. See `wheelSteps`. */
-  const carried = useRef(0);
-  /** The pending retake, cancelled by the next notch. See `WHEEL_SETTLE_MS`. */
-  const settle = useRef<number | null>(null);
-  /** When a moving gesture last cost a section. See `RETAKE_INTERVAL_MS`. */
-  const lastRetake = useRef(0);
-  /** The retake owed to a hand that stopped between two intervals. */
-  const trailing = useRef<number | null>(null);
+  const currentPlane = useScanStore((s) => s.plane);
+  const [isFullScreen, setIsFullScreen] = useState(false);
+  const [activeWindow, setActiveWindow] = useState<SliceWindow | null>(null);
+  const lastDragPos = useRef<{ x: number; y: number } | null>(null);
 
-  /**
-   * Retake, at most so often, and always once at the end.
-   *
-   * Leading and trailing both matter and for different reasons. Without the
-   * leading one the picture lags the hand by an interval and feels detached
-   * from it; without the trailing one it keeps whatever the gesture happened to
-   * be at when the last interval elapsed, which is not where it was left.
-   */
-  const retakeSoon = () => {
+  const [isMeasuringMode, setIsMeasuringMode] = useState(false);
+  const [recordedMeasures, setRecordedMeasures] = useState<SectionMeasure[]>([]);
+  const [activeDraftMeasure, setActiveDraftMeasure] = useState<SectionMeasure | null>(null);
+  const currentDraftRef = useRef<SectionMeasure | null>(null);
+
+  const [isSavingImage, setIsSavingImage] = useState(false);
+  const [saveStatusMessage, setSaveStatusMessage] = useState<string | null>(null);
+
+  const frameContainerRef = useRef<HTMLDivElement>(null);
+  const [computedFrameWidth, setComputedFrameWidth] = useState(0);
+  const [isSteppedNavigation, setIsSteppedNavigation] = useState(false);
+
+  const carriedWheelDelta = useRef(0);
+  const settleTimerRef = useRef<number | null>(null);
+  const lastRetakeTimestamp = useRef(0);
+  const trailingRetakeTimer = useRef<number | null>(null);
+
+  const scheduleSliceRetake = () => {
     const now = performance.now();
-    const since = now - lastRetake.current;
-    if (trailing.current !== null) window.clearTimeout(trailing.current);
-    if (since >= RETAKE_INTERVAL_MS) {
-      lastRetake.current = now;
+    const elapsed = now - lastRetakeTimestamp.current;
+    if (trailingRetakeTimer.current !== null) window.clearTimeout(trailingRetakeTimer.current);
+
+    if (elapsed >= RETAKE_INTERVAL_MS) {
+      lastRetakeTimestamp.current = now;
       wantSection();
       return;
     }
-    trailing.current = window.setTimeout(() => {
-      trailing.current = null;
-      lastRetake.current = performance.now();
+
+    trailingRetakeTimer.current = window.setTimeout(() => {
+      trailingRetakeTimer.current = null;
+      lastRetakeTimestamp.current = performance.now();
       wantSection();
-    }, RETAKE_INTERVAL_MS - since);
+    }, RETAKE_INTERVAL_MS - elapsed);
   };
 
-  /** Where the pointer is over the picture becomes where the light stands. */
-  const aimTorch = (box: DOMRect, x: number, y: number) => {
-    if (!torch || box.width <= 0 || box.height <= 0) return;
-    const u = (x - box.left - box.width / 2) / (box.width / 2);
-    const v = (y - box.top - box.height / 2) / (box.height / 2);
+  const updateTorchPosition = (rect: DOMRect, clientX: number, clientY: number) => {
+    if (!isTorchActive || rect.width <= 0 || rect.height <= 0) return;
+    const u = (clientX - rect.left - rect.width / 2) / (rect.width / 2);
+    const v = (clientY - rect.top - rect.height / 2) / (rect.height / 2);
     TORCH.value = torchDirection(u, v, AXIAL_PROBE.basis, slicePlane(AXIAL_PROBE.plane));
-    retakeSoon();
+    scheduleSliceRetake();
   };
 
-  /**
-   * Move the window, and let the picture follow.
-   *
-   * The window is the only state there is. There was a CSS transform on top of
-   * it once, as a preview, and taking the preview back out when the render
-   * landed is what produced the jumps: **a section arriving is not the section
-   * you asked for**, because the counter goes up for every pass — a torch
-   * retake, a step of the plane, letting the light go. Two truths correlated by
-   * hope. One truth cannot disagree with itself.
-   */
-  const showWindow = (next: SliceWindow | null, now = false) => {
-    SECTION_VIEW.value = next;
-    setShown(next);
-    if (now) {
-      if (trailing.current !== null) window.clearTimeout(trailing.current);
-      trailing.current = null;
-      lastRetake.current = performance.now();
+  const applyWindowChange = (nextWindow: SliceWindow | null, immediate = false) => {
+    SECTION_VIEW.value = nextWindow;
+    setActiveWindow(nextWindow);
+
+    if (immediate) {
+      if (trailingRetakeTimer.current !== null) {
+        window.clearTimeout(trailingRetakeTimer.current);
+      }
+      trailingRetakeTimer.current = null;
+      lastRetakeTimestamp.current = performance.now();
       wantSection();
       return;
     }
-    retakeSoon();
+    scheduleSliceRetake();
   };
 
-  /** What is on screen: the reader's window, or the whole section. */
-  const looking = (): SliceWindow => shown ?? AXIAL_PROBE.base;
+  const getCurrentWindow = (): SliceWindow => activeWindow ?? AXIAL_PROBE.base;
 
-  const magnify = (by: number, u = 0, v = 0) => {
+  const performZoom = (factor: number, u = 0, v = 0) => {
     if (AXIAL_PROBE.base.half <= 0) return;
-    showWindow(zoomWindow(looking(), AXIAL_PROBE.base, by, AXIAL_PROBE.basis, u, v));
+    applyWindowChange(zoomWindow(getCurrentWindow(), AXIAL_PROBE.base, factor, AXIAL_PROBE.basis, u, v));
   };
 
-  /**
-   * Switched off, the light goes back to the one the mode chooses for itself.
-   *
-   * And the section is retaken once, because a switch that changes nothing
-   * until the reader does something else is a switch they conclude is broken.
-   */
   useEffect(() => {
-    if (torch || TORCH.value === null) return;
+    if (isTorchActive || TORCH.value === null) return;
     TORCH.value = null;
     wantSection();
-  }, [torch]);
+  }, [isTorchActive]);
 
-  /**
-   * Turn a wheel gesture into whole centimetres of travel.
-   *
-   * The plane moves now and the picture follows when the hand stops: moving
-   * the plane is a uniform write, and the section is fifteen milliseconds.
-   */
-  const wheelToSteps = (deltaY: number) => {
-    const per = stepFraction();
-    // Before the body has been measured there is no such thing as a
-    // centimetre, and stepping by nothing is better than stepping by NaN.
-    if (per === 0) return;
-    const { steps, carry } = wheelSteps(carried.current, deltaY);
-    carried.current = carry;
+  const processWheelInput = (deltaY: number) => {
+    const fractionPerStep = stepFraction();
+    if (fractionPerStep === 0) return;
+
+    const { steps, carry } = wheelSteps(carriedWheelDelta.current, deltaY);
+    carriedWheelDelta.current = carry;
     if (steps === 0) return;
-    // Down the page is down the body: the slider has the head at the top, and
-    // a wheel that disagreed with the control beside it would be a puzzle.
-    useScanStore.getState().step(-steps * per);
-    setStepped(true);
-    if (settle.current !== null) window.clearTimeout(settle.current);
-    settle.current = window.setTimeout(() => {
-      settle.current = null;
+
+    useScanStore.getState().step(-steps * fractionPerStep);
+    setIsSteppedNavigation(true);
+
+    if (settleTimerRef.current !== null) window.clearTimeout(settleTimerRef.current);
+    settleTimerRef.current = window.setTimeout(() => {
+      settleTimerRef.current = null;
       wantSection();
     }, WHEEL_SETTLE_MS);
   };
 
-  useEffect(
-    () => () => {
-      if (settle.current !== null) window.clearTimeout(settle.current);
-      if (trailing.current !== null) window.clearTimeout(trailing.current);
-    },
-    [],
-  );
-
-  // Taking hold of the light again is the other way of choosing a level, and
-  // the panel goes back to describing that one.
   useEffect(() => {
-    if (held) setStepped(false);
-  }, [held]);
-
-  // A new plane is a new picture: its whole frame, and not yet stepped. The
-  // module window was cleared by the control that switched it, before it asked
-  // for the section; this is the panel's copy catching up.
-  useEffect(() => {
-    setShown(null);
-    setStepped(false);
-  }, [plane]);
+    return () => {
+      if (settleTimerRef.current !== null) window.clearTimeout(settleTimerRef.current);
+      if (trailingRetakeTimer.current !== null) window.clearTimeout(trailingRetakeTimer.current);
+    };
+  }, []);
 
   useEffect(() => {
-    const element = frame.current;
-    if (!element) return;
-    const measure = () => setFrameWidth(element.clientWidth);
-    measure();
-    const observer = new ResizeObserver(measure);
-    observer.observe(element);
+    if (isScannerHeld) setIsSteppedNavigation(false);
+  }, [isScannerHeld]);
+
+  useEffect(() => {
+    setActiveWindow(null);
+    setIsSteppedNavigation(false);
+  }, [currentPlane]);
+
+  useEffect(() => {
+    const el = frameContainerRef.current;
+    if (!el) return;
+    const updateSize = () => setComputedFrameWidth(el.clientWidth);
+    updateSize();
+    const observer = new ResizeObserver(updateSize);
+    observer.observe(el);
     return () => observer.disconnect();
-  }, [full]);
+  }, [isFullScreen]);
 
   useEffect(() => {
-    // Published while mounted, and taken back on the way out: the producer runs
-    // inside the WebGL canvas and would otherwise paint into an element React
-    // has already removed.
-    AXIAL_CANVAS.value = canvas.current;
-    // Whatever was last drawn, straight away. Enlarging mounts a fresh canvas,
-    // and a section that blanked at the moment somebody asked to see it
-    // properly would answer the wrong question.
-    if (canvas.current) restoreSlice(canvas.current);
+    AXIAL_CANVAS.value = canvasRef.current;
+    if (canvasRef.current) restoreSlice(canvasRef.current);
     return () => {
       AXIAL_CANVAS.value = null;
     };
-  }, [enabled, axial, full, sections]);
+  }, [isScanEnabled, isAxialActive, isFullScreen, sectionCount]);
 
   useEffect(() => {
-    if (!full) return;
-    // Escape closes it, because a thing that covers the viewport has to have an
-    // exit that does not require finding it first.
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key !== "Escape") return;
-      // The last line on this level first, then the panel: Escape should undo
-      // the smallest thing the reader did before it throws away the biggest.
-      const onThisLevel = measures.filter((line) => onLevel(line, AXIAL_PROBE.at, AXIAL_PROBE.plane));
-      const last = onThisLevel[onThisLevel.length - 1];
-      if (last) {
-        setMeasures((all) => all.filter((line) => line !== last));
+    if (!isFullScreen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      const currentLevelMeasures = recordedMeasures.filter((m) =>
+        onLevel(m, AXIAL_PROBE.at, AXIAL_PROBE.plane),
+      );
+      const lastLine = currentLevelMeasures[currentLevelMeasures.length - 1];
+      if (lastLine) {
+        setRecordedMeasures((prev) => prev.filter((m) => m !== lastLine));
         return;
       }
-      setFull(false);
+      setIsFullScreen(false);
     };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [full, measures]);
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [isFullScreen, recordedMeasures]);
 
   useEffect(() => {
-    // A section nobody can see should not be left open across a switch-off.
-    if (!enabled || !axial) setFull(false);
-  }, [enabled, axial]);
+    if (!isScanEnabled || !isAxialActive) setIsFullScreen(false);
+  }, [isScanEnabled, isAxialActive]);
 
   useEffect(() => {
-    // Opening always starts from the whole picture, and closing puts it back:
-    // a thumbnail showing a nine-centimetre crop of somebody's last look is
-    // not a thumbnail of the section, and a view that reopened at the
-    // magnification left an hour ago is a view that looks broken.
-    setMeasures([]);
-    setDraft(null);
-    drafting.current = null;
+    setRecordedMeasures([]);
+    setActiveDraftMeasure(null);
+    currentDraftRef.current = null;
     if (SECTION_VIEW.value === null) return;
     SECTION_VIEW.value = null;
-    setShown(null);
+    setActiveWindow(null);
     wantSection();
-  }, [full]);
+  }, [isFullScreen]);
 
-  if (!enabled || !axial) return null;
+  if (!isScanEnabled || !isAxialActive) return null;
 
-  /**
-   * How wide the picture is, in centimetres of body.
-   *
-   * Taken from what the pass was framed on and then divided by whatever CSS is
-   * doing on top, so it is right during a gesture as well as after it. It
-   * replaces the magnification factor on the button: "9 cm" is a measurement a
-   * reader can use, and "5.4x" is a number about the software.
-   */
-  const across = AXIAL_PROBE.frameCm;
-  /**
-   * The measurements that belong to the picture on screen.
-   *
-   * Derived on every render rather than stored: the level changes when a new
-   * section arrives, which is also when this component renders.
-   */
-  const here = measures.filter((line) => onLevel(line, AXIAL_PROBE.at, AXIAL_PROBE.plane));
-  /**
-   * The level, when the plane is at one.
-   *
-   * Read here rather than passed in, on the render that follows a section
-   * being taken — the same moment the table is refreshed, for the same reason.
-   */
-  const level = CURRENT_LEVEL.value;
-  /** Whether the picture on screen is a frontal one. Not the setting: the picture. */
-  const front = AXIAL_PROBE.plane === "front";
-  const name = front ? "Front" : "Axial";
-  /** What a place on this plane is called, for the sentences below. */
-  const place = front ? "depth" : "level";
-  /**
-   * The caption describes what is actually on screen, which means it changes.
-   *
-   * It said the cut surfaces were open in both modes — true of the slab, and
-   * plainly false of the cut, where the surfaces below the plane read as
-   * solid. A caption that keeps insisting on something the picture contradicts
-   * teaches the reader to stop reading captions.
-   */
-  const caption =
-    `${front ? "Superior" : "Anterior"} at the top, the patient's left on the right${across > 0 ? ` · ${across.toFixed(0)} cm across` : ""}. ` +
-    (cut
-      ? `The body opened at this plane: you are seeing the surfaces ${front ? "behind" : "below"} the ` +
-        `cut, so there is depth behind what is at this ${place}.`
-      : `Only what lies at this ${place}, and the cut surfaces are open — an ` +
-        "outline rather than a filled section.") +
-    (front ? " Depth is measured from the most anterior point of the body." : "") +
+  const physicalSpanCm = AXIAL_PROBE.frameCm;
+  const activeMeasures = recordedMeasures.filter((m) =>
+    onLevel(m, AXIAL_PROBE.at, AXIAL_PROBE.plane),
+  );
+  const currentLevelLabel = CURRENT_LEVEL.value;
+  const isFrontalView = AXIAL_PROBE.plane === "front";
+  const viewTypeName = isFrontalView ? "Front" : "Axial";
+  const spatialDomainName = isFrontalView ? "depth" : "level";
+
+  const descriptionSummary =
+    `${isFrontalView ? "Superior" : "Anterior"} at the top, the patient's left on the right${
+      physicalSpanCm > 0 ? ` · ${physicalSpanCm.toFixed(0)} cm across` : ""
+    }. ` +
+    (isCutMode
+      ? `The body opened at this plane: you are seeing the surfaces ${
+          isFrontalView ? "behind" : "below"
+        } the cut, so there is depth behind what is at this ${spatialDomainName}.`
+      : `Only what lies at this ${spatialDomainName}, and the cut surfaces are open — an outline rather than a filled section.`) +
+    (isFrontalView ? " Depth is measured from the most anterior point of the body." : "") +
     " Drawn solid whatever the viewport shows. Not a radiograph.";
 
-  if (full) {
+  if (isFullScreen) {
     return (
       <div className="pointer-events-auto fixed inset-0 z-40 flex items-center justify-center gap-6 bg-slate-950/95 p-4">
-        {/*
-          The picture takes the height and the reading material stands beside
-          it. Stacked, the caption and the table were spending most of a laptop
-          on four lines of prose and leaving the section — the only thing on
-          screen that cannot be read at half size — squeezed into what was
-          left. Beside it, the same words cost nothing the picture wanted.
-
-          Sized against both edges rather than the height alone: the column
-          next to it is a fixed width, so what the picture can have is the
-          window minus that, and a square that only watched `vh` would run off
-          a wide-and-short window.
-
-          It stays a fixed square with the picture moving inside it. Growing
-          the picture instead would push the table off the screen, and panning
-          is only offered once there is something outside the square to pan to.
-        */}
         <div
-          ref={frame}
+          ref={frameContainerRef}
           className="relative shrink-0 overflow-hidden rounded bg-black"
-          /*
-            The wheel reads the body, and that is not a preference — it is the
-            gesture every reader of a cross-section already has. Magnifying
-            moves to the modifier and to the two buttons beside the picture,
-            which is where a viewer that reads sections keeps it.
-          */
-          onWheel={(event) => {
-            if (event.ctrlKey || event.metaKey) {
-              // About the pointer, so the thing being looked at stays under it
-              // instead of sliding off the edge with every notch.
-              const box = event.currentTarget.getBoundingClientRect();
-              magnify(
-                event.deltaY < 0 ? 1.15 : 1 / 1.15,
-                (event.clientX - box.left - box.width / 2) / (box.width / 2),
-                (event.clientY - box.top - box.height / 2) / (box.height / 2),
+          onWheel={(e) => {
+            if (e.ctrlKey || e.metaKey) {
+              const rect = e.currentTarget.getBoundingClientRect();
+              performZoom(
+                e.deltaY < 0 ? 1.15 : 1 / 1.15,
+                (e.clientX - rect.left - rect.width / 2) / (rect.width / 2),
+                (e.clientY - rect.top - rect.height / 2) / (rect.height / 2),
               );
               return;
             }
-            wheelToSteps(wheelPixels(event.deltaY, event.deltaMode));
+            processWheelInput(wheelPixels(e.deltaY, e.deltaMode));
           }}
-          onPointerDown={(event) => {
-            if (measuring) {
-              const box = event.currentTarget.getBoundingClientRect();
-              const at = pointInSection(
-                looking(),
-                event.clientX - box.left,
-                event.clientY - box.top,
-                box.width,
+          onPointerDown={(e) => {
+            if (isMeasuringMode) {
+              const rect = e.currentTarget.getBoundingClientRect();
+              const pt = pointInSection(
+                getCurrentWindow(),
+                e.clientX - rect.left,
+                e.clientY - rect.top,
+                rect.width,
                 AXIAL_PROBE.basis,
               );
-              // Stamped with the level of the picture it is drawn on.
-              const line = {
-                ah: at.h,
-                av: at.v,
-                bh: at.h,
-                bv: at.v,
+              const newLine: SectionMeasure = {
+                ah: pt.h,
+                av: pt.v,
+                bh: pt.h,
+                bv: pt.v,
                 at: AXIAL_PROBE.at,
                 plane: AXIAL_PROBE.plane,
               };
-              drafting.current = line;
-              setDraft(line);
-              event.currentTarget.setPointerCapture(event.pointerId);
+              currentDraftRef.current = newLine;
+              setActiveDraftMeasure(newLine);
+              e.currentTarget.setPointerCapture(e.pointerId);
               return;
             }
-            if (!shown) return;
-            dragging.current = { x: event.clientX, y: event.clientY };
-            event.currentTarget.setPointerCapture(event.pointerId);
+            if (!activeWindow) return;
+            lastDragPos.current = { x: e.clientX, y: e.clientY };
+            e.currentTarget.setPointerCapture(e.pointerId);
           }}
-          onPointerMove={(event) => {
-            if (drafting.current) {
-              const box = event.currentTarget.getBoundingClientRect();
-              const at = pointInSection(
-                looking(),
-                event.clientX - box.left,
-                event.clientY - box.top,
-                box.width,
+          onPointerMove={(e) => {
+            if (currentDraftRef.current) {
+              const rect = e.currentTarget.getBoundingClientRect();
+              const pt = pointInSection(
+                getCurrentWindow(),
+                e.clientX - rect.left,
+                e.clientY - rect.top,
+                rect.width,
                 AXIAL_PROBE.basis,
               );
-              // Only the far end moves. The near one was placed where the
-              // reader put it and must not drift under them.
-              const line = { ...drafting.current, bh: at.h, bv: at.v };
-              drafting.current = line;
-              setDraft(line);
+              const updatedLine: SectionMeasure = {
+                ...currentDraftRef.current,
+                bh: pt.h,
+                bv: pt.v,
+              };
+              currentDraftRef.current = updatedLine;
+              setActiveDraftMeasure(updatedLine);
               return;
             }
-            const from = dragging.current;
-            if (from) {
-              // Deltas, not an offset from where the drag began: the window is
-              // the state and it has already absorbed everything so far.
-              dragging.current = { x: event.clientX, y: event.clientY };
-              if (frameWidth > 0) {
-                showWindow(
+
+            const prev = lastDragPos.current;
+            if (prev) {
+              lastDragPos.current = { x: e.clientX, y: e.clientY };
+              if (computedFrameWidth > 0) {
+                applyWindowChange(
                   panWindow(
-                    looking(),
+                    getCurrentWindow(),
                     AXIAL_PROBE.base,
-                    event.clientX - from.x,
-                    event.clientY - from.y,
-                    frameWidth,
+                    e.clientX - prev.x,
+                    e.clientY - prev.y,
+                    computedFrameWidth,
                     AXIAL_PROBE.basis,
                   ),
                 );
               }
               return;
             }
-            // Hover aims, a held button pans. They are different gestures, so
-            // neither has to be given up for the other.
-            aimTorch(event.currentTarget.getBoundingClientRect(), event.clientX, event.clientY);
+
+            updateTorchPosition(e.currentTarget.getBoundingClientRect(), e.clientX, e.clientY);
           }}
           onPointerUp={() => {
-            dragging.current = null;
-            const line = drafting.current;
-            if (!line) return;
-            drafting.current = null;
-            setDraft(null);
-            // A click that never moved is not a measurement; it is somebody
-            // finding out what the button does. Anything longer is kept, and
-            // the next drag starts another rather than replacing it.
-            if (measureCm(line) > 0) setMeasures((all) => [...all, line]);
+            lastDragPos.current = null;
+            const finalized = currentDraftRef.current;
+            if (!finalized) return;
+            currentDraftRef.current = null;
+            setActiveDraftMeasure(null);
+            if (measureCm(finalized) > 0) {
+              setRecordedMeasures((prev) => [...prev, finalized]);
+            }
           }}
           onPointerCancel={() => {
-            dragging.current = null;
-            drafting.current = null;
-            setDraft(null);
+            lastDragPos.current = null;
+            currentDraftRef.current = null;
+            setActiveDraftMeasure(null);
           }}
           style={{
             width: SECTION_WINDOW,
             height: SECTION_WINDOW,
-            cursor: measuring
+            cursor: isMeasuringMode
               ? "crosshair"
-              : dragging.current
+              : lastDragPos.current
                 ? "grabbing"
-                : torch
+                : isTorchActive
                   ? "crosshair"
-                  : shown
+                  : activeWindow
                     ? "grab"
                     : "default",
           }}
         >
           <canvas
-            ref={canvas}
+            ref={canvasRef}
             width={SLICE_PIXELS.value}
             height={SLICE_PIXELS.value}
             style={{ filter: WINDOW_FILTERS[windowPreset] }}
             className="absolute inset-0 h-full w-full"
             aria-label={
-              front
+              isFrontalView
                 ? "Frontal section at the depth of the scanner"
                 : "Cross-section at the height of the scanner"
             }
           />
-          {/*
-            Drawn over the picture rather than into it. A caliper baked into the
-            canvas would be in every copy of the section from then on, including
-            the one somebody photographs, and it would have to be repainted by
-            the render loop every time the plane moved.
-          */}
-          {(here.length > 0 || draft) && frameWidth > 0 && (
+
+          {(activeMeasures.length > 0 || activeDraftMeasure) && computedFrameWidth > 0 && (
             <svg
               className="pointer-events-none absolute inset-0 h-full w-full"
-              viewBox={`0 0 ${frameWidth} ${frameWidth}`}
+              viewBox={`0 0 ${computedFrameWidth} ${computedFrameWidth}`}
               aria-hidden
             >
-              {[...here, ...(draft ? [draft] : [])].map((line) => {
-                const a = pointOnScreen(looking(), line.ah, line.av, frameWidth, AXIAL_PROBE.basis);
-                const b = pointOnScreen(looking(), line.bh, line.bv, frameWidth, AXIAL_PROBE.basis);
-                const cm = measureCm(line);
-                const kept = line !== draft;
-                return (
-                  <g key={`${line.plane}:${line.ah}:${line.av}:${line.bh}:${line.bv}:${line.at}`}>
-                    <line
-                      x1={a.x}
-                      y1={a.y}
-                      x2={b.x}
-                      y2={b.y}
-                      stroke="#22d3ee"
-                      strokeWidth={1.5}
-                    />
-                    <circle cx={a.x} cy={a.y} r={3} fill="#22d3ee" />
-                    <circle cx={b.x} cy={b.y} r={3} fill="#22d3ee" />
-                    {cm > 0 && (
-                      <text
-                        x={(a.x + b.x) / 2 + 8}
-                        y={(a.y + b.y) / 2 - 8}
-                        fill="#a5f3fc"
-                        fontSize={13}
-                        stroke="#020617"
-                        strokeWidth={3}
-                        paintOrder="stroke"
-                        /*
-                          The number is the handle for removing the line. It
-                          takes the pointer itself, and stops the press there, so
-                          removing one does not also start drawing the next.
-                        */
-                        style={kept ? { pointerEvents: "auto", cursor: "pointer" } : undefined}
-                        onPointerDown={
-                          kept
-                            ? (event) => {
-                                event.stopPropagation();
-                                setMeasures((all) => all.filter((item) => item !== line));
-                              }
-                            : undefined
-                        }
-                      >
-                        {kept && <title>Remove this measurement</title>}
-                        {formatDistance(cm)}
-                      </text>
-                    )}
-                  </g>
-                );
-              })}
+              {[...activeMeasures, ...(activeDraftMeasure ? [activeDraftMeasure] : [])].map(
+                (line) => {
+                  const pA = pointOnScreen(
+                    getCurrentWindow(),
+                    line.ah,
+                    line.av,
+                    computedFrameWidth,
+                    AXIAL_PROBE.basis,
+                  );
+                  const pB = pointOnScreen(
+                    getCurrentWindow(),
+                    line.bh,
+                    line.bv,
+                    computedFrameWidth,
+                    AXIAL_PROBE.basis,
+                  );
+                  const distCm = measureCm(line);
+                  const isExisting = line !== activeDraftMeasure;
+
+                  return (
+                    <g key={`${line.plane}:${line.ah}:${line.av}:${line.bh}:${line.bv}:${line.at}`}>
+                      <line
+                        x1={pA.x}
+                        y1={pA.y}
+                        x2={pB.x}
+                        y2={pB.y}
+                        stroke="#22d3ee"
+                        strokeWidth={1.5}
+                      />
+                      <circle cx={pA.x} cy={pA.y} r={3} fill="#22d3ee" />
+                      <circle cx={pB.x} cy={pB.y} r={3} fill="#22d3ee" />
+                      {distCm > 0 && (
+                        <text
+                          x={(pA.x + pB.x) / 2 + 8}
+                          y={(pA.y + pB.y) / 2 - 8}
+                          fill="#a5f3fc"
+                          fontSize={13}
+                          stroke="#020617"
+                          strokeWidth={3}
+                          paintOrder="stroke"
+                          style={
+                            isExisting ? { pointerEvents: "auto", cursor: "pointer" } : undefined
+                          }
+                          onPointerDown={
+                            isExisting
+                              ? (e) => {
+                                  e.stopPropagation();
+                                  setRecordedMeasures((prev) => prev.filter((item) => item !== line));
+                                }
+                              : undefined
+                          }
+                        >
+                          {isExisting && <title>Remove this measurement</title>}
+                          {formatDistance(distCm)}
+                        </text>
+                      )}
+                    </g>
+                  );
+                },
+              )}
             </svg>
           )}
         </div>
 
         <div className="flex w-72 flex-col gap-3 self-center">
           <p className="text-[10px] uppercase tracking-wider text-cyan-500/70">
-            {name}{level ? ` · ${level}` : ""} ·{" "}
-            {stepped ? `${SECTION_STEP_CM} cm steps` : "where you let go"}
+            {viewTypeName}
+            {currentLevelLabel ? ` · ${currentLevelLabel}` : ""} ·{" "}
+            {isSteppedNavigation ? `${SECTION_STEP_CM} cm steps` : "where you let go"}
           </p>
 
           <div className="flex items-center gap-1.5 text-xs">
             <button
               type="button"
-              onClick={() => magnify(1 / 1.4)}
+              onClick={() => performZoom(1 / 1.4)}
               className="rounded border border-slate-700 px-2 py-0.5 text-slate-300 hover:border-cyan-700 hover:text-cyan-300"
             >
               −
@@ -698,22 +506,24 @@ export function AxialView() {
               title="Back to the whole section"
               onClick={() => {
                 if (SECTION_VIEW.value === null) return;
-                showWindow(null, true);
+                applyWindowChange(null, true);
               }}
               className="w-20 rounded border border-slate-700 px-2 py-0.5 tabular-nums text-slate-300 hover:border-cyan-700 hover:text-cyan-300"
             >
-              {across > 0 ? `${across.toFixed(across < 10 ? 1 : 0)} cm` : "—"}
+              {physicalSpanCm > 0
+                ? `${physicalSpanCm.toFixed(physicalSpanCm < 10 ? 1 : 0)} cm`
+                : "—"}
             </button>
             <button
               type="button"
-              onClick={() => magnify(1.4)}
+              onClick={() => performZoom(1.4)}
               className="rounded border border-slate-700 px-2 py-0.5 text-slate-300 hover:border-cyan-700 hover:text-cyan-300"
             >
               +
             </button>
             <button
               type="button"
-              onClick={() => setFull(false)}
+              onClick={() => setIsFullScreen(false)}
               className="ml-auto rounded border border-slate-700 px-3 py-0.5 text-slate-300 hover:border-cyan-700 hover:text-cyan-300"
             >
               Close · Esc
@@ -723,94 +533,105 @@ export function AxialView() {
           <div className="flex items-center gap-2 text-xs">
             <button
               type="button"
-              // Putting the tool away does not throw the measurements away. They
-              // are annotations on the section, and Clear is what removes them.
-              onClick={() => setMeasuring((on) => !on)}
-              aria-pressed={measuring}
+              onClick={() => setIsMeasuringMode((v) => !v)}
+              aria-pressed={isMeasuringMode}
               title="Drag across the section to measure it"
               className={`rounded border px-2 py-0.5 ${
-                measuring
+                isMeasuringMode
                   ? "border-cyan-500 bg-cyan-500/15 text-cyan-200"
                   : "border-slate-700 text-slate-300 hover:border-cyan-700 hover:text-cyan-300"
               }`}
             >
               Measure
             </button>
-            {(measuring || here.length > 0) && (
+
+            {(isMeasuringMode || activeMeasures.length > 0) && (
               <span className="tabular-nums text-cyan-200">
-                {draft
-                  ? formatDistance(measureCm(draft))
-                  : here.length > 0
-                    ? `${here.length} at this ${place}`
+                {activeDraftMeasure
+                  ? formatDistance(measureCm(activeDraftMeasure))
+                  : activeMeasures.length > 0
+                    ? `${activeMeasures.length} at this ${spatialDomainName}`
                     : "drag across it"}
               </span>
             )}
-            {here.length > 0 && (
+
+            {activeMeasures.length > 0 && (
               <button
                 type="button"
                 onClick={() =>
-                  setMeasures((all) =>
-                    all.filter((line) => !onLevel(line, AXIAL_PROBE.at, AXIAL_PROBE.plane)),
+                  setRecordedMeasures((prev) =>
+                    prev.filter((m) => !onLevel(m, AXIAL_PROBE.at, AXIAL_PROBE.plane)),
                   )
                 }
-                title={`Remove the measurements at this ${place}`}
+                title={`Remove the measurements at this ${spatialDomainName}`}
                 className="rounded border border-slate-700 px-2 py-0.5 text-slate-300 hover:border-cyan-700 hover:text-cyan-300"
               >
                 Clear
               </button>
             )}
+
             <button
               type="button"
-              disabled={saving}
+              disabled={isSavingImage}
               onClick={() => {
-                setSaving(true);
-                setSaved(null);
-                // The window as it is right now, so a magnified section saves
-                // what is on screen rather than what it started as.
-                sectionImage(looking(), here, AXIAL_PROBE.basis)
+                setIsSavingImage(true);
+                setSaveStatusMessage(null);
+                sectionImage(getCurrentWindow(), activeMeasures, AXIAL_PROBE.basis)
                   .then((png) =>
                     png
-                      ? saveViewImage(png, sectionFileName(AXIAL_PROBE.plane, level, across, cut))
+                      ? saveViewImage(
+                          png,
+                          sectionFileName(
+                            AXIAL_PROBE.plane,
+                            currentLevelLabel,
+                            physicalSpanCm,
+                            isCutMode,
+                          ),
+                        )
                       : Promise.reject(new Error("There is no section to save yet.")),
                   )
-                  .then((path) => setSaved(path ? `Saved to ${path}` : null))
-                  .catch((error: unknown) =>
-                    setSaved(error instanceof Error ? error.message : String(error)),
+                  .then((filePath) =>
+                    setSaveStatusMessage(filePath ? `Saved to ${filePath}` : null),
                   )
-                  .finally(() => setSaving(false));
+                  .catch((err: unknown) =>
+                    setSaveStatusMessage(err instanceof Error ? err.message : String(err)),
+                  )
+                  .finally(() => setIsSavingImage(false));
               }}
               title="Save this section as a PNG, with its measurements"
               className="ml-auto rounded border border-slate-700 px-2 py-0.5 text-slate-300 hover:border-cyan-700 hover:text-cyan-300 disabled:opacity-40"
             >
-              {saving ? "Saving…" : "Save"}
+              {isSavingImage ? "Saving…" : "Save"}
             </button>
           </div>
 
-          {saved && (
+          {saveStatusMessage && (
             <button
               type="button"
-              onClick={() => setSaved(null)}
-              title={saved}
+              onClick={() => setSaveStatusMessage(null)}
+              title={saveStatusMessage}
               className="truncate text-left text-[10px] text-slate-500 hover:text-slate-300"
             >
-              {saved}
+              {saveStatusMessage}
             </button>
           )}
 
-          {measuring && (
+          {isMeasuringMode && (
             <p className="text-[11px] leading-snug text-slate-500">
               Drag again for another; click a number to remove it. Each stays on
-              the {place} it was drawn on. Both ends lie in the plane, so this is the
+              the {spatialDomainName} it was drawn on. Both ends lie in the plane, so this is the
               true distance between those two points —{" "}
-              {cut
-                ? `but in Cut you are seeing surfaces ${front ? "behind" : "below"} the plane, so the structures under the ends may not be at this ${place}. Slab is the mode to measure a ${place} in.`
+              {isCutMode
+                ? `but in Cut you are seeing surfaces ${
+                    isFrontalView ? "behind" : "below"
+                  } the plane, so the structures under the ends may not be at this ${spatialDomainName}. Slab is the mode to measure a ${spatialDomainName} in.`
                 : "and in Slab everything shown is within four millimetres of it."}
             </p>
           )}
 
           <div className="space-y-1">
             <p className="text-[10px] font-semibold uppercase tracking-wider text-cyan-500/80">
-              {fa ? "پنجرهٔ کنتراست رادیولوژی (Windowing)" : "Radiological Window"}
+              {isPersian ? "پنجرهٔ کنتراست رادیولوژی (Windowing)" : "Radiological Window"}
             </p>
             <div className="flex flex-wrap gap-1">
               {(
@@ -832,7 +653,7 @@ export function AxialView() {
                       : "border border-slate-700 bg-slate-900/60 text-slate-400 hover:text-slate-200"
                   }`}
                 >
-                  {fa ? preset.labelFa : preset.labelEn}
+                  {isPersian ? preset.labelFa : preset.labelEn}
                 </button>
               ))}
             </div>
@@ -841,14 +662,15 @@ export function AxialView() {
           <SliceTable compact={false} />
 
           <p className="text-[11px] leading-snug text-slate-500">
-            {caption} The wheel steps {SECTION_STEP_CM} cm through the body;
+            {descriptionSummary} The wheel steps {SECTION_STEP_CM} cm through the body;
             Ctrl and the wheel, or −/+, magnify. Magnifying re-renders the
             section at the narrower width rather than enlarging what is there,
             so it adds detail instead of pixels. Drag to move; the button gives
             the whole section back.
-            {torch
-              ? ` The pointer is the light: the middle is ${front ? "straight on" : "overhead"}, and the` +
-                " edges rake it flat across the section."
+            {isTorchActive
+              ? ` The pointer is the light: the middle is ${
+                  isFrontalView ? "straight on" : "overhead"
+                }, and the edges rake it flat across the section.`
               : ""}
           </p>
         </div>
@@ -859,39 +681,33 @@ export function AxialView() {
   return (
     <div className="pointer-events-none select-none rounded border border-cyan-900/60 bg-slate-950/85 p-1.5 shadow-lg">
       <p className="mb-1 text-[9px] uppercase tracking-wider text-cyan-500/70">
-        {name}{level ? ` · ${level}` : ""} ·{" "}
-        {stepped ? `${SECTION_STEP_CM} cm steps` : "where you let go"}
+        {viewTypeName}
+        {currentLevelLabel ? ` · ${currentLevelLabel}` : ""} ·{" "}
+        {isSteppedNavigation ? `${SECTION_STEP_CM} cm steps` : "where you let go"}
       </p>
       <button
         type="button"
-        onClick={() => setFull(true)}
-        onWheel={(event) => wheelToSteps(wheelPixels(event.deltaY, event.deltaMode))}
+        onClick={() => setIsFullScreen(true)}
+        onWheel={(e) => processWheelInput(wheelPixels(e.deltaY, e.deltaMode))}
         title={`See it full size. The wheel steps ${SECTION_STEP_CM} cm through the body.`}
         className="pointer-events-auto block cursor-zoom-in rounded-sm"
       >
         <canvas
-          ref={canvas}
+          ref={canvasRef}
           width={SLICE_PIXELS.value}
           height={SLICE_PIXELS.value}
           style={{ filter: WINDOW_FILTERS[windowPreset] }}
           className="block h-36 w-36 rounded-sm bg-black short:h-28 short:w-28"
           aria-label={`${
-            front
+            isFrontalView
               ? "Frontal section at the depth of the scanner"
               : "Cross-section at the height of the scanner"
           }. Click to enlarge.`}
         />
       </button>
-      {/*
-        A thumbnail says there is a section and invites a look at it. The table
-        and the explanation are reading material, and reading material belongs
-        where there is room to read — five lines of caption under a 144-pixel
-        picture is most of a laptop's spare column spent on a sentence somebody
-        needs once.
-      */}
       <p className="mt-1 max-w-36 text-[9px] leading-snug text-slate-500 short:max-w-28">
-        {across > 0 ? `${across.toFixed(0)} cm · ` : ""}
-        {cut ? "cut" : "slab"} · {CURRENT_CROSSING.value.total} structures
+        {physicalSpanCm > 0 ? `${physicalSpanCm.toFixed(0)} cm · ` : ""}
+        {isCutMode ? "cut" : "slab"} · {CURRENT_CROSSING.value.total} structures
         <span className="block text-cyan-500/70">
           wheel to step · click to enlarge
         </span>

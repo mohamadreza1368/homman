@@ -6,95 +6,62 @@ import { MAX_STACK } from "./depthStack";
 import { tissueHex } from "./palette";
 
 /**
- * Everything under the cursor, from the surface inwards.
- *
- * # Why this earns its space
- *
- * "What do I pass through to reach the carotid?" is a surgical approach and an
- * oral exam in the same sentence. An atlas that only names the topmost surface
- * cannot answer it, and the answer is not a fact to look up — it depends on
- * exactly where you are pointing.
- *
- * Nothing here is inferred. It is not a model of tissue layers or a guess at
- * depth: it is the geometry a ray from the cursor actually crossed, in the
- * order it crossed it. The renderer was already computing the whole list on
- * every pointer move and discarding all but the first entry.
- *
- * # Picking a few of them
- *
- * The panel offers the whole crossing or one structure at a time, and the
- * useful answer is often neither: "skin, fascia and the muscle, without the
- * four things behind them" is the approach a reader wants left on screen.
- *
- * Ctrl-click builds that, and deliberately builds it in the *app's* selection
- * rather than in a set of the panel's own. It is the same gesture that adds a
- * structure by clicking the body, it feeds the same bar at the bottom, and `I`
- * isolates it exactly as it always did. A private set here would have needed
- * its own button, its own count and its own rules about when it empties — a
- * parallel vocabulary for something the app already knows how to say.
+ * HOOMAAN Anatomical Depth Probe Panel.
+ * Inspects raycasted tissue layers beneath the pointer from superficial to deep,
+ * enabling progressive selection, multi-layer isolation, and focused inspection.
  */
-export function DepthProbe() {
-  const visible = useSceneStore((s) => s.depthProbeVisible);
-  const stack = useSceneStore((s) => s.depthStack);
-  const pinned = useSceneStore((s) => s.pinnedStack);
-  const dismiss = useSceneStore((s) => s.dismissDepthStack);
-  const organs = useSceneStore((s) => s.organs);
-  const hovered = useSceneStore((s) => s.hoveredOrganId);
-  const setHovered = useSceneStore((s) => s.setHovered);
-  const applyCommand = useSceneStore((s) => s.applyCommand);
-  const selectedOrganIds = useSceneStore((s) => s.selectedOrganIds);
-  const selectOrgan = useSceneStore((s) => s.selectOrgan);
-  const fa = useInterfaceLanguage((s) => s.language === "fa");
 
-  // The pinned reading wins over whatever the pointer is crossing now. That
-  // is the whole point of it: the journey to this panel goes over the model.
-  const showing = pinned ?? stack;
-  const state = depthReadingState(pinned !== null);
-  const layers = showing.map((id) => organs[id]).filter((organ) => !!organ);
-  const picks = new Set(selectedOrganIds);
-  // Only the ones in *this* list. The selection may well hold structures taken
-  // from the tree or the search box, and counting those here would describe a
-  // reading the reader is not looking at.
-  const pickedHere = layers.filter((organ) => picks.has(organ.organ_id)).length;
-  // Switched off from the left panel or from the structure menu. Checked here
-  // rather than at the mount point so the reading itself keeps being taken —
-  // the renderer computes the stack either way, and turning the panel back on
-  // should show the truth immediately rather than after the next pointer move.
-  if (!visible) return null;
-  // One entry is the thing already named under the cursor. A panel that adds
-  // nothing to the hover label is furniture.
+export function DepthProbe() {
+  const isProbeVisible = useSceneStore((s) => s.depthProbeVisible);
+  const liveStack = useSceneStore((s) => s.depthStack);
+  const pinnedStack = useSceneStore((s) => s.pinnedStack);
+  const dismissProbe = useSceneStore((s) => s.dismissDepthStack);
+  const organDirectory = useSceneStore((s) => s.organs);
+  const hoveredId = useSceneStore((s) => s.hoveredOrganId);
+  const setHoveredId = useSceneStore((s) => s.setHovered);
+  const dispatchCommand = useSceneStore((s) => s.applyCommand);
+  const selectedIds = useSceneStore((s) => s.selectedOrganIds);
+  const selectOrgan = useSceneStore((s) => s.selectOrgan);
+  const isPersian = useInterfaceLanguage((s) => s.language === "fa");
+
+  const currentIds = pinnedStack ?? liveStack;
+  const probeState = depthReadingState(pinnedStack !== null);
+  const layers = currentIds.map((id) => organDirectory[id]).filter((o) => !!o);
+  const selectedSet = new Set(selectedIds);
+  const matchingSelectedCount = layers.filter((o) => selectedSet.has(o.organ_id)).length;
+
+  if (!isProbeVisible) return null;
   if (layers.length < 2) return null;
 
   return (
     <div className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2">
       <div
         className={`pointer-events-auto w-60 overflow-hidden rounded-lg border bg-slate-900/90 shadow-lg backdrop-blur transition-colors ${
-          state === "live" ? "border-slate-700/80" : "border-sky-700/70"
+          probeState === "live" ? "border-slate-700/80" : "border-sky-700/70"
         }`}
       >
         <p className="flex items-center gap-1.5 border-b border-slate-800 px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-slate-500">
-          {/*
-            The heading changes with the state, rather than a badge appearing
-            beside a fixed one. "Under the cursor" is a claim about where the
-            pointer is, and the moment the pointer is elsewhere it stops being
-            true — a list that says it while pointing at nothing is the kind of
-            small lie that costs an interface its credibility.
-          */}
-          {fa
-            ? (state === "live" ? "لایه‌های زیر مکان‌نما" : "مسیر ساختار کلیک‌شده")
-            : HEADING[state]}
+          {isPersian
+            ? probeState === "live"
+              ? "لایه‌های زیر مکان‌نما"
+              : "مسیر ساختار کلیک‌شده"
+            : HEADING[probeState]}
           <span className="font-normal normal-case tracking-normal text-slate-600">
-            {fa
-              ? (state === "live" ? "از سطح به عمق" : "ثابت‌شده — جابه‌جایی آزاد")
-              : SUBHEADING[state]}
+            {isPersian
+              ? probeState === "live"
+                ? "از سطح به عمق"
+                : "ثابت‌شده — جابه‌جایی آزاد"
+              : SUBHEADING[probeState]}
           </span>
           <button
             type="button"
-            onClick={dismiss}
+            onClick={dismissProbe}
             title={
-              fa
-                ? (state === "live" ? "بستن این سنجش" : "رهاسازی این سنجش")
-                : DISMISS_HINT[state]
+              isPersian
+                ? probeState === "live"
+                  ? "بستن این سنجش"
+                  : "رهاسازی این سنجش"
+                : DISMISS_HINT[probeState]
             }
             className="ml-auto rounded px-1 text-slate-600 transition hover:text-slate-200"
           >
@@ -104,53 +71,45 @@ export function DepthProbe() {
 
         <ol className="max-h-[46vh] overflow-y-auto py-1">
           {layers.map((organ, index) => {
-            const picked = picks.has(organ.organ_id);
+            const isSelected = selectedSet.has(organ.organ_id);
             return (
               <li
                 key={organ.organ_id}
-                // A border either way, transparent when unpicked, so a line
-                // joining the selection does not shift the list sideways.
                 className={`group flex items-stretch border-l-2 ${
-                  picked ? "border-sky-500/70" : "border-transparent"
+                  isSelected ? "border-sky-500/70" : "border-transparent"
                 }`}
               >
                 <button
                   type="button"
-                  onMouseEnter={() => setHovered(organ.organ_id)}
-                  onMouseLeave={() => setHovered(null)}
-                  onClick={(event) => {
-                    // The same modifier that adds a structure by clicking the
-                    // body. Flying to it as well would take the camera away
-                    // from the one place the reading is about, in the middle
-                    // of building a set there.
-                    if (event.ctrlKey || event.metaKey) {
+                  onMouseEnter={() => setHoveredId(organ.organ_id)}
+                  onMouseLeave={() => setHoveredId(null)}
+                  onClick={(e) => {
+                    if (e.ctrlKey || e.metaKey) {
                       selectOrgan(organ.organ_id, true);
                       return;
                     }
-                    applyCommand({ action: "focus_organ", organ_id: organ.organ_id });
+                    dispatchCommand({ action: "focus_organ", organ_id: organ.organ_id });
                   }}
                   title={
-                    fa
+                    isPersian
                       ? `${organSubtitle(organ)} — با Ctrl+کلیک به انتخاب اضافه کنید`
                       : `${organSubtitle(organ)} — Ctrl-click to add it to the selection`
                   }
                   className={`flex min-w-0 flex-1 items-center gap-2 py-1 pl-2.5 pr-1 text-left transition ${
-                    hovered === organ.organ_id
+                    hoveredId === organ.organ_id
                       ? "bg-sky-600/20"
-                      : picked
+                      : isSelected
                         ? "bg-sky-500/10"
                         : "hover:bg-slate-800/70"
                   }`}
                 >
                   <span
                     className={`w-3 shrink-0 text-right text-[9px] tabular-nums ${
-                      picked ? "text-sky-300" : "text-slate-600"
+                      isSelected ? "text-sky-300" : "text-slate-600"
                     }`}
                   >
                     {index + 1}
                   </span>
-                  {/* The tissue's own colour, so the list reads as the same body
-                      the viewport is showing rather than as a table about it. */}
                   <span
                     aria-hidden
                     className="h-2 w-2 shrink-0 rounded-full ring-1 ring-inset ring-black/40"
@@ -165,78 +124,63 @@ export function DepthProbe() {
                     </span>
                   </span>
                 </button>
-                {/*
-                  Its own control, not a second meaning for the row.
-
-                  Clicking a line still flies to it, which is what it has always
-                  done and what a reader scanning the list expects. Isolating is
-                  a bigger act — it empties the viewport of everything else —
-                  and giving one gesture both jobs would make the safe one feel
-                  dangerous.
-
-                  `solo` because the systems list already calls it that. A panel
-                  that invented a third word for hiding everything else would be
-                  teaching a vocabulary the app does not use.
-                */}
                 <button
                   type="button"
-                  onMouseEnter={() => setHovered(organ.organ_id)}
-                  onMouseLeave={() => setHovered(null)}
+                  onMouseEnter={() => setHoveredId(organ.organ_id)}
+                  onMouseLeave={() => setHoveredId(null)}
                   onClick={() =>
-                    applyCommand({
+                    dispatchCommand({
                       action: "isolate_structures",
                       organ_ids: [organ.organ_id],
                     })
                   }
                   title={
-                    fa
+                    isPersian
                       ? `نمایش فقط ${organLabel(organ)} — با Esc برمی‌گردد`
                       : `Show only ${organLabel(organ)} — Esc restores`
                   }
                   className="shrink-0 px-1.5 text-[8px] uppercase tracking-wide text-slate-700 opacity-0 transition group-hover:opacity-100 hover:text-sky-300 focus-visible:opacity-100"
                 >
-                  {fa ? "تک" : "solo"}
+                  {isPersian ? "تک" : "solo"}
                 </button>
               </li>
             );
           })}
         </ol>
 
-        {/*
-          Said in the panel rather than left to be discovered, because nothing
-          on screen suggests a modifier exists. The line doubles as the count
-          once picking has started: the bar at the bottom counts the whole
-          selection, and this says how much of it is in this reading.
-        */}
         <p className="border-t border-slate-800 px-2.5 py-1 text-[9px] text-slate-600">
-          {pickedHere > 0
-            ? (fa
-                ? `${pickedHere} مورد انتخاب شده — برای جداسازی کلید I را بزنید`
-                : `${pickedHere} of these selected — press I to isolate`)
-            : (fa
-                ? "با Ctrl+کلیک سطر مورد نظر را به انتخاب اضافه کنید"
-                : "Ctrl-click a line to add it to the selection")}
+          {matchingSelectedCount > 0
+            ? isPersian
+              ? `${matchingSelectedCount} مورد انتخاب شده — برای جداسازی کلید I را بزنید`
+              : `${matchingSelectedCount} of these selected — press I to isolate`
+            : isPersian
+              ? "با Ctrl+کلیک سطر مورد نظر را به انتخاب اضافه کنید"
+              : "Ctrl-click a line to add it to the selection"}
         </p>
 
         {layers.length > 1 && (
           <button
             type="button"
             onClick={() =>
-              applyCommand({
+              dispatchCommand({
                 action: "isolate_structures",
-                organ_ids: layers.map((organ) => organ.organ_id),
+                organ_ids: layers.map((o) => o.organ_id),
               })
             }
-            title={fa ? "فقط ساختارهای واقع در مسیر شعاع باقی می‌مانند — با Esc برمی‌گردد" : "Leave only what the ray crosses — Esc restores"}
+            title={
+              isPersian
+                ? "فقط ساختارهای واقع در مسیر شعاع باقی می‌مانند — با Esc برمی‌گردد"
+                : "Leave only what the ray crosses — Esc restores"
+            }
             className="w-full border-t border-slate-800 px-2.5 py-1 text-left text-[9px] uppercase tracking-wide text-slate-500 transition hover:bg-slate-800/60 hover:text-sky-300"
           >
-            {fa ? `جداسازی این ${layers.length} ساختار` : `Isolate these ${layers.length}`}
+            {isPersian ? `جداسازی این ${layers.length} ساختار` : `Isolate these ${layers.length}`}
           </button>
         )}
 
         {layers.length >= MAX_STACK && (
           <p className="border-t border-slate-800 px-2.5 py-1 text-[9px] text-slate-600">
-            {fa
+            {isPersian
               ? `نزدیک‌ترین ${MAX_STACK} لایه — شعاع به عمق بیشتری نفوذ کرده است.`
               : `Nearest ${MAX_STACK} — the ray goes deeper than this.`}
           </p>

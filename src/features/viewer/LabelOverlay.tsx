@@ -8,42 +8,13 @@ import { layoutLabels, type LabelAnchor } from "./labelLayout";
 import { getViewerHandle, projectToScreen, structurePosition } from "./viewerBridge";
 
 /**
- * Names in the margins, with a leader line to each structure — the way an atlas
- * plate has always done it.
- *
- * # What gets labelled
- *
- * The selection, and if nothing is selected, whatever is isolated. Never
- * "everything visible": with three thousand structures on screen that is not a
- * plate, it is a wall. Choosing what to name is the reader's job, and they
- * already have the gesture for it.
- *
- * # Why the DOM is written by hand
- *
- * Positions change on every frame of an orbit. Rendering them through React
- * would re-render this component sixty times a second to move some text, so the
- * nodes are created once, keyed by structure, and their transforms are written
- * directly from an animation loop.
+ * HOOMAAN Anatomical Annotation & Label Leader Lines.
+ * Projects 3D anatomical centroids onto 2D viewport coordinates, arranging
+ * dual-column margin labels with SVG leader lines in real-time.
  */
 
-/** Beyond this a column of names stops being readable, whatever the layout. */
-const MAX_LABELS = 40;
+const MAX_ANNOTATION_LABELS = 40;
 
-/**
- * The part of the canvas the camera these labels follow is drawing into, as
- * fractions of the container.
- *
- * Width and height are separate because the split view no longer keeps the
- * driven panel square: closing a view gives it half the width at full height,
- * and a single fraction would have squashed the labels onto the wrong half of
- * the wrong axis.
- *
- * `left` and `top` are read but expected to be zero — `panelLayout` pins the
- * driven panel to the top-left corner in every arrangement, which is what lets
- * the projection below share the container's origin. The check is here so that
- * a future layout which moves it fails loudly instead of quietly labelling the
- * wrong place.
- */
 export interface LabelPanel {
   left: number;
   top: number;
@@ -54,156 +25,135 @@ export interface LabelPanel {
 export const FULL_CANVAS: LabelPanel = { left: 0, top: 0, width: 1, height: 1 };
 
 export function LabelOverlay({ panel = FULL_CANVAS }: { panel?: LabelPanel } = {}) {
-  const labelsVisible = useSceneStore((s) => s.labelsVisible);
-  const organs = useSceneStore((s) => s.organs);
-  const selectedOrganIds = useSceneStore((s) => s.selectedOrganIds);
-  const isolatedOrganIds = useSceneStore((s) => s.isolatedOrganIds);
-  const theme = backgroundTheme(useSceneStore((s) => s.background));
-  const focusBadge = useSceneStore((s) => s.focusBadge);
+  const isLabelsActive = useSceneStore((s) => s.labelsVisible);
+  const organMap = useSceneStore((s) => s.organs);
+  const selectedIds = useSceneStore((s) => s.selectedOrganIds);
+  const isolatedIds = useSceneStore((s) => s.isolatedOrganIds);
+  const currentTheme = backgroundTheme(useSceneStore((s) => s.background));
+  const activeFocusBadge = useSceneStore((s) => s.focusBadge);
 
-  // Only when it is still the structure the number was given to. A badge that
-  // outlived its selection would put an answer's ④ on whatever the reader
-  // clicked next, which is worse than no number at all.
-  const badgeFor =
-    focusBadge && selectedOrganIds.length === 1 && selectedOrganIds[0] === focusBadge.organId
-      ? focusBadge
+  const matchedBadge =
+    activeFocusBadge && selectedIds.length === 1 && selectedIds[0] === activeFocusBadge.organId
+      ? activeFocusBadge
       : null;
 
-  const container = useRef<HTMLDivElement>(null);
-  const nodes = useRef(new Map<string, HTMLSpanElement>());
-  const lines = useRef(new Map<string, SVGLineElement>());
+  const containerRef = useRef<HTMLDivElement>(null);
+  const labelDomNodes = useRef(new Map<string, HTMLSpanElement>());
+  const svgLineNodes = useRef(new Map<string, SVGLineElement>());
 
-  const targets = useMemo(
-    () => labelTargets(organs, selectedOrganIds, isolatedOrganIds, labelsVisible),
-    [organs, selectedOrganIds, isolatedOrganIds, labelsVisible],
+  const targetItems = useMemo(
+    () => labelTargets(organMap, selectedIds, isolatedIds, isLabelsActive),
+    [organMap, selectedIds, isolatedIds, isLabelsActive],
   );
 
   useEffect(() => {
-    if (targets.length === 0) return;
-    let frame = 0;
+    if (targetItems.length === 0) return;
+    let animFrame = 0;
 
-    const draw = () => {
-      frame = requestAnimationFrame(draw);
-      const handle = getViewerHandle();
-      const host = container.current;
-      if (!handle || !host) return;
+    const renderLoop = () => {
+      animFrame = requestAnimationFrame(renderLoop);
+      const viewer = getViewerHandle();
+      const hostElem = containerRef.current;
+      if (!viewer || !hostElem) return;
 
       if (panel.left !== 0 || panel.top !== 0) {
-        // Loud rather than subtly wrong: every leader line below is measured
-        // from the container's own origin.
         throw new Error("LabelOverlay expects the driven panel at the top left");
       }
-      const width = host.clientWidth * panel.width;
-      const height = host.clientHeight * panel.height;
 
-      const anchors: LabelAnchor[] = targets.map((target) => {
-        // Where the structure was drawn, not where the body keeps it: a leader
-        // line still pointing into the gap an exploded part left behind is
-        // worse than no label at all.
-        const centre = structurePosition(handle, target.id);
-        if (!centre) return { ...target, x: NaN, y: NaN };
-        const point = projectToScreen(centre, handle.camera, width, height);
-        return { ...target, x: point.x, y: point.y, behind: point.behind };
+      const viewportW = hostElem.clientWidth * panel.width;
+      const viewportH = hostElem.clientHeight * panel.height;
+
+      const screenAnchors: LabelAnchor[] = targetItems.map((item) => {
+        const worldPos = structurePosition(viewer, item.id);
+        if (!worldPos) return { ...item, x: NaN, y: NaN };
+        const coords = projectToScreen(worldPos, viewer.camera, viewportW, viewportH);
+        return { ...item, x: coords.x, y: coords.y, behind: coords.behind };
       });
 
-      // The nodes are already in the DOM from the previous paint, so their own
-      // width is the honest measurement — no font maths, no guessing. A label
-      // seen for the first time measures 0 and lands where it always did; the
-      // next frame places it properly, which is one frame nobody perceives.
-      const placed = layoutLabels(anchors, {
-        width,
-        height,
+      const positioned = layoutLabels(screenAnchors, {
+        width: viewportW,
+        height: viewportH,
         measure: (text) => {
-          for (const node of nodes.current.values()) {
+          for (const node of labelDomNodes.current.values()) {
             if (node.textContent?.endsWith(text)) return node.offsetWidth;
           }
           return 0;
         },
       });
-      const shown = new Set(placed.map((label) => label.id));
 
-      for (const label of placed) {
-        const node = nodes.current.get(label.id);
-        const line = lines.current.get(label.id);
-        if (node) {
-          node.style.display = "";
-          // Both columns face the figure: a left-hand name ends where the
-          // leader line starts, a right-hand one begins there.
-          node.style.transform = `translate(${
-            label.side === "left" ? label.labelX - node.offsetWidth : label.labelX
-          }px, ${label.labelY - node.offsetHeight / 2}px)`;
+      const visibleSet = new Set(positioned.map((lbl) => lbl.id));
+
+      for (const entry of positioned) {
+        const textElem = labelDomNodes.current.get(entry.id);
+        const lineElem = svgLineNodes.current.get(entry.id);
+
+        if (textElem) {
+          textElem.style.display = "";
+          const translateX =
+            entry.side === "left" ? entry.labelX - textElem.offsetWidth : entry.labelX;
+          const translateY = entry.labelY - textElem.offsetHeight / 2;
+          textElem.style.transform = `translate(${translateX}px, ${translateY}px)`;
         }
-        if (line) {
-          line.style.display = "";
-          line.setAttribute("x1", String(label.x));
-          line.setAttribute("y1", String(label.y));
-          line.setAttribute("x2", String(label.labelX));
-          line.setAttribute("y2", String(label.labelY));
+
+        if (lineElem) {
+          lineElem.style.display = "";
+          lineElem.setAttribute("x1", String(entry.x));
+          lineElem.setAttribute("y1", String(entry.y));
+          lineElem.setAttribute("x2", String(entry.labelX));
+          lineElem.setAttribute("y2", String(entry.labelY));
         }
       }
 
-      // A structure that turned away, went off screen or lost its column place
-      // has to stop being drawn — otherwise its name is left pointing at
-      // wherever it was standing when it disappeared.
-      for (const [id, node] of nodes.current) {
-        if (!shown.has(id)) node.style.display = "none";
+      for (const [id, node] of labelDomNodes.current) {
+        if (!visibleSet.has(id)) node.style.display = "none";
       }
-      for (const [id, line] of lines.current) {
-        if (!shown.has(id)) line.style.display = "none";
+      for (const [id, line] of svgLineNodes.current) {
+        if (!visibleSet.has(id)) line.style.display = "none";
       }
     };
 
-    frame = requestAnimationFrame(draw);
-    return () => cancelAnimationFrame(frame);
-    // The panel is in here because the loop closes over it: without it the
-    // labels would keep laying themselves out for the previous layout after a
-    // view was closed, and land in the wrong place until the targets happened
-    // to change.
-  }, [targets, panel.left, panel.top, panel.width, panel.height]);
+    animFrame = requestAnimationFrame(renderLoop);
+    return () => cancelAnimationFrame(animFrame);
+  }, [targetItems, panel.left, panel.top, panel.width, panel.height]);
 
-  // `targets` already carries the setting — see `labelTargets`, which keeps a
-  // single selected structure named whatever the box says.
-  if (targets.length === 0) return null;
+  if (targetItems.length === 0) return null;
 
   return (
-    <div ref={container} className="pointer-events-none absolute inset-0 overflow-hidden">
+    <div ref={containerRef} className="pointer-events-none absolute inset-0 overflow-hidden">
       <svg className="absolute inset-0 h-full w-full">
-        {targets.map((target) => (
+        {targetItems.map((target) => (
           <line
             key={target.id}
             ref={(node) => {
-              if (node) lines.current.set(target.id, node);
-              else lines.current.delete(target.id);
+              if (node) svgLineNodes.current.set(target.id, node);
+              else svgLineNodes.current.delete(target.id);
             }}
-            stroke={theme.leader}
+            stroke={currentTheme.leader}
             strokeWidth={1}
             style={{ display: "none" }}
           />
         ))}
       </svg>
 
-      {targets.map((target) => (
+      {targetItems.map((target) => (
         <span
           key={target.id}
           ref={(node) => {
-            if (node) nodes.current.set(target.id, node);
-            else nodes.current.delete(target.id);
+            if (node) labelDomNodes.current.set(target.id, node);
+            else labelDomNodes.current.delete(target.id);
           }}
           style={{
             display: "none",
             top: 0,
             left: 0,
-            backgroundColor: theme.chip,
-            color: theme.ink,
+            backgroundColor: currentTheme.chip,
+            color: currentTheme.ink,
           }}
           className="absolute flex items-center gap-1 whitespace-nowrap rounded px-1.5 py-0.5 text-[11px] italic leading-tight"
         >
-          {badgeFor?.organId === target.id && (
-            // The same number the answer used, so the paragraph and the body
-            // say the same thing. Upright and unitalicised against the Latin
-            // beside it: it is a reference mark, not part of the name.
+          {matchedBadge?.organId === target.id && (
             <span className="flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-sky-500/20 px-0.5 text-[8px] font-semibold not-italic text-sky-300">
-              {badgeFor.index}
+              {matchedBadge.index}
             </span>
           )}
           {target.text}
@@ -213,52 +163,27 @@ export function LabelOverlay({ panel = FULL_CANVAS }: { panel?: LabelPanel } = {
   );
 }
 
-/**
- * Which structures to name.
- *
- * Exported for its own test: the rule is a judgement, not an implementation
- * detail, and getting it wrong means either an unreadable screen or a feature
- * that appears to do nothing.
- */
 export function labelTargets(
-  // `name_en` is here because the label carries the side, which only that
-  // field has. Narrowing it away is what let the cast below hide the fact.
   organs: Record<string, { organ_id: string; ta2_latin: string; name_en: string }>,
   selectedOrganIds: string[],
   isolatedOrganIds: string[] | null,
   labelsVisible: boolean,
 ): { id: string; text: string }[] {
-  // **One structure is always named, whatever the setting says.**
-  //
-  // The setting means "keep naming what I select" — a standing preference about
-  // a plate full of labels. It was also, accidentally, the switch that decided
-  // whether a numbered reference in an answer pointed at anything: the reader
-  // clicks ④ beside *lobus superior pulmonis sinistri*, `focus_organ` selects
-  // it and flies the camera, and with the box unticked nothing on screen says
-  // which of the structures in view it is. The number promised to point, and
-  // pointed nowhere.
-  //
-  // A single label cannot clutter a plate, so the promise is kept and the
-  // preference is left meaning what it says for everything above one.
   if (!labelsVisible) {
-    return selectedOrganIds.length === 1 ? named(organs, selectedOrganIds) : [];
+    return selectedOrganIds.length === 1 ? resolveOrganNames(organs, selectedOrganIds) : [];
   }
 
-  // The selection wins: naming it is the most direct way to ask for a label,
-  // and someone who has selected four muscles inside an isolated region wants
-  // those four named, not the whole region.
-  const chosen = selectedOrganIds.length > 0 ? selectedOrganIds : (isolatedOrganIds ?? []);
-
-  return named(organs, chosen);
+  const chosenIds = selectedOrganIds.length > 0 ? selectedOrganIds : (isolatedOrganIds ?? []);
+  return resolveOrganNames(organs, chosenIds);
 }
 
-function named(
+function resolveOrganNames(
   organs: Record<string, { organ_id: string; ta2_latin: string; name_en: string }>,
   ids: string[],
 ): { id: string; text: string }[] {
   return ids
-    .slice(0, MAX_LABELS)
+    .slice(0, MAX_ANNOTATION_LABELS)
     .map((id) => organs[id])
-    .filter((organ) => !!organ)
-    .map((organ) => ({ id: organ.organ_id, text: organLabel(organ as ManifestOrgan) }));
+    .filter((o) => !!o)
+    .map((o) => ({ id: o.organ_id, text: organLabel(o as ManifestOrgan) }));
 }

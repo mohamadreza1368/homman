@@ -1,202 +1,158 @@
 /**
- * The heart sounds, synthesised rather than shipped — the same decision, for
- * the same reasons, as the scanner's ping: no audio file to license, decode or
- * carry in the installer, and a timbre tuned by editing a number.
- *
- * # What the two sounds are
- *
- * The first sound, *lub*, is the atrioventricular valves closing as the
- * ventricles begin to contract: longer and lower. The second, *dub*, is the
- * aortic and pulmonary valves closing as ejection ends: shorter and a little
- * higher. Each is a thump — a low tone falling in pitch under a decay — with a
- * soft knock at its start.
- *
- * # Why it is built for a laptop speaker
- *
- * The first version was a pure thump near fifty hertz behind a filter at 380,
- * and at full volume on a laptop it was almost inaudible: those speakers
- * reproduce next to nothing below about a hundred hertz. The ear hears a low
- * sound through its harmonics, so this one carries them — partials an octave
- * and a twelfth above the fundamental, and a lift around 110 hertz where a
- * laptop still has some body. On headphones the fundamental is there beneath.
- *
- * # Why it no longer sounds like tapping plastic
- *
- * The second version was loud enough and sounded like a knuckle on a plastic
- * case. That was brightness: a triangle wave's odd harmonics, a noise knock
- * centred at 200 hertz with a three-millisecond attack, and a filter that let
- * a kilohertz through. A heart sound is dull. So every partial is a sine, the
- * knock sits lower and arrives more slowly, the filter closes at 600 hertz,
- * and the tail is longer — which is what gives a thump its weight.
- *
- * # Why a compressor
- *
- * Several partials peaking together at a level loud enough to hear would clip.
- * A compressor at the end holds the peak down, so the sound can be loud
- * without being distorted.
- *
- * # Priming
- *
- * Audio does not start without a gesture, and the sounds are fired from the
- * render loop. So the context is started on a click — ticking the sound, or
- * switching the heartbeat on with the sound already ticked — and playing is
- * only scheduling after that. See `scanSound` for the same split.
+ * Hoomaan 3D Viewer - Synthesized Cardiac Sounds & Murmurs Audio Engine
  */
 
 import type { ExtraSoundKind, Murmur, MurmurShape } from "./rhythms";
 
-type Ctor = typeof AudioContext;
+type AudioCtxCtor = typeof AudioContext;
 
-let context: AudioContext | null = null;
-/** The start of the chain every sound goes into, built once with the context. */
-let output: AudioNode | null = null;
+let audioCtx: AudioContext | null = null;
+let masterOutputNode: AudioNode | null = null;
 
-interface Thump {
-  /** Where the fundamental starts and where it falls to, in hertz. */
+interface CardiacThump {
   from: number;
   to: number;
-  /** How long the tone lasts, in seconds. */
   seconds: number;
-  /** Peak level of the tone before the compressor. */
   gain: number;
-  /** Peak level of the knock at its start. */
   knock: number;
 }
 
-export const LUB: Thump = { from: 58, to: 40, seconds: 0.22, gain: 0.95, knock: 0.35 };
-export const DUB: Thump = { from: 76, to: 54, seconds: 0.15, gain: 0.85, knock: 0.4 };
+export const LUB: CardiacThump = { from: 58, to: 40, seconds: 0.22, gain: 0.95, knock: 0.35 };
+export const DUB: CardiacThump = { from: 76, to: 54, seconds: 0.15, gain: 0.85, knock: 0.4 };
 
-/** The tone's partials: multiple of the fundamental, and relative level. All sines. */
 const PARTIALS: readonly [number, number][] = [
   [1, 1],
   [2, 0.75],
   [3, 0.25],
 ];
 
-/** The knock: how long it lasts, where in the spectrum it sits, how it is shaped. */
-const KNOCK = { seconds: 0.06, centre: 120, q: 0.8, attack: 0.008 };
+const KNOCK_CONFIG = { seconds: 0.06, centre: 120, q: 0.8, attack: 0.008 };
+const MURMUR_GAIN = 2.2;
 
-/** Safe to call repeatedly, and silent on a machine with no audio device. */
+/** Initializes Web Audio context and sound compression pipeline on user gesture. */
 export function primeHeartSound(): void {
   try {
-    const Ctx: Ctor | undefined =
+    const Ctx: AudioCtxCtor | undefined =
       window.AudioContext ??
-      (window as unknown as { webkitAudioContext?: Ctor }).webkitAudioContext;
+      (window as unknown as { webkitAudioContext?: AudioCtxCtor }).webkitAudioContext;
     if (!Ctx) return;
-    if (!context) {
-      context = new Ctx();
 
-      // Body where a laptop can still play it, then everything bright removed.
-      const body = context.createBiquadFilter();
-      body.type = "peaking";
-      body.frequency.value = 110;
-      body.Q.value = 0.9;
-      body.gain.value = 6;
-      const dull = context.createBiquadFilter();
-      dull.type = "lowpass";
-      dull.frequency.value = 600;
+    if (!audioCtx) {
+      audioCtx = new Ctx();
 
-      const compressor = context.createDynamicsCompressor();
-      compressor.threshold.value = -18;
-      compressor.knee.value = 12;
-      compressor.ratio.value = 6;
-      compressor.attack.value = 0.004;
-      compressor.release.value = 0.15;
-      // Make-up gain after the compressor, so the held-down peak is still loud.
-      const makeUp = context.createGain();
-      makeUp.gain.value = 1.8;
+      const bodyFilter = audioCtx.createBiquadFilter();
+      bodyFilter.type = "peaking";
+      bodyFilter.frequency.value = 110;
+      bodyFilter.Q.value = 0.9;
+      bodyFilter.gain.value = 6;
 
-      body.connect(dull).connect(compressor).connect(makeUp).connect(context.destination);
-      output = body;
+      const lowPassFilter = audioCtx.createBiquadFilter();
+      lowPassFilter.type = "lowpass";
+      lowPassFilter.frequency.value = 600;
+
+      const comp = audioCtx.createDynamicsCompressor();
+      comp.threshold.value = -18;
+      comp.knee.value = 12;
+      comp.ratio.value = 6;
+      comp.attack.value = 0.004;
+      comp.release.value = 0.15;
+
+      const gainNode = audioCtx.createGain();
+      gainNode.gain.value = 1.8;
+
+      bodyFilter
+        .connect(lowPassFilter)
+        .connect(comp)
+        .connect(gainNode)
+        .connect(audioCtx.destination);
+      masterOutputNode = bodyFilter;
     }
-    if (context.state === "suspended") void context.resume();
+
+    if (audioCtx.state === "suspended") {
+      void audioCtx.resume();
+    }
   } catch {
-    // Audio is a nicety; the heartbeat carries on without it.
+    // audio optional
   }
 }
 
-function thump(sound: Thump, level: number): void {
-  const ctx = context;
-  const out = output;
-  // A rhythm can make a sound quieter than normal, never louder; zero is silence.
-  const scale = Math.min(1, level);
-  if (!ctx || !out || ctx.state !== "running" || !(scale > 0)) return;
+function playThump(thump: CardiacThump, volumeLevel: number): void {
+  const ctx = audioCtx;
+  const out = masterOutputNode;
+  const factor = Math.min(1, volumeLevel);
+  if (!ctx || !out || ctx.state !== "running" || !(factor > 0)) return;
+
   try {
-    const now = ctx.currentTime;
-    const end = now + sound.seconds;
+    const startTime = ctx.currentTime;
+    const endTime = startTime + thump.seconds;
 
-    const envelope = ctx.createGain();
-    // Ten milliseconds of attack: a thump that starts at full level on its first
-    // sample is a click, and a click is the plastic.
-    envelope.gain.setValueAtTime(0.0001, now);
-    envelope.gain.exponentialRampToValueAtTime(sound.gain * scale, now + 0.01);
-    envelope.gain.exponentialRampToValueAtTime(0.0001, end);
-    envelope.connect(out);
+    const env = ctx.createGain();
+    env.gain.setValueAtTime(0.0001, startTime);
+    env.gain.exponentialRampToValueAtTime(thump.gain * factor, startTime + 0.01);
+    env.gain.exponentialRampToValueAtTime(0.0001, endTime);
+    env.connect(out);
 
-    for (const [multiple, level] of PARTIALS) {
+    for (const [harmonic, ratio] of PARTIALS) {
       const osc = ctx.createOscillator();
       osc.type = "sine";
-      osc.frequency.setValueAtTime(sound.from * multiple, now);
-      osc.frequency.exponentialRampToValueAtTime(sound.to * multiple, end);
-      const mix = ctx.createGain();
-      mix.gain.value = level;
-      osc.connect(mix).connect(envelope);
-      osc.start(now);
-      // Stopped explicitly, or every beat leaves its nodes behind.
-      osc.stop(end + 0.02);
+      osc.frequency.setValueAtTime(thump.from * harmonic, startTime);
+      osc.frequency.exponentialRampToValueAtTime(thump.to * harmonic, endTime);
+
+      const partialMix = ctx.createGain();
+      partialMix.gain.value = ratio;
+      osc.connect(partialMix).connect(env);
+      osc.start(startTime);
+      osc.stop(endTime + 0.02);
     }
 
-    // The knock: a moment of noise, kept low and soft.
-    const samples = Math.ceil(ctx.sampleRate * KNOCK.seconds);
-    const buffer = ctx.createBuffer(1, samples, ctx.sampleRate);
-    const data = buffer.getChannelData(0);
-    for (let i = 0; i < samples; i++) data[i] = Math.random() * 2 - 1;
-    const noise = ctx.createBufferSource();
-    noise.buffer = buffer;
-    const band = ctx.createBiquadFilter();
-    band.type = "bandpass";
-    band.frequency.value = KNOCK.centre;
-    band.Q.value = KNOCK.q;
-    const knock = ctx.createGain();
-    knock.gain.setValueAtTime(0.0001, now);
-    knock.gain.exponentialRampToValueAtTime(sound.knock * scale, now + KNOCK.attack);
-    knock.gain.exponentialRampToValueAtTime(0.0001, now + KNOCK.seconds);
-    noise.connect(band).connect(knock).connect(out);
-    noise.start(now);
-    noise.stop(now + KNOCK.seconds + 0.01);
+    const sampleCount = Math.ceil(ctx.sampleRate * KNOCK_CONFIG.seconds);
+    const noiseBuffer = ctx.createBuffer(1, sampleCount, ctx.sampleRate);
+    const channelData = noiseBuffer.getChannelData(0);
+    for (let i = 0; i < sampleCount; i++) channelData[i] = Math.random() * 2 - 1;
+
+    const noiseSrc = ctx.createBufferSource();
+    noiseSrc.buffer = noiseBuffer;
+
+    const bandFilter = ctx.createBiquadFilter();
+    bandFilter.type = "bandpass";
+    bandFilter.frequency.value = KNOCK_CONFIG.centre;
+    bandFilter.Q.value = KNOCK_CONFIG.q;
+
+    const knockEnv = ctx.createGain();
+    knockEnv.gain.setValueAtTime(0.0001, startTime);
+    knockEnv.gain.exponentialRampToValueAtTime(thump.knock * factor, startTime + KNOCK_CONFIG.attack);
+    knockEnv.gain.exponentialRampToValueAtTime(0.0001, startTime + KNOCK_CONFIG.seconds);
+
+    noiseSrc.connect(bandFilter).connect(knockEnv).connect(out);
+    noiseSrc.start(startTime);
+    noiseSrc.stop(startTime + KNOCK_CONFIG.seconds + 0.01);
   } catch {
-    // A missed beat is not worth an error path.
+    // gracefully ignore audio failure
   }
 }
 
-/** The first heart sound, at a loudness relative to normal. */
+/** Plays primary S1 (lub) valve closure sound. */
 export function playLub(level = 1): void {
-  thump(LUB, level);
+  playThump(LUB, level);
 }
 
-/** The second heart sound, at a loudness relative to normal. */
+/** Plays secondary S2 (dub) semilunar valve closure sound. */
 export function playDub(level = 1): void {
-  thump(DUB, level);
+  playThump(DUB, level);
 }
 
-/**
- * The extra sounds: the same thump, lower and shorter for S3 and S4, which are
- * felt as much as heard, and short and high for the opening snap.
- */
-export const EXTRA: Readonly<Record<ExtraSoundKind, Thump>> = {
+export const EXTRA: Readonly<Record<ExtraSoundKind, CardiacThump>> = {
   s3: { from: 46, to: 36, seconds: 0.11, gain: 0.75, knock: 0.12 },
   s4: { from: 50, to: 40, seconds: 0.09, gain: 0.65, knock: 0.1 },
   snap: { from: 140, to: 110, seconds: 0.05, gain: 0.55, knock: 0.6 },
 };
 
+/** Plays extra gallop or snap sound (S3, S4, snap). */
 export function playExtra(kind: ExtraSoundKind): void {
-  thump(EXTRA[kind], 1);
+  playThump(EXTRA[kind], 1);
 }
 
-/**
- * The loudness of a murmur through its length, sampled for `setValueCurveAtTime`.
- * Starts and ends at silence, so a murmur never clicks on or off.
- */
+/** Calculates audio envelope curve array for given murmur shape. */
 export function murmurEnvelope(shape: MurmurShape, points = 32): Float32Array {
   const curve = new Float32Array(points);
   for (let i = 0; i < points; i++) {
@@ -206,61 +162,48 @@ export function murmurEnvelope(shape: MurmurShape, points = 32): Float32Array {
     if (shape === "diamond") level = 1 - Math.abs(2 * x - 1);
     else if (shape === "plateau") level = 1;
     else if (shape === "decrescendo") level = Math.pow(1 - x, 1.6);
-    // Diastolic rumble: quiet in mid-diastole, then presystolic accentuation.
     else level = 0.55 + 0.45 * Math.pow(x, 3);
     curve[i] = Math.max(0.0001, level * Math.max(0, edge));
   }
   return curve;
 }
 
-/**
- * A murmur: noise, filtered to its pitch, shaped over its length.
- *
- * Noise because that is what turbulence sounds like; a band rather than a tone
- * because a murmur has no pitch you could sing, only a register — the low rumble
- * of mitral stenosis, the high blowing of aortic regurgitation.
- */
+/** Plays filtered turbulent noise cardiac murmur. */
 export function playMurmur(murmur: Murmur): void {
-  const ctx = context;
-  const out = output;
+  const ctx = audioCtx;
+  const out = masterOutputNode;
   if (!ctx || !out || ctx.state !== "running" || !(murmur.length > 0) || !(murmur.level > 0)) return;
+
   try {
-    const now = ctx.currentTime;
-    const samples = Math.ceil(ctx.sampleRate * murmur.length);
-    const buffer = ctx.createBuffer(1, samples, ctx.sampleRate);
-    const data = buffer.getChannelData(0);
-    for (let i = 0; i < samples; i++) data[i] = Math.random() * 2 - 1;
-    const noise = ctx.createBufferSource();
-    noise.buffer = buffer;
+    const startTime = ctx.currentTime;
+    const sampleCount = Math.ceil(ctx.sampleRate * murmur.length);
+    const noiseBuffer = ctx.createBuffer(1, sampleCount, ctx.sampleRate);
+    const channelData = noiseBuffer.getChannelData(0);
+    for (let i = 0; i < sampleCount; i++) channelData[i] = Math.random() * 2 - 1;
 
-    const band = ctx.createBiquadFilter();
-    band.type = "bandpass";
-    band.frequency.value = murmur.pitch;
-    band.Q.value = murmur.q;
+    const noiseSrc = ctx.createBufferSource();
+    noiseSrc.buffer = noiseBuffer;
 
-    const envelope = ctx.createGain();
-    // Not `setValueAtTime(now)`: an event at the curve's own start counts as
-    // overlapping it, and the curve would throw — a silent murmur.
-    envelope.gain.value = 0.0001;
-    const curve = murmurEnvelope(murmur.shape).map((value) => value * murmur.level * MURMUR_GAIN);
-    envelope.gain.setValueCurveAtTime(curve, now, murmur.length);
+    const bandFilter = ctx.createBiquadFilter();
+    bandFilter.type = "bandpass";
+    bandFilter.frequency.value = murmur.pitch;
+    bandFilter.Q.value = murmur.q;
 
-    noise.connect(band).connect(envelope).connect(out);
-    noise.start(now);
-    noise.stop(now + murmur.length + 0.01);
+    const env = ctx.createGain();
+    env.gain.value = 0.0001;
+    const curve = murmurEnvelope(murmur.shape).map((val) => val * murmur.level * MURMUR_GAIN);
+    env.gain.setValueCurveAtTime(curve, startTime, murmur.length);
+
+    noiseSrc.connect(bandFilter).connect(env).connect(out);
+    noiseSrc.start(startTime);
+    noiseSrc.stop(startTime + murmur.length + 0.01);
   } catch {
-    // A murmur missed is not worth an error path.
+    // gracefully ignore audio failure
   }
 }
 
-/**
- * How loud a murmur is before its own level. Noise through a band carries far
- * less energy than a tone at the same gain, so it needs more to sit beside S1.
- */
-const MURMUR_GAIN = 2.2;
-
-/** For tests, which must not carry a live audio context between them. */
+/** Clears audio context reference for test isolation. */
 export function forgetHeartSound(): void {
-  context = null;
-  output = null;
+  audioCtx = null;
+  masterOutputNode = null;
 }

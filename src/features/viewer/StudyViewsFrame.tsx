@@ -4,91 +4,59 @@ import { useStudyViewsStore } from "@/stores/studyViewsStore";
 import { OVERLAY_CHIP_ACTION, OVERLAY_GROUND } from "./overlayChrome";
 
 /**
- * The lines between the panels, and the letter naming each one.
- *
- * # Why this is DOM and not WebGL
- *
- * A divider drawn into the scene would have to be a screen-space quad in a
- * fifth pass, sized in device pixels, redrawn every frame, and told about the
- * device pixel ratio. Absolutely-positioned rules do the same job, stay crisp
- * at any DPR, and cost nothing per frame. The same goes for the letters: text
- * in WebGL means a texture atlas; text in the DOM means text.
- *
- * # Why the letters are buttons
- *
- * Because the panel they name is the thing a reader wants to be rid of. Three
- * angles is right for learning a shape and wrong for reading a long structure,
- * and the letter is already sitting on the panel it would close — a separate
- * control elsewhere would be a second thing to find and learn. Switching the
- * last one off is allowed: that leaves the view you drive filling the canvas,
- * which is a legitimate thing to want without leaving the mode.
+ * HOOMAAN Multi-View Study Frame & Viewport Dividers.
+ * Renders grid demarcation lines and perspective toggle buttons for
+ * orthogonal auxiliary panels (anterior, left, superior).
  */
 
-/** One letter per view, matching the viewpoint bar. */
-const LETTER: Record<AuxiliaryView, string> = {
+const VIEWPORT_LETTERS: Record<AuxiliaryView, string> = {
   anterior: "A",
   left: "L",
   superior: "S",
 };
 
-/**
- * Where a panel's letter sits: the corner of that panel nearest the middle of
- * the canvas, pushed back inside it.
- *
- * The edges of the viewport are all spoken for — the collapse toggle, the
- * colour key, the study bar, the controls column, the viewpoint bar — and the
- * first two attempts at this put a letter underneath one of them. The middle is
- * the only ground nothing else claims, and every panel has a corner facing it.
- *
- * In the quartered layout this puts all three letters around the centre point,
- * which is where they already were.
- */
-function corner(rect: ReturnType<typeof domRect>) {
-  const nearX = Math.min(Math.max(0.5, rect.left), rect.left + rect.width);
-  const nearY = Math.min(Math.max(0.5, rect.top), rect.top + rect.height);
-  const pad = "0.5rem";
+function calculateCornerPosition(bounds: ReturnType<typeof domRect>) {
+  const clampedX = Math.min(Math.max(0.5, bounds.left), bounds.left + bounds.width);
+  const clampedY = Math.min(Math.max(0.5, bounds.top), bounds.top + bounds.height);
+  const offset = "0.5rem";
 
   return {
-    left: `${nearX * 100}%`,
-    top: `${nearY * 100}%`,
-    transform: `translate(${nearX > rect.left ? `calc(-100% - ${pad})` : pad}, ${
-      nearY > rect.top ? `calc(-100% - ${pad})` : pad
+    left: `${clampedX * 100}%`,
+    top: `${clampedY * 100}%`,
+    transform: `translate(${clampedX > bounds.left ? `calc(-100% - ${offset})` : offset}, ${
+      clampedY > bounds.top ? `calc(-100% - ${offset})` : offset
     })`,
   };
 }
 
 export function StudyViewsFrame() {
-  const active = useStudyViewsStore((state) => state.active);
+  const activeViews = useStudyViewsStore((state) => state.active);
   const toggleView = useStudyViewsStore((state) => state.toggleView);
-  const layout = panelLayout(active);
+  const panels = panelLayout(activeViews);
 
   return (
     <div className="pointer-events-none absolute inset-0 z-10">
-      {/* One rule along each inner edge. Drawn from the panels themselves
-          rather than as a fixed cross, so a layout with one divider gets one
-          and the quartered one still gets two. An edge that lies on the canvas
-          border is not a divider and is skipped. */}
-      {layout.map((panel) => {
-        const rect = domRect(panel);
+      {panels.map((p) => {
+        const r = domRect(p);
         return (
-          <div key={`edge-${panel.id}`}>
-            {rect.left > 0 && (
+          <div key={`edge-${p.id}`}>
+            {r.left > 0 && (
               <div
                 className="absolute w-px bg-slate-500/30"
                 style={{
-                  left: `${rect.left * 100}%`,
-                  top: `${rect.top * 100}%`,
-                  height: `${rect.height * 100}%`,
+                  left: `${r.left * 100}%`,
+                  top: `${r.top * 100}%`,
+                  height: `${r.height * 100}%`,
                 }}
               />
             )}
-            {rect.top > 0 && (
+            {r.top > 0 && (
               <div
                 className="absolute h-px bg-slate-500/30"
                 style={{
-                  top: `${rect.top * 100}%`,
-                  left: `${rect.left * 100}%`,
-                  width: `${rect.width * 100}%`,
+                  top: `${r.top * 100}%`,
+                  left: `${r.left * 100}%`,
+                  width: `${r.width * 100}%`,
                 }}
               />
             )}
@@ -96,25 +64,19 @@ export function StudyViewsFrame() {
         );
       })}
 
-      {/* The main panel is deliberately unlettered. It is the one being driven,
-          it has the controls and the labels, and a letter on it would be naming
-          the thing the reader is already holding. */}
-      {layout.map((panel) => {
-        // Skipped by identity rather than by position: `panelLayout` puts the
-        // driven panel first today, and this must not quietly start lettering
-        // it if that ever changes.
-        if (panel.id === MAIN) return null;
-        const view: AuxiliaryView = panel.id;
+      {panels.map((p) => {
+        if (p.id === MAIN) return null;
+        const auxiliary = p.id as AuxiliaryView;
         return (
           <button
-            key={panel.id}
+            key={p.id}
             type="button"
-            onClick={() => toggleView(view)}
-            title={`${VIEW_HINT[view]} — click to close this panel`}
-            style={{ position: "absolute", ...corner(domRect(panel)) }}
+            onClick={() => toggleView(auxiliary)}
+            title={`${VIEW_HINT[auxiliary]} — click to close this panel`}
+            style={{ position: "absolute", ...calculateCornerPosition(domRect(p)) }}
             className="pointer-events-auto rounded bg-slate-950/70 px-1.5 py-0.5 font-mono text-[10px] leading-none text-slate-400 transition hover:bg-slate-800 hover:text-slate-100"
           >
-            {LETTER[view]}
+            {VIEWPORT_LETTERS[auxiliary]}
           </button>
         );
       })}
@@ -122,38 +84,26 @@ export function StudyViewsFrame() {
   );
 }
 
-/**
- * The views that are switched off, offered back.
- *
- * Separate from the frame because a panel that does not exist has nowhere to
- * put its own letter. This lives in the column of view controls over the
- * viewport, beside the switch that opened the mode — which is where a reader
- * goes looking for the thing that turns panels on, and the only place in that
- * corner with room.
- *
- * Renders nothing at all while every view is on, so the common case pays no
- * chrome for a control it does not need.
- */
 export function ClosedViews() {
-  const active = useStudyViewsStore((state) => state.active);
+  const activeViews = useStudyViewsStore((state) => state.active);
   const toggleView = useStudyViewsStore((state) => state.toggleView);
-  const closed = (Object.keys(LETTER) as AuxiliaryView[]).filter(
-    (view) => !active.includes(view),
+  const inactiveViews = (Object.keys(VIEWPORT_LETTERS) as AuxiliaryView[]).filter(
+    (v) => !activeViews.includes(v),
   );
 
-  if (closed.length === 0) return null;
+  if (inactiveViews.length === 0) return null;
 
   return (
     <div className="pointer-events-auto flex items-center gap-1">
-      {closed.map((view) => (
+      {inactiveViews.map((v) => (
         <button
-          key={view}
+          key={v}
           type="button"
-          onClick={() => toggleView(view)}
-          title={`${VIEW_HINT[view]} — click to open this panel again`}
+          onClick={() => toggleView(v)}
+          title={`${VIEW_HINT[v]} — click to open this panel again`}
           className={`rounded ${OVERLAY_GROUND} px-1.5 py-0.5 font-mono text-[10px] leading-none transition ${OVERLAY_CHIP_ACTION}`}
         >
-          {LETTER[view]}
+          {VIEWPORT_LETTERS[v]}
         </button>
       ))}
     </div>

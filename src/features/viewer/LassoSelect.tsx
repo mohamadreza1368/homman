@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { isOrganVisible, useSceneStore } from "@/stores/sceneStore";
-
 import {
   collectInPath,
   extendPath,
@@ -13,177 +12,162 @@ import { backgroundTheme } from "./background";
 import { getViewerHandle, positionLookup } from "./viewerBridge";
 
 /**
- * Draw round a region to select it.
- *
- * # The gesture
- *
- * Hold Ctrl (Cmd on a Mac) and drag. Ctrl already means "add to what is
- * selected" everywhere else here, so Ctrl+draw meaning "add this whole area"
- * is the same idea at a larger scale rather than a new one to learn.
- *
- * # Why the orbit has to be switched off, in the capture phase
- *
- * OrbitControls listens on the canvas and would rotate the model while the loop
- * is being drawn. Disabling it on the way *down* through the container — before
- * the canvas sees the press — is what stops the camera moving at all, rather
- * than moving a few degrees before a threshold notices.
+ * HOOMAAN Freehand Lasso Selection Component.
+ * Intercepts Ctrl/Cmd drag gestures in the capture phase to draw closed 2D selection
+ * paths, projecting bounding volumes and batching selected anatomical structure IDs.
  */
+
 export function LassoSelect({
   container,
 }: {
   container: React.RefObject<HTMLDivElement | null>;
 }) {
-  const organs = useSceneStore((s) => s.organs);
+  const organMap = useSceneStore((s) => s.organs);
   const hiddenSystems = useSceneStore((s) => s.hiddenSystems);
   const hiddenOrganIds = useSceneStore((s) => s.hiddenOrganIds);
   const hideConnective = useSceneStore((s) => s.hideConnective);
   const connectiveIds = useSceneStore((s) => s.connectiveIds);
   const isolatedOrganIds = useSceneStore((s) => s.isolatedOrganIds);
   const addToSelection = useSceneStore((s) => s.addToSelection);
-  const theme = backgroundTheme(useSceneStore((s) => s.background));
+  const currentTheme = backgroundTheme(useSceneStore((s) => s.background));
 
-  const [path, setPath] = useState<Point[]>([]);
-  const [caught, setCaught] = useState(0);
-  const drawing = useRef(false);
-  const pathRef = useRef<Point[]>([]);
+  const [activePath, setActivePath] = useState<Point[]>([]);
+  const [enclosedCount, setEnclosedCount] = useState(0);
+  const isInteracting = useRef(false);
+  const internalPath = useRef<Point[]>([]);
 
-  /** Everything a loop is allowed to catch: on screen, and switched on. */
-  const visible = useCallback(
+  const filterVisibleOrgans = useCallback(
     () =>
-      Object.values(organs).filter((organ) =>
+      Object.values(organMap).filter((organ) =>
         isOrganVisible(
           { hiddenSystems, isolatedOrganIds, hiddenOrganIds, hideConnective, connectiveIds },
           organ,
         ),
       ),
-    [organs, hiddenSystems, isolatedOrganIds, hiddenOrganIds],
+    [organMap, hiddenSystems, isolatedOrganIds, hiddenOrganIds, hideConnective, connectiveIds],
   );
 
-  const finish = useCallback(
-    (commit: boolean) => {
-      const drawn = pathRef.current;
-      drawing.current = false;
-      pathRef.current = [];
-      setPath([]);
-      setCaught(0);
+  const completeSelection = useCallback(
+    (commitChanges: boolean) => {
+      const recordedPoints = internalPath.current;
+      isInteracting.current = false;
+      internalPath.current = [];
+      setActivePath([]);
+      setEnclosedCount(0);
 
-      const handle = getViewerHandle();
-      if (handle?.controls) handle.controls.enabled = true;
-      if (!commit || !handle || !isLassoMeaningful(drawn)) return;
+      const viewer = getViewerHandle();
+      if (viewer?.controls) viewer.controls.enabled = true;
+      if (!commitChanges || !viewer || !isLassoMeaningful(recordedPoints)) return;
 
-      const host = container.current;
-      if (!host) return;
-      const ids = collectInPath(
-        visible(),
-        positionLookup(handle),
-        handle.camera,
-        host.clientWidth,
-        host.clientHeight,
-        drawn,
+      const hostElement = container.current;
+      if (!hostElement) return;
+
+      const capturedIds = collectInPath(
+        filterVisibleOrgans(),
+        positionLookup(viewer),
+        viewer.camera,
+        hostElement.clientWidth,
+        hostElement.clientHeight,
+        recordedPoints,
       );
-      // Even an empty loop suppresses the click: the reader drew a shape and
-      // caught nothing, which is an answer. Letting the release fall through to
-      // select a rib would look like the gesture doing something random.
+
       suppressNextClick();
-      if (ids.length > 0) addToSelection(ids);
+      if (capturedIds.length > 0) addToSelection(capturedIds);
     },
-    [addToSelection, container, visible],
+    [addToSelection, container, filterVisibleOrgans],
   );
 
   useEffect(() => {
-    const host = container.current;
-    if (!host) return;
+    const hostNode = container.current;
+    if (!hostNode) return;
 
-    const localPoint = (event: PointerEvent): Point => {
-      const bounds = host.getBoundingClientRect();
-      return { x: event.clientX - bounds.left, y: event.clientY - bounds.top };
+    const computeLocalCoords = (e: PointerEvent): Point => {
+      const rect = hostNode.getBoundingClientRect();
+      return { x: e.clientX - rect.left, y: e.clientY - rect.top };
     };
 
-    const onDown = (event: PointerEvent) => {
-      if (event.button !== 0 || !(event.ctrlKey || event.metaKey)) return;
-      const handle = getViewerHandle();
-      // Capture phase, so this runs before OrbitControls' own listener on the
-      // canvas and the camera never starts to move.
-      if (handle?.controls) handle.controls.enabled = false;
-      drawing.current = true;
-      pathRef.current = [localPoint(event)];
-      setPath(pathRef.current);
+    const handlePointerDown = (e: PointerEvent) => {
+      if (e.button !== 0 || !(e.ctrlKey || e.metaKey)) return;
+      const viewer = getViewerHandle();
+      if (viewer?.controls) viewer.controls.enabled = false;
+
+      isInteracting.current = true;
+      internalPath.current = [computeLocalCoords(e)];
+      setActivePath(internalPath.current);
     };
 
-    const onMove = (event: PointerEvent) => {
-      if (!drawing.current) return;
-      const next = extendPath(pathRef.current, localPoint(event));
-      if (next === pathRef.current) return;
-      pathRef.current = next;
-      setPath(next);
+    const handlePointerMove = (e: PointerEvent) => {
+      if (!isInteracting.current) return;
+      const updated = extendPath(internalPath.current, computeLocalCoords(e));
+      if (updated === internalPath.current) return;
 
-      const handle = getViewerHandle();
-      if (handle && isLassoMeaningful(next)) {
-        setCaught(
-          collectInPath(
-            visible(),
-            positionLookup(handle),
-            handle.camera,
-            host.clientWidth,
-            host.clientHeight,
-            next,
-          ).length,
+      internalPath.current = updated;
+      setActivePath(updated);
+
+      const viewer = getViewerHandle();
+      if (viewer && isLassoMeaningful(updated)) {
+        const found = collectInPath(
+          filterVisibleOrgans(),
+          positionLookup(viewer),
+          viewer.camera,
+          hostNode.clientWidth,
+          hostNode.clientHeight,
+          updated,
         );
+        setEnclosedCount(found.length);
       }
     };
 
-    const onUp = () => {
-      if (drawing.current) finish(true);
+    const handlePointerUp = () => {
+      if (isInteracting.current) completeSelection(true);
     };
 
-    const onKey = (event: KeyboardEvent) => {
-      // Escape abandons the loop. Releasing Ctrl does not: people let go of the
-      // modifier halfway through a long shape without meaning to cancel.
-      if (event.key === "Escape" && drawing.current) finish(false);
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && isInteracting.current) completeSelection(false);
     };
 
-    host.addEventListener("pointerdown", onDown, { capture: true });
-    window.addEventListener("pointermove", onMove);
-    window.addEventListener("pointerup", onUp);
-    window.addEventListener("keydown", onKey);
+    hostNode.addEventListener("pointerdown", handlePointerDown, { capture: true });
+    window.addEventListener("pointermove", handlePointerMove);
+    window.addEventListener("pointerup", handlePointerUp);
+    window.addEventListener("keydown", handleKeyDown);
+
     return () => {
-      host.removeEventListener("pointerdown", onDown, { capture: true });
-      window.removeEventListener("pointermove", onMove);
-      window.removeEventListener("pointerup", onUp);
-      window.removeEventListener("keydown", onKey);
-      // A panel collapsed mid-draw never sees a pointer-up, and the orbit would
-      // stay switched off for the rest of the session.
-      const handle = getViewerHandle();
-      if (handle?.controls) handle.controls.enabled = true;
+      hostNode.removeEventListener("pointerdown", handlePointerDown, { capture: true });
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", handlePointerUp);
+      window.removeEventListener("keydown", handleKeyDown);
+
+      const viewer = getViewerHandle();
+      if (viewer?.controls) viewer.controls.enabled = true;
     };
-  }, [container, finish, visible]);
+  }, [container, completeSelection, filterVisibleOrgans]);
 
-  if (path.length < 2) return null;
+  if (activePath.length < 2) return null;
 
-  const outline = path.map((point) => `${point.x},${point.y}`).join(" ");
-  const last = path[path.length - 1]!;
+  const polygonPoints = activePath.map((pt) => `${pt.x},${pt.y}`).join(" ");
+  const tail = activePath[activePath.length - 1]!;
 
   return (
     <div className="pointer-events-none absolute inset-0 overflow-hidden">
       <svg className="absolute inset-0 h-full w-full">
         <polygon
-          points={outline}
-          fill={theme.leader}
+          points={polygonPoints}
+          fill={currentTheme.leader}
           fillOpacity={0.12}
-          stroke={theme.leader}
+          stroke={currentTheme.leader}
           strokeWidth={1.5}
           strokeDasharray="5 4"
         />
       </svg>
       <span
         style={{
-          transform: `translate(${last.x + 12}px, ${last.y + 12}px)`,
-          backgroundColor: theme.chip,
-          color: theme.ink,
+          transform: `translate(${tail.x + 12}px, ${tail.y + 12}px)`,
+          backgroundColor: currentTheme.chip,
+          color: currentTheme.ink,
         }}
         className="absolute left-0 top-0 whitespace-nowrap rounded px-1.5 py-0.5 text-[11px] tabular-nums"
       >
-        {caught} structure{caught === 1 ? "" : "s"}
+        {enclosedCount} structure{enclosedCount === 1 ? "" : "s"}
       </span>
     </div>
   );

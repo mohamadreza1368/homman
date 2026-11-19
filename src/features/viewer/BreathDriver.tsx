@@ -5,7 +5,6 @@ import * as THREE from "three";
 import type { ManifestOrgan } from "@/lib/schemas";
 import { useBreathStore } from "@/stores/breathStore";
 import { useSceneStore } from "@/stores/sceneStore";
-
 import {
   BREATH_AXIS,
   BREATH_FILL,
@@ -21,67 +20,42 @@ import { beatChamber, isChamberWall } from "./heartbeat";
 import { sinusPace } from "./sinusArrhythmia";
 
 /**
- * The breath's clock. See `breathing.ts`.
- *
- * One write a frame to a shared uniform, and nothing at all while the switch
- * is off and the last breath has run out.
- *
- * **Switching on or off never jumps.** The breath fades in over a second and,
- * switched off, the chest is allowed to finish breathing out before it stops —
- * a body frozen half-full reads as a fault. A change of pattern carries the
- * depth across in the same way.
+ * HOOMAAN Respiratory Kinematics Driver.
+ * Synchronizes anatomical chest expansion, rib swinging axis, organ-carried
+ * vasculature motion, and respiratory sinus arrhythmia.
  */
 
-/** Seconds to come up to full depth, or to settle. */
-const EASE = 1;
-
-/**
- * Frames what is on screen must stay unchanged before the carried vessels are
- * measured — systems load a few meshes a frame, and measuring on every one
- * would measure the abdomen dozens of times while it was still arriving.
- */
+const EASE_TIME_S = 1;
 const CARRY_SETTLE_FRAMES = 20;
-/** Under this, summed over every registered mesh, the scene is holding still this frame. In metres. */
-const CARRY_STILL = 1e-5;
-/** Over this since the last measurement, summed the same way, it has moved enough to measure again. */
-const CARRY_MOVED = 0.002;
+const CARRY_STILL_THRESHOLD_M = 1e-5;
+const CARRY_MOVED_THRESHOLD_M = 0.002;
 
-/**
- * Whether the body is breathing in right now — for the panel, which reads it
- * on its own schedule rather than having the scene re-render it — and how far
- * the breath is pulling the heart rate above or below its own, as a fraction:
- * 0 whenever the body is not breathing. See `sinusArrhythmia.ts`.
- */
 export const BREATH_NOW = { inhaling: false, running: false, swing: 0 };
 
 type Measured = Pick<ManifestOrgan, "organ_id" | "system" | "name_en" | "ta2_latin" | "path">;
 
-/**
- * The chest's heights for `BREATH_FRAME`: the bottom and top of the lungs
- * together, and the top of the heart's chamber walls.
- *
- * Measured from what is loaded. With the lungs or the heart switched off their
- * vessels can still be on screen, so each falls back to where it lies in a
- * body of ordinary proportions, from the sternum's height — the lungs from
- * sixteen centimetres below it to fourteen above, the heart's top four above.
- */
 export function breathFrame(
   boxes: ReadonlyMap<string, THREE.Box3>,
   organs: Iterable<Measured>,
   sternumY: number,
 ): [number, number, number] {
-  const lungs = new THREE.Box3();
-  const heart = new THREE.Box3();
+  const lungsBounds = new THREE.Box3();
+  const heartBounds = new THREE.Box3();
+
   for (const organ of organs) {
     const box = boxes.get(organ.organ_id);
     if (!box || box.isEmpty()) continue;
-    if (organ.system === "respiratory" && breathRole(organ) === BREATH_ROLE.lung) lungs.union(box);
-    else if (beatChamber(organ) !== null && isChamberWall(organ)) heart.union(box);
+    if (organ.system === "respiratory" && breathRole(organ) === BREATH_ROLE.lung) {
+      lungsBounds.union(box);
+    } else if (beatChamber(organ) !== null && isChamberWall(organ)) {
+      heartBounds.union(box);
+    }
   }
+
   return [
-    lungs.isEmpty() ? sternumY - 0.16 : lungs.min.y,
-    lungs.isEmpty() ? sternumY + 0.14 : lungs.max.y,
-    heart.isEmpty() ? sternumY + 0.04 : heart.max.y,
+    lungsBounds.isEmpty() ? sternumY - 0.16 : lungsBounds.min.y,
+    lungsBounds.isEmpty() ? sternumY + 0.14 : lungsBounds.max.y,
+    heartBounds.isEmpty() ? sternumY + 0.04 : heartBounds.max.y,
   ];
 }
 
@@ -94,108 +68,103 @@ export function BreathDriver({
   bounds: THREE.Box3 | null;
   revision: number;
 }) {
-  /**
-   * Where the chest is: the sternum's middle, and an axis a hand's depth
-   * behind it for the ribs to swing about. From the body's proportions until
-   * the skeleton has been measured.
-   */
-  const axis = useMemo(() => {
+  const thoracicAxis = useMemo(() => {
     const sternum = boxes.get("body_of_sternum");
     if (sternum) {
-      const centre = sternum.getCenter(new THREE.Vector3());
-      return [centre.x, centre.y, sternum.max.z - 0.1];
+      const center = sternum.getCenter(new THREE.Vector3());
+      return [center.x, center.y, sternum.max.z - 0.1];
     }
     if (bounds && !bounds.isEmpty()) {
-      const size = bounds.getSize(new THREE.Vector3());
-      const middle = bounds.getCenter(new THREE.Vector3());
-      return [middle.x, bounds.min.y + size.y * 0.73, middle.z];
+      const sz = bounds.getSize(new THREE.Vector3());
+      const mid = bounds.getCenter(new THREE.Vector3());
+      return [mid.x, bounds.min.y + sz.y * 0.73, mid.z];
     }
     return [0, 1.32, 0];
-    // `boxes` is a ref's map and cannot invalidate a memo; `revision` is.
   }, [boxes, bounds, revision]);
+
   useEffect(() => {
-    BREATH_AXIS.value = axis;
-  }, [axis]);
+    BREATH_AXIS.value = thoracicAxis;
+  }, [thoracicAxis]);
 
-  const organs = useSceneStore((s) => s.organs);
+  const sceneOrgans = useSceneStore((s) => s.organs);
   useEffect(() => {
-    BREATH_FRAME.value = breathFrame(boxes, Object.values(organs), axis[1]!);
-    // `boxes` is filled in place; `revision` says when.
-  }, [boxes, organs, axis, revision]);
+    BREATH_FRAME.value = breathFrame(boxes, Object.values(sceneOrgans), thoracicAxis[1]!);
+  }, [boxes, sceneOrgans, thoracicAxis, revision]);
 
-  const clock = useRef(0);
-  const amplitude = useRef(0);
-  /** What the carried vessels were last measured for, and how long the scene has held still. */
-  const carried = useRef({ version: -1, revision: -1, placement: Number.NaN });
-  const carryStill = useRef({ version: -1, placement: Number.NaN, frames: 0 });
-  const depth = useRef(1);
-  const sinusSwing = useRef(BREATH_PATTERNS.quiet.sinusSwing);
+  const internalClock = useRef(0);
+  const currentAmplitude = useRef(0);
+  const carryState = useRef({ version: -1, revision: -1, placement: Number.NaN });
+  const carryStability = useRef({ version: -1, placement: Number.NaN, frames: 0 });
+  const activeDepth = useRef(1);
+  const activeSinusSwing = useRef(BREATH_PATTERNS.quiet.sinusSwing);
 
-  useEffect(
-    () => () => {
+  useEffect(() => {
+    return () => {
       BREATH_FILL.value = 0;
       BREATH_NOW.running = false;
       BREATH_NOW.swing = 0;
-    },
-    [],
-  );
+    };
+  }, []);
 
   useFrame((_, delta) => {
-    // Read rather than subscribed: this runs every frame.
-    const { enabled, pattern: id } = useBreathStore.getState();
-    const pattern = BREATH_PATTERNS[id];
-    // Nothing to do, and nothing done: off, and the last breath is out.
-    if (!enabled && amplitude.current === 0) {
+    const { enabled, pattern: patternId } = useBreathStore.getState();
+    const pattern = BREATH_PATTERNS[patternId];
+
+    if (!enabled && currentAmplitude.current === 0) {
       if (BREATH_NOW.running) {
         BREATH_FILL.value = 0;
         BREATH_NOW.running = false;
         BREATH_NOW.swing = 0;
-        clock.current = 0;
+        internalClock.current = 0;
       }
       return;
     }
-    // Which vessels the organs carry, measured once the scene has settled, and
-    // again whenever something is added or removed or the meshes have moved —
-    // the exploded view — once they have stopped. "Stopped" is strict and
-    // "moved" is not: the explosion eases in and out over a long tail, and a
-    // looser test measured several times on its last tenths of a millimetre.
-    const version = CARRY_VERSION.value;
-    const placement = carryPlacement();
-    const still = carryStill.current;
-    const holding = version === still.version && Math.abs(placement - still.placement) < CARRY_STILL;
-    still.frames = holding ? still.frames + 1 : 0;
-    still.version = version;
-    still.placement = placement;
-    const last = carried.current;
-    const changed =
-      version !== last.version ||
-      revision !== last.revision ||
-      !(Math.abs(placement - last.placement) < CARRY_MOVED);
-    if (changed && still.frames >= CARRY_SETTLE_FRAMES) {
-      carried.current = { version, revision, placement };
+
+    const currentVersion = CARRY_VERSION.value;
+    const currentPlacement = carryPlacement();
+    const stability = carryStability.current;
+    const isMotionless =
+      currentVersion === stability.version &&
+      Math.abs(currentPlacement - stability.placement) < CARRY_STILL_THRESHOLD_M;
+
+    stability.frames = isMotionless ? stability.frames + 1 : 0;
+    stability.version = currentVersion;
+    stability.placement = currentPlacement;
+
+    const previousCarry = carryState.current;
+    const hasStructureChanged =
+      currentVersion !== previousCarry.version ||
+      revision !== previousCarry.revision ||
+      !(Math.abs(currentPlacement - previousCarry.placement) < CARRY_MOVED_THRESHOLD_M);
+
+    if (hasStructureChanged && stability.frames >= CARRY_SETTLE_FRAMES) {
+      carryState.current = { version: currentVersion, revision, placement: currentPlacement };
       measureCarry();
     }
 
-    const step = Math.min(delta, 0.05);
-    clock.current += step;
-    const fill = breathFill(clock.current, pattern);
-    const inhaling = breathingIn(clock.current, pattern);
+    const dt = Math.min(delta, 0.05);
+    internalClock.current += dt;
+    const currentFill = breathFill(internalClock.current, pattern);
+    const isInhaling = breathingIn(internalClock.current, pattern);
 
     if (enabled) {
-      amplitude.current = Math.min(1, amplitude.current + step / EASE);
-    } else if (!inhaling) {
-      // Let the breath finish going out, then stop: a body frozen half-full
-      // reads as a fault.
-      amplitude.current = Math.max(0, amplitude.current - step / EASE);
-      if (fill < 0.02) amplitude.current = 0;
+      currentAmplitude.current = Math.min(1, currentAmplitude.current + dt / EASE_TIME_S);
+    } else if (!isInhaling) {
+      currentAmplitude.current = Math.max(0, currentAmplitude.current - dt / EASE_TIME_S);
+      if (currentFill < 0.02) currentAmplitude.current = 0;
     }
-    depth.current += (pattern.depth - depth.current) * Math.min(1, step * 1.5);
-    sinusSwing.current += (pattern.sinusSwing - sinusSwing.current) * Math.min(1, step * 1.5);
 
-    BREATH_FILL.value = fill * amplitude.current * depth.current;
-    BREATH_NOW.inhaling = inhaling;
-    BREATH_NOW.running = amplitude.current > 0;
-    BREATH_NOW.swing = amplitude.current * sinusSwing.current * sinusPace(clock.current, pattern);
+    activeDepth.current += (pattern.depth - activeDepth.current) * Math.min(1, dt * 1.5);
+    activeSinusSwing.current +=
+      (pattern.sinusSwing - activeSinusSwing.current) * Math.min(1, dt * 1.5);
+
+    BREATH_FILL.value = currentFill * currentAmplitude.current * activeDepth.current;
+    BREATH_NOW.inhaling = isInhaling;
+    BREATH_NOW.running = currentAmplitude.current > 0;
+    BREATH_NOW.swing =
+      currentAmplitude.current *
+      activeSinusSwing.current *
+      sinusPace(internalClock.current, pattern);
   });
 
   return null;

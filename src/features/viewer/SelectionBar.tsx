@@ -1,55 +1,88 @@
-import { useEffect } from "react";
+import { useEffect, type ReactNode } from "react";
 
 import { useInterfaceLanguage } from "@/stores/interfaceLanguage";
 import { organLabel, organSubtitle, useSceneStore } from "@/stores/sceneStore";
-
 import { viewportKey } from "./viewportKeys";
 
+/**
+ * Bottom-docked floating action bar displayed whenever organs are actively selected
+ * or hidden in the viewport. Provides immediate keyboard shortcuts and mouse actions
+ * to isolate, hide, restore, or clear selections.
+ */
 export function SelectionBar() {
-  const fa = useInterfaceLanguage((s) => s.language === "fa");
-  const selectedOrganIds = useSceneStore((s) => s.selectedOrganIds);
-  const hiddenOrganIds = useSceneStore((s) => s.hiddenOrganIds);
-  const organs = useSceneStore((s) => s.organs);
-  const isolateSelection = useSceneStore((s) => s.isolateSelection);
-  const hideSelection = useSceneStore((s) => s.hideSelection);
-  const clearSelection = useSceneStore((s) => s.clearSelection);
-  const unhideAll = useSceneStore((s) => s.unhideAll);
-  const setHovered = useSceneStore((s) => s.setHovered);
+  const isPersian = useInterfaceLanguage((state) => state.language === "fa");
+  const selectedIds = useSceneStore((state) => state.selectedOrganIds);
+  const hiddenIds = useSceneStore((state) => state.hiddenOrganIds);
+  const catalog = useSceneStore((state) => state.organs);
+  const isolateCurrent = useSceneStore((state) => state.isolateSelection);
+  const hideCurrent = useSceneStore((state) => state.hideSelection);
+  const clearCurrent = useSceneStore((state) => state.clearSelection);
+  const restoreHidden = useSceneStore((state) => state.unhideAll);
+  const setHoveredId = useSceneStore((state) => state.setHovered);
 
+  // Keyboard shortcut listener for active selection management
   useEffect(() => {
-    const onKey = (event: KeyboardEvent) => {
-      const key = viewportKey(event);
-      if (key === null) return;
-      if (key === "i") isolateSelection();
-      else if (key === "h") hideSelection();
-      else if (key === "u") unhideAll();
-      else if (key === "c") clearSelection();
-      else return;
-      event.preventDefault();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [isolateSelection, hideSelection, unhideAll, clearSelection]);
+    const handleKeyShortcut = (event: KeyboardEvent) => {
+      const code = viewportKey(event);
+      if (!code) return;
 
-  const chosen = selectedOrganIds.map((id) => organs[id]).filter((organ) => !!organ);
-  if (chosen.length === 0 && hiddenOrganIds.length === 0) return null;
+      switch (code) {
+        case "i":
+          isolateCurrent();
+          event.preventDefault();
+          break;
+        case "h":
+          hideCurrent();
+          event.preventDefault();
+          break;
+        case "u":
+          restoreHidden();
+          event.preventDefault();
+          break;
+        case "c":
+          clearCurrent();
+          event.preventDefault();
+          break;
+        default:
+          break;
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyShortcut);
+    return () => window.removeEventListener("keydown", handleKeyShortcut);
+  }, [isolateCurrent, hideCurrent, restoreHidden, clearCurrent]);
+
+  const activeOrgans = selectedIds
+    .map((id) => catalog[id])
+    .filter((item): item is NonNullable<typeof item> => Boolean(item));
+
+  if (activeOrgans.length === 0 && hiddenIds.length === 0) {
+    return null;
+  }
+
+  const recentSelections = activeOrgans.slice(-3);
 
   return (
     <div className="pointer-events-none absolute inset-x-0 bottom-16 flex justify-center">
-      <div className="pointer-events-auto flex max-w-[85%] items-center gap-2 rounded-full border border-teal-500/30 bg-slate-900/90 px-3.5 py-1.5 shadow-2xl backdrop-blur-xl ring-1 ring-white/10">
-        {chosen.length > 0 && (
+      <nav
+        aria-label={isPersian ? "مدیریت انتخاب‌ها" : "Selection controls"}
+        className="pointer-events-auto flex max-w-[85%] items-center gap-2 rounded-full border border-teal-500/30 bg-slate-900/90 px-3.5 py-1.5 shadow-2xl backdrop-blur-xl ring-1 ring-white/10"
+      >
+        {activeOrgans.length > 0 && (
           <>
             <span className="shrink-0 rounded-full bg-slate-700/60 px-2 py-0.5 text-[10px] font-semibold text-slate-200">
-              {fa ? `${chosen.length} انتخاب‌شده` : `${chosen.length} selected`}
+              {isPersian
+                ? `${activeOrgans.length} انتخاب‌شده`
+                : `${activeOrgans.length} selected`}
             </span>
 
             <div className="flex min-w-0 items-center gap-1">
-              {chosen.slice(-3).map((organ) => (
+              {recentSelections.map((organ) => (
                 <span
                   key={organ.organ_id}
                   title={organSubtitle(organ)}
-                  onMouseEnter={() => setHovered(organ.organ_id)}
-                  onMouseLeave={() => setHovered(null)}
+                  onMouseEnter={() => setHoveredId(organ.organ_id)}
+                  onMouseLeave={() => setHoveredId(null)}
                   className="max-w-44 truncate text-xs italic text-slate-300"
                 >
                   {organLabel(organ)}
@@ -57,52 +90,59 @@ export function SelectionBar() {
               ))}
             </div>
 
-            <Action onClick={isolateSelection} hint="I">
-              {fa ? "ایزوله" : "Isolate"}
-            </Action>
-            <Action onClick={hideSelection} hint="H">
-              {fa ? "پنهان" : "Hide"}
-            </Action>
-            <Action onClick={clearSelection} hint="C">
-              {fa ? "پاک کردن" : "Clear"}
-            </Action>
+            <ActionButton onClick={isolateCurrent} hotkeyHint="I">
+              {isPersian ? "ایزوله" : "Isolate"}
+            </ActionButton>
+            <ActionButton onClick={hideCurrent} hotkeyHint="H">
+              {isPersian ? "پنهان" : "Hide"}
+            </ActionButton>
+            <ActionButton onClick={clearCurrent} hotkeyHint="C">
+              {isPersian ? "پاک کردن" : "Clear"}
+            </ActionButton>
           </>
         )}
 
-        {hiddenOrganIds.length > 0 && (
-          <Action onClick={unhideAll} hint="U" tone="amber">
-            {fa ? `بازگردانی ${hiddenOrganIds.length} پنهان` : `Restore ${hiddenOrganIds.length} hidden`}
-          </Action>
+        {hiddenIds.length > 0 && (
+          <ActionButton onClick={restoreHidden} hotkeyHint="U" variant="amber">
+            {isPersian
+              ? `بازگردانی ${hiddenIds.length} پنهان`
+              : `Restore ${hiddenIds.length} hidden`}
+          </ActionButton>
         )}
-      </div>
+      </nav>
     </div>
   );
 }
 
-function Action({
+interface ActionButtonProps {
+  children: ReactNode;
+  onClick: () => void;
+  hotkeyHint?: string;
+  variant?: "slate" | "amber";
+}
+
+function ActionButton({
   children,
   onClick,
-  hint,
-  tone = "slate",
-}: {
-  children: React.ReactNode;
-  onClick: () => void;
-  hint?: string;
-  tone?: "slate" | "amber";
-}) {
-  const palette =
-    tone === "amber"
+  hotkeyHint,
+  variant = "slate",
+}: ActionButtonProps) {
+  const themeClasses =
+    variant === "amber"
       ? "border-amber-700/60 text-amber-300 hover:border-amber-500"
       : "border-slate-700 text-slate-300 hover:border-sky-600 hover:text-sky-200";
+
   return (
     <button
       type="button"
       onClick={onClick}
-      className={`flex shrink-0 items-center gap-1 rounded border px-2 py-0.5 text-[10px] ${palette}`}
+      className={`flex shrink-0 items-center gap-1 rounded border px-2 py-0.5 text-[10px] transition-colors ${themeClasses}`}
     >
       {children}
-      {hint && (
-        <kbd className="rounded bg-slate-800 px-1 text-[9px] text-slate-500">{hint}</kbd>
+      {hotkeyHint && (
+        <kbd className="rounded bg-slate-800 px-1 text-[9px] text-slate-500">
+          {hotkeyHint}
+        </kbd>
       )}
     </button>
   );

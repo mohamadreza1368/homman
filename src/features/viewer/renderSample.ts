@@ -1,69 +1,20 @@
 /**
- * What one frame actually cost, sampled from the renderer itself.
- *
- * # Why this exists before any multi-view code
- *
- * The case for and against a four-viewport mode rests on one number nobody has
- * ever read on this application: how many draw calls a frame really makes, and
- * how much of the frame budget they take. Every figure in the feasibility note
- * was derived from the manifest and the source — 3,478 structures, one mesh and
- * one material each — and derived figures are how a plan gets approved and then
- * discovers reality afterwards.
- *
- * So this lands first, and it is useful whether or not `Study Views` is ever
- * built: it is also the only honest basis for the minimum-hardware claim the
- * README makes.
- *
- * # A note on the filename
- *
- * This is `renderSample`, not `renderStats`, because `RenderStats.tsx` sits
- * beside it and Windows resolves the two as the same file. TypeScript reported
- * it as the component module having no exports, which is a confusing way to be
- * told about a case collision.
- *
- * # Why a module-level record rather than state
- *
- * The same reason `viewerBridge` is one. These values change sixty times a
- * second and are read by a panel that writes straight to the DOM. Routing them
- * through React would mean sixty renders a second to update some digits, which
- * would itself become the thing being measured.
+ * Hoomaan 3D Viewer - Realtime Render Performance & Diagnostics Profiler
  */
 
-/** How many frames the rolling window keeps. Two seconds at 60fps. */
-const WINDOW = 120;
+const WINDOW_SIZE = 120;
 
 export interface RenderSample {
-  /** Draw calls in the last completed frame. */
   calls: number;
   triangles: number;
-  /** Geometries and textures resident on the GPU. */
   geometries: number;
   textures: number;
-  /** Compiled shader programs — one per distinct material configuration. */
   programs: number;
-  /**
-   * Meshes with `visible === true` in the scene right now.
-   *
-   * The number that predicts what a second viewport would cost, because
-   * isolation hides rather than unmounts: the scene always holds every
-   * structure of every mounted system, and only this subset is drawn.
-   */
   visible: number;
-  /** Everything in the scene, drawn or not. */
   objects: number;
-  /** Canvases in the document. The single-context acceptance criterion. */
   canvases: number;
-  /** JS heap in MB, where the engine reports it. Null in engines that do not. */
   heapMb: number | null;
-  /** Mean frame interval across the window, in milliseconds. */
   meanMs: number;
-  /**
-   * The frame time 95% of frames come in under.
-   *
-   * Reported instead of a best case because a mode that holds 60fps and stalls
-   * every twentieth frame is not a mode that holds 60fps. This is the figure a
-   * 30fps target should be judged against.
-   */
   p95Ms: number;
 }
 
@@ -81,55 +32,46 @@ export const EMPTY_SAMPLE: RenderSample = {
   p95Ms: 0,
 };
 
-/** The live record. Written by the probe inside the canvas, read by the panel. */
 export const sample: RenderSample = { ...EMPTY_SAMPLE };
 
-const frames: number[] = [];
-let next = 0;
+const frameBuffer: number[] = [];
+let bufferIndex = 0;
 
-/** Record one frame interval and refresh the derived timings. */
+/** Records duration of a frame and updates rolling statistics. */
 export function noteFrame(ms: number): void {
-  // A tab that was backgrounded returns with a multi-second interval that would
-  // poison the window for the next two seconds. Nobody was looking at those
-  // frames, so they are not evidence about anything.
   if (ms > 1000) return;
 
-  if (frames.length < WINDOW) frames.push(ms);
-  else {
-    frames[next] = ms;
-    next = (next + 1) % WINDOW;
+  if (frameBuffer.length < WINDOW_SIZE) {
+    frameBuffer.push(ms);
+  } else {
+    frameBuffer[bufferIndex] = ms;
+    bufferIndex = (bufferIndex + 1) % WINDOW_SIZE;
   }
 
-  let total = 0;
-  for (const frame of frames) total += frame;
-  sample.meanMs = total / frames.length;
+  let sum = 0;
+  for (const f of frameBuffer) sum += f;
+  sample.meanMs = sum / frameBuffer.length;
 
-  const sorted = [...frames].sort((a, b) => a - b);
+  const sorted = [...frameBuffer].sort((a, b) => a - b);
   sample.p95Ms = sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * 0.95))] ?? 0;
 }
 
-/** Forget the window. Called when the scene changes enough to invalidate it. */
+/** Resets rolling timing history. */
 export function resetFrames(): void {
-  frames.length = 0;
-  next = 0;
+  frameBuffer.length = 0;
+  bufferIndex = 0;
   sample.meanMs = 0;
   sample.p95Ms = 0;
 }
 
-/** Frames per second implied by the mean interval. */
+/** Computes average FPS from sample frame timing. */
 export function fps(of: RenderSample): number {
   return of.meanMs > 0 ? 1000 / of.meanMs : 0;
 }
 
-/**
- * What the heap reports, in MB, or null.
- *
- * Non-standard and Chromium-only, which is enough here: the shipped application
- * is WebView2 on Windows and WebKitGTK on Linux, and a number on one of the two
- * is better than a number on neither.
- */
+/** Returns current JS heap usage in megabytes when supported by engine. */
 export function heapMb(): number | null {
   const perf = performance as Performance & { memory?: { usedJSHeapSize: number } };
-  const used = perf.memory?.usedJSHeapSize;
-  return typeof used === "number" ? used / 1048576 : null;
+  const bytes = perf.memory?.usedJSHeapSize;
+  return typeof bytes === "number" ? bytes / 1048576 : null;
 }
