@@ -17,132 +17,121 @@ import {
 import { useStudyStore } from "@/stores/studyStore";
 import { useInterfaceLanguage } from "@/stores/interfaceLanguage";
 
-const SYSTEMS_FA: Record<string, string> = { articular: 'مفاصل', cardiovascular: 'قلب و عروق', digestive: 'گوارش', endocrine: 'غدد', lymphatic: 'لنفاوی', muscular: 'عضلات', nervous: 'عصبی', regional: 'سطح بدن', renal: 'ادراری', reproductive: 'تولیدمثل', respiratory: 'تنفسی', skeletal: 'اسکلت', integumentary: 'پوست', visceral: 'احشا' };
+const PERSIAN_SYSTEM_NAMES: Record<string, string> = {
+  articular: "مفاصل",
+  cardiovascular: "قلب و عروق",
+  digestive: "گوارش",
+  endocrine: "غدد",
+  lymphatic: "لنفاوی",
+  muscular: "عضلات",
+  nervous: "عصبی",
+  regional: "سطح بدن",
+  renal: "ادراری",
+  reproductive: "تولیدمثل",
+  respiratory: "تنفسی",
+  skeletal: "اسکلت",
+  integumentary: "پوست",
+  visceral: "احشا",
+};
 
-const PLANES: SectionPlane[] = ["axial", "coronal", "sagittal"];
+const SECTION_PLANES_LIST: SectionPlane[] = ["axial", "coronal", "sagittal"];
 
 /**
- * Whether a system's structures are listed.
- *
- * **Everything starts closed, and nothing is remembered.** There used to be a
- * size threshold: systems under sixty structures opened on mount, which meant
- * five of them did, and every launch began by pressing "Collapse all". A
- * default that has to be undone on every start is not a default.
- *
- * Closed also removes the reason the threshold existed. The nervous system
- * alone carries over five hundred rows, and rendering them as buttons on mount
- * cost a visible freeze; with nothing open there is nothing to render until
- * somebody asks for it.
- *
- * A function rather than the expression written twice: the global toggle reads
- * the same state to decide whether it says "expand" or "collapse", and a
- * default that disagreed between the two would make the button lie about what
- * it is about to do.
+ * Checks whether an anatomical system folder is currently expanded in the tree view.
  */
 export function systemIsOpen(
-  expanded: Record<string, boolean>,
-  system: string,
+  expandedMap: Record<string, boolean>,
+  systemName: string,
 ): boolean {
-  return expanded[system] === true;
+  return expandedMap[systemName] === true;
 }
 
-/**
- * Take the current view out of the app as an image.
- *
- * Its own component so the whole tree does not re-render while an export is in
- * flight, and so the outcome — the path it landed on, or why it did not — has
- * somewhere to be said.
- */
-function SaveImageButton() {
-  const fa = useInterfaceLanguage((s) => s.language === "fa");
-  const [busy, setBusy] = useState(false);
-  const [result, setResult] = useState<string | null>(null);
+function ViewportCaptureButton() {
+  const isPersian = useInterfaceLanguage((state) => state.language === "fa");
+  const [isExporting, setIsExporting] = useState(false);
+  const [exportOutcome, setExportOutcome] = useState<string | null>(null);
+
+  const handleCapture = () => {
+    setIsExporting(true);
+    setExportOutcome(null);
+    exportViewImage()
+      .then((savedPath) => setExportOutcome(savedPath ? `Saved to ${savedPath}` : null))
+      .catch((err: unknown) =>
+        setExportOutcome(err instanceof Error ? err.message : String(err)),
+      )
+      .finally(() => setIsExporting(false));
+  };
 
   return (
     <div className="pt-1">
       <button
         type="button"
-        disabled={busy}
-        onClick={() => {
-          setBusy(true);
-          setResult(null);
-          exportViewImage()
-            .then((path) => setResult(path ? `Saved to ${path}` : null))
-            .catch((error: unknown) =>
-              setResult(error instanceof Error ? error.message : String(error)),
-            )
-            .finally(() => setBusy(false));
-        }}
+        disabled={isExporting}
+        onClick={handleCapture}
         title="Save the viewport, with its labels and its attribution, as a PNG"
         className="w-full rounded border border-slate-700 py-1 text-[11px] text-slate-300 transition hover:border-sky-600 hover:text-sky-200 disabled:opacity-40"
       >
-        {busy ? (fa ? "در حال ذخیره…" : "Saving…") : fa ? "ذخیرهٔ نمای فعلی به‌عنوان تصویر" : "Save this view as an image"}
+        {isExporting
+          ? isPersian
+            ? "در حال ذخیره…"
+            : "Saving…"
+          : isPersian
+            ? "ذخیرهٔ نمای فعلی به‌عنوان تصویر"
+            : "Save this view as an image"}
       </button>
-      {result && (
+      {exportOutcome && (
         <button
           type="button"
-          onClick={() => setResult(null)}
+          onClick={() => setExportOutcome(null)}
           className="mt-1 block w-full truncate text-left text-[10px] text-slate-500 hover:text-slate-300"
-          title={result}
+          title={exportOutcome}
         >
-          {result}
+          {exportOutcome}
         </button>
       )}
     </div>
   );
 }
 
-/**
- * Your own revision, painted onto the body.
- *
- * An atlas knows anatomy; a notebook knows what you wrote. Only something
- * holding both can answer the question a student actually has in the week
- * before finals — *where have I not been?* — and it is not answerable from a
- * list of notes. It is obvious the instant it is a shape on a body.
- *
- * The legend is not decoration. A coloured body with no key is a mood, and the
- * top of the scale is whatever this journal's busiest structure happens to be,
- * which the reader has to be told.
- */
-function CoverageToggle() {
-  const fa = useInterfaceLanguage((s) => s.language === "fa");
-  const visible = useStudyStore((s) => s.coverageVisible);
-  const setVisible = useStudyStore((s) => s.setCoverageVisible);
-  const coverage = useStudyStore((s) => s.coverage);
+function StudyCoverageDisplay() {
+  const isPersian = useInterfaceLanguage((state) => state.language === "fa");
+  const isCoverageActive = useStudyStore((state) => state.coverageVisible);
+  const setCoverageActive = useStudyStore((state) => state.setCoverageVisible);
+  const coverageData = useStudyStore((state) => state.coverage);
 
-  const busiest = busiestTouches(coverage);
-  const studied = Object.keys(coverage).length;
+  const maxTouches = busiestTouches(coverageData);
+  const totalStudiedOrgans = Object.keys(coverageData).length;
 
   return (
     <>
       <label className="flex cursor-pointer items-center gap-2 pt-1 text-xs text-slate-300">
         <input
           type="checkbox"
-          checked={visible}
-          onChange={(event) => void setVisible(event.target.checked)}
+          checked={isCoverageActive}
+          onChange={(event) => void setCoverageActive(event.target.checked)}
           className="accent-teal-400"
         />
-        <span>{fa ? "نمایش بخش‌های مطالعه‌شده" : "Show what I have studied"}</span>
+        <span>{isPersian ? "نمایش بخش‌های مطالعه‌شده" : "Show what I have studied"}</span>
       </label>
 
-      {!visible && (
+      {!isCoverageActive && (
         <p className="text-[10px] leading-snug text-slate-600">
           Colours the body by your own notes and sessions, so the parts you have not
           worked on are the ones that stay grey.
         </p>
       )}
 
-      {visible && busiest === 0 && (
+      {isCoverageActive && maxTouches === 0 && (
         <p className="text-[10px] leading-snug text-slate-600">
           Nothing filed against a structure yet. Write a note or ask about something
           with it selected, and it will start to show here.
         </p>
       )}
 
-      {visible && busiest > 0 && (
+      {isCoverageActive && maxTouches > 0 && (
         <div className="space-y-1 pt-0.5">
           <div className="flex items-center gap-2">
-            {coverageLegend(busiest).map(({ label, hex }) => (
+            {coverageLegend(maxTouches).map(({ label, hex }) => (
               <span key={label} className="flex items-center gap-1">
                 <span
                   aria-hidden
@@ -154,7 +143,7 @@ function CoverageToggle() {
             ))}
           </div>
           <p className="text-[10px] leading-snug text-slate-600">
-            {studied} structure{studied === 1 ? "" : "s"} touched. The scale is
+            {totalStudiedOrgans} structure{totalStudiedOrgans === 1 ? "" : "s"} touched. The scale is
             relative to your own journal, not to the atlas — the brightest is
             whatever you have worked on most.
           </p>
@@ -164,45 +153,38 @@ function CoverageToggle() {
   );
 }
 
-/**
- * Exploded view.
- *
- * Its own component so dragging the slider does not re-render three thousand
- * rows of the structure list on every pointer move — the same reason the image
- * export is separated out above.
- *
- * The caption is not decoration. What comes apart depends on what the reader has
- * already selected or isolated, and a control that silently acts on a different
- * group than the one they had in mind is worse than no control.
- */
-function ExplodeControl() {
-  const fa = useInterfaceLanguage((s) => s.language === 'fa');
-  const explode = useSceneStore((s) => s.explode);
-  const setExplode = useSceneStore((s) => s.setExplode);
-  const selectedOrganIds = useSceneStore((s) => s.selectedOrganIds);
-  const isolatedOrganIds = useSceneStore((s) => s.isolatedOrganIds);
+function ExplodedViewSlider() {
+  const isPersian = useInterfaceLanguage((state) => state.language === "fa");
+  const explodeFactor = useSceneStore((state) => state.explode);
+  const updateExplode = useSceneStore((state) => state.setExplode);
+  const activeSelectedIds = useSceneStore((state) => state.selectedOrganIds);
+  const activeIsolatedIds = useSceneStore((state) => state.isolatedOrganIds);
 
-  const scope = explodeScope({ selectedOrganIds, isolatedOrganIds });
-  const subject =
-    scope === "selection"
-      ? `the ${selectedOrganIds.length} structures you have selected`
-      : scope === "region"
-        ? `the ${isolatedOrganIds?.length ?? 0} parts you are studying`
+  const activeScope = explodeScope({
+    selectedOrganIds: activeSelectedIds,
+    isolatedOrganIds: activeIsolatedIds,
+  });
+
+  const subjectScopeDescription =
+    activeScope === "selection"
+      ? `the ${activeSelectedIds.length} structures you have selected`
+      : activeScope === "region"
+        ? `the ${activeIsolatedIds?.length ?? 0} parts you are studying`
         : "everything on screen";
 
   return (
     <section className="space-y-1 border-t border-slate-800 pt-3">
       <div className="flex items-center gap-2">
         <h2 className="text-xs font-semibold uppercase tracking-wider text-slate-500">
-          {fa ? 'نمای بازشده' : 'Exploded view'}
+          {isPersian ? "نمای بازشده" : "Exploded view"}
         </h2>
-        {explode > 0 && (
+        {explodeFactor > 0 && (
           <button
             type="button"
-            onClick={() => setExplode(0)}
+            onClick={() => updateExplode(0)}
             className="ml-auto rounded border border-violet-700/70 bg-violet-600/15 px-2 py-0.5 text-[10px] text-violet-300"
           >
-            {fa ? 'بازگرداندن' : 'Reassemble'}
+            {isPersian ? "بازگرداندن" : "Reassemble"}
           </button>
         )}
       </div>
@@ -211,358 +193,390 @@ function ExplodeControl() {
         min={0}
         max={MAX_EXPLODE}
         step={0.05}
-        value={explode}
+        value={explodeFactor}
         aria-label="How far apart to push the parts"
-        onChange={(event) => setExplode(Number(event.target.value))}
+        onChange={(event) => updateExplode(Number(event.target.value))}
         className="w-full accent-violet-500"
       />
       <p className="text-[10px] leading-snug text-slate-600">
-        {fa ? 'اجزای انتخاب‌شده یا ساختارهای نمایش‌داده‌شده از مرکز خود فاصله می‌گیرند. برای بازگشت لغزنده را روی صفر قرار دهید؛ کلید X نیز مراحل را تغییر می‌دهد.' : <>Pushes {subject} apart, away from its own centre, so you can see the faces that are normally pressed together. Nothing is hidden and nothing moves out of order — slide back to zero for the anatomy exactly as it was. <kbd>X</kbd> steps through it from the keyboard.</>}
+        {isPersian ? (
+          "اجزای انتخاب‌شده یا ساختارهای نمایش‌داده‌شده از مرکز خود فاصله می‌گیرند. برای بازگشت لغزنده را روی صفر قرار دهید؛ کلید X نیز مراحل را تغییر می‌دهد."
+        ) : (
+          <>
+            Pushes {subjectScopeDescription} apart, away from its own centre, so you can see
+            the faces that are normally pressed together. Nothing is hidden and nothing
+            moves out of order — slide back to zero for the anatomy exactly as it was.{" "}
+            <kbd>X</kbd> steps through it from the keyboard.
+          </>
+        )}
       </p>
     </section>
   );
 }
 
+/**
+ * Hierarchical tree navigator for inspecting, isolating, toggling, and adjusting opacity of organ systems.
+ */
 export function AnatomyTree() {
-  const fa = useInterfaceLanguage((s) => s.language === 'fa');
-  const organs = useSceneStore((s) => s.organs);
-  const hiddenSystems = useSceneStore((s) => s.hiddenSystems);
-  const isolatedOrganIds = useSceneStore((s) => s.isolatedOrganIds);
-  const selectedOrganIds = useSceneStore((s) => s.selectedOrganIds);
-  const hiddenOrganIds = useSceneStore((s) => s.hiddenOrganIds);
-  const hideConnective = useSceneStore((s) => s.hideConnective);
-  const connectiveIds = useSceneStore((s) => s.connectiveIds);
-  const setHideConnective = useSceneStore((s) => s.setHideConnective);
-  const overlays = useSceneStore((s) => s.pathologyOverlays);
-  const crossSection = useSceneStore((s) => s.crossSection);
+  const isPersian = useInterfaceLanguage((state) => state.language === "fa");
+  const organMap = useSceneStore((state) => state.organs);
+  const hiddenSystems = useSceneStore((state) => state.hiddenSystems);
+  const isolatedOrganIds = useSceneStore((state) => state.isolatedOrganIds);
+  const selectedOrganIds = useSceneStore((state) => state.selectedOrganIds);
+  const hiddenOrganIds = useSceneStore((state) => state.hiddenOrganIds);
+  const hideConnective = useSceneStore((state) => state.hideConnective);
+  const connectiveIds = useSceneStore((state) => state.connectiveIds);
+  const setHideConnective = useSceneStore((state) => state.setHideConnective);
+  const pathologyOverlays = useSceneStore((state) => state.pathologyOverlays);
+  const activeCrossSection = useSceneStore((state) => state.crossSection);
 
-  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
-  const selectOrgan = useSceneStore((s) => s.selectOrgan);
-  const setHovered = useSceneStore((s) => s.setHovered);
-  const toggleSystem = useSceneStore((s) => s.toggleSystem);
-  const soloSystem = useSceneStore((s) => s.soloSystem);
-  const systemOpacity = useSceneStore((s) => s.systemOpacity);
-  const cycleSystemOpacity = useSceneStore((s) => s.cycleSystemOpacity);
-  const xraySystem = useSceneStore((s) => s.xraySystem);
-  const eyeTracking = useSceneStore((s) => s.eyeTracking);
-  const setEyeTracking = useSceneStore((s) => s.setEyeTracking);
-  const depthProbeVisible = useSceneStore((s) => s.depthProbeVisible);
-  const setDepthProbeVisible = useSceneStore((s) => s.setDepthProbeVisible);
-  const labelsVisible = useSceneStore((s) => s.labelsVisible);
-  const setLabelsVisible = useSceneStore((s) => s.setLabelsVisible);
-  const background = useSceneStore((s) => s.background);
-  const setBackground = useSceneStore((s) => s.setBackground);
-  const applyCommand = useSceneStore((s) => s.applyCommand);
+  const [expandedSystemsMap, setExpandedSystemsMap] = useState<Record<string, boolean>>({});
+  const selectOrgan = useSceneStore((state) => state.selectOrgan);
+  const setHoveredOrganId = useSceneStore((state) => state.setHovered);
+  const toggleSystemVisibility = useSceneStore((state) => state.toggleSystem);
+  const isolateSystemAlone = useSceneStore((state) => state.soloSystem);
+  const systemOpacityMap = useSceneStore((state) => state.systemOpacity);
+  const stepSystemOpacity = useSceneStore((state) => state.cycleSystemOpacity);
+  const applyXrayOnSystem = useSceneStore((state) => state.xraySystem);
+  const isEyeTrackingActive = useSceneStore((state) => state.eyeTracking);
+  const setEyeTrackingActive = useSceneStore((state) => state.setEyeTracking);
+  const depthProbeVisible = useSceneStore((state) => state.depthProbeVisible);
+  const setDepthProbeVisible = useSceneStore((state) => state.setDepthProbeVisible);
+  const labelsVisible = useSceneStore((state) => state.labelsVisible);
+  const setLabelsVisible = useSceneStore((state) => state.setLabelsVisible);
+  const sceneBackground = useSceneStore((state) => state.background);
+  const setSceneBackground = useSceneStore((state) => state.setBackground);
+  const dispatchCommand = useSceneStore((state) => state.applyCommand);
 
-  const bySystem = useMemo(() => {
-    const groups = new Map<AnatomicalSystem, ManifestOrgan[]>();
-    for (const organ of Object.values(organs)) {
-      const list = groups.get(organ.system) ?? [];
-      list.push(organ);
-      groups.set(organ.system, list);
+  const groupedSystems = useMemo(() => {
+    const buckets = new Map<AnatomicalSystem, ManifestOrgan[]>();
+    for (const organ of Object.values(organMap)) {
+      const currentList = buckets.get(organ.system) ?? [];
+      currentList.push(organ);
+      buckets.set(organ.system, currentList);
     }
-    for (const list of groups.values()) {
+    for (const list of buckets.values()) {
       list.sort((a, b) => organLabel(a).localeCompare(organLabel(b)));
     }
-    return [...groups.entries()].sort(([a], [b]) => a.localeCompare(b));
-  }, [organs]);
+    return [...buckets.entries()].sort(([a], [b]) => a.localeCompare(b));
+  }, [organMap]);
 
-  /**
-   * Whether anything is open, which is what the global toggle acts on.
-   *
-   * "Any" rather than "all": with one system left open the useful move is
-   * closing it, and a toggle keyed on *all* being open would make the button
-   * say "expand" while the thing in your way is still on screen.
-   */
-  const anyOpen = bySystem.some(([system]) => systemIsOpen(expanded, system));
-  const totalStructures = bySystem.reduce((sum, [, list]) => sum + list.length, 0);
+  const hasAnyOpenFolder = groupedSystems.some(([system]) => systemIsOpen(expandedSystemsMap, system));
+  const totalSystemOrgans = groupedSystems.reduce((acc, [, list]) => acc + list.length, 0);
 
   return (
     <div className="flex h-full min-h-0 flex-col">
       <StructureSearch />
 
       <div className="flex flex-1 flex-col gap-4 overflow-y-auto p-4">
-      <section>
-        <div className="mb-2 flex items-center gap-2">
-          <h2 className="text-xs font-semibold uppercase tracking-wider text-slate-500">
-            {fa ? 'دستگاه‌ها' : 'Systems'}
-          </h2>
-          {bySystem.length > 0 && (
-            <button
-              type="button"
-              onClick={() =>
-                setExpanded(
-                  Object.fromEntries(bySystem.map(([system]) => [system, !anyOpen])),
-                )
-              }
-              title={
-                anyOpen
-                  ? "Collapse every system"
-                  : `Expand every system — ${totalStructures} structures`
-              }
-              className="ml-auto rounded border border-slate-700 px-1.5 py-0.5 text-[9px] uppercase tracking-wide text-slate-500 transition hover:border-sky-600 hover:text-sky-300"
-            >
-              {anyOpen ? (fa ? 'بستن همه' : 'Collapse all') : (fa ? 'باز کردن همه' : 'Expand all')}
-            </button>
-          )}
-        </div>
-        {bySystem.map(([system, list]) => {
-          const isOpen = systemIsOpen(expanded, system);
-          return (
-          <div key={system} className="mb-3">
-            <div className="mb-1 flex items-center gap-2 text-sm font-medium text-slate-200">
-              <input
-                type="checkbox"
-                checked={!hiddenSystems.includes(system)}
-                onChange={() => toggleSystem(system)}
-                title={
-                  hiddenSystems.includes(system)
-                    ? "Load and show this system"
-                    : "Hide this system"
-                }
-                className="accent-sky-500"
-              />
+        <section>
+          <div className="mb-2 flex items-center gap-2">
+            <h2 className="text-xs font-semibold uppercase tracking-wider text-slate-500">
+              {isPersian ? "دستگاه‌ها" : "Systems"}
+            </h2>
+            {groupedSystems.length > 0 && (
               <button
                 type="button"
                 onClick={() =>
-                  setExpanded((state) => ({ ...state, [system]: !isOpen }))
+                  setExpandedSystemsMap(
+                    Object.fromEntries(groupedSystems.map(([sys]) => [sys, !hasAnyOpenFolder])),
+                  )
                 }
-                className="flex flex-1 items-center gap-1.5 text-left hover:text-sky-300"
-                aria-expanded={isOpen}
-              >
-                <span className="w-2 text-[9px] text-slate-500">
-                  {isOpen ? "▼" : "▶"}
-                </span>
-                {/* The legend for the viewport's tissue colours. Without it the
-                    palette is decoration; with it, the colour of a mesh tells
-                    you which system it belongs to before you click anything. */}
-                <span
-                  aria-hidden
-                  title={`${SYSTEM_LABELS[system]} — the colour key in the viewport names every tissue on screen`}
-                  className="h-2 w-2 shrink-0 rounded-full ring-1 ring-inset ring-black/30"
-                  style={{ backgroundColor: SYSTEM_COLOURS[system] }}
-                />
-                <span className="capitalize">{fa ? (SYSTEMS_FA[system] ?? system) : system}</span>
-                <span className="ml-auto text-xs text-slate-500">{list.length}</span>
-              </button>
-              {/* Three things you can do to a layer, and they are different
-                  questions: show it, see through it, or have it alone. */}
-              <button
-                type="button"
-                onClick={() => cycleSystemOpacity(system)}
                 title={
-                  systemOpacity[system] === undefined
-                    ? `Make ${system} translucent — see what is under it`
-                    : `${system} is at ${Math.round(systemOpacity[system]! * 100)}% — click for less, again for solid`
+                  hasAnyOpenFolder
+                    ? "Collapse every system"
+                    : `Expand every system — ${totalSystemOrgans} structures`
                 }
-                className={`shrink-0 rounded border px-1 py-0.5 text-[9px] leading-none ${
-                  systemOpacity[system] === undefined
-                    ? "border-slate-700 text-slate-500 hover:border-sky-600 hover:text-sky-300"
-                    : "border-sky-700/70 bg-sky-600/15 text-sky-300"
-                }`}
+                className="ml-auto rounded border border-slate-700 px-1.5 py-0.5 text-[9px] uppercase tracking-wide text-slate-500 transition hover:border-sky-600 hover:text-sky-300"
               >
-                ◐
+                {hasAnyOpenFolder
+                  ? isPersian
+                    ? "بستن همه"
+                    : "Collapse all"
+                  : isPersian
+                    ? "باز کردن همه"
+                    : "Expand all"}
               </button>
-              <button
-                type="button"
-                onClick={() => xraySystem(system)}
-                title={`Keep ${system} solid and ghost everything else`}
-                className="shrink-0 rounded border border-slate-700 px-1 py-0.5 text-[9px] uppercase tracking-wide text-slate-500 hover:border-sky-600 hover:text-sky-300"
-              >
-                {fa ? "شفاف‌سازی" : "X-ray"}
-              </button>
-              <button
-                type="button"
-                onClick={() => soloSystem(system)}
-                title={`Study ${system} on its own`}
-                className="shrink-0 rounded border border-slate-700 px-1 py-0.5 text-[9px] uppercase tracking-wide text-slate-500 hover:border-sky-600 hover:text-sky-300"
-              >
-                {fa ? "تکی" : "Solo"}
-              </button>
-            </div>
-
-            {isOpen && (
-            <ul className="ml-5 space-y-0.5">
-              {list.map((organ) => {
-                const visible = isOrganVisible(
-                  { hiddenSystems, isolatedOrganIds, hiddenOrganIds, hideConnective, connectiveIds },
-                  organ,
-                );
-                const overlay = overlays[organ.organ_id];
-                return (
-                  <li key={organ.organ_id}>
-                    <button
-                      type="button"
-                      onMouseEnter={() => setHovered(organ.organ_id)}
-                      onMouseLeave={() => setHovered(null)}
-                      onClick={(event) =>
-                        selectOrgan(organ.organ_id, event.ctrlKey || event.metaKey)
-                      }
-                      className={`flex w-full items-center gap-1.5 rounded px-1.5 py-1 text-left text-xs transition ${
-                        selectedOrganIds.includes(organ.organ_id)
-                          ? "bg-sky-500/15 text-sky-300"
-                          : "text-slate-400 hover:bg-slate-800/60"
-                      } ${visible ? "" : "opacity-40"}`}
-                    >
-                      <span className="min-w-0 flex-1">
-                        <span className="block truncate italic">{organLabel(organ)}</span>
-                        <span className="block truncate text-[10px] text-slate-500">
-                          {organSubtitle(organ)}
-                        </span>
-                      </span>
-                      {overlay && (
-                        <span
-                          className="shrink-0 text-[10px] text-amber-400"
-                          title={`${overlay.pathology} (${Math.round(overlay.severity * 100)}%)`}
-                        >
-                          ●
-                        </span>
-                      )}
-                    </button>
-                  </li>
-                );
-              })}
-            </ul>
             )}
           </div>
-          );
-        })}
-      </section>
 
-      <section className="space-y-1 border-t border-slate-800 pt-3">
-        <h2 className="text-xs font-semibold uppercase tracking-wider text-slate-500">
-          {fa ? 'نمایش' : 'View'}
-        </h2>
-        <label className="flex cursor-pointer items-center gap-2 text-xs text-slate-300">
-          <input
-            type="checkbox"
-            checked={eyeTracking}
-            onChange={(event) => setEyeTracking(event.target.checked)}
-            className="accent-sky-500"
-          />
-          <span>{fa ? 'حرکت چشم‌ها با دوربین' : 'Eyes follow you'}</span>
-        </label>
-        <p className="text-[10px] leading-snug text-slate-600">
-          {fa ? 'چشم‌ها در حد تقریبی ۳۵ درجه در حدقه حرکت می‌کنند.' : 'The globes turn in their orbits, up to about 35° — as far as a real eye goes before the head has to follow.'}
-        </p>
+          {groupedSystems.map(([systemKey, organList]) => {
+            const isSystemFolderOpen = systemIsOpen(expandedSystemsMap, systemKey);
+            return (
+              <div key={systemKey} className="mb-3">
+                <div className="mb-1 flex items-center gap-2 text-sm font-medium text-slate-200">
+                  <input
+                    type="checkbox"
+                    checked={!hiddenSystems.includes(systemKey)}
+                    onChange={() => toggleSystemVisibility(systemKey)}
+                    title={
+                      hiddenSystems.includes(systemKey)
+                        ? "Load and show this system"
+                        : "Hide this system"
+                    }
+                    className="accent-sky-500"
+                  />
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setExpandedSystemsMap((prev) => ({
+                        ...prev,
+                        [systemKey]: !isSystemFolderOpen,
+                      }))
+                    }
+                    className="flex flex-1 items-center gap-1.5 text-left hover:text-sky-300"
+                    aria-expanded={isSystemFolderOpen}
+                  >
+                    <span className="w-2 text-[9px] text-slate-500">
+                      {isSystemFolderOpen ? "▼" : "▶"}
+                    </span>
+                    <span
+                      aria-hidden
+                      title={`${SYSTEM_LABELS[systemKey]} — the colour key in the viewport names every tissue on screen`}
+                      className="h-2 w-2 shrink-0 rounded-full ring-1 ring-inset ring-black/30"
+                      style={{ backgroundColor: SYSTEM_COLOURS[systemKey] }}
+                    />
+                    <span className="capitalize">
+                      {isPersian ? (PERSIAN_SYSTEM_NAMES[systemKey] ?? systemKey) : systemKey}
+                    </span>
+                    <span className="ml-auto text-xs text-slate-500">{organList.length}</span>
+                  </button>
 
-        <label className="flex cursor-pointer items-center gap-2 pt-1 text-xs text-slate-300">
-          <input
-            type="checkbox"
-            checked={labelsVisible}
-            onChange={(event) => setLabelsVisible(event.target.checked)}
-            className="accent-sky-500"
-          />
-          <span>{fa ? 'نمایش نام ساختار انتخاب‌شده' : 'Label what I select'}</span>
-        </label>
-        <p className="text-[10px] leading-snug text-slate-600">
-          {fa ? 'نام ساختارهای انتخاب‌شده با خط راهنما در کنار مدل نمایش داده می‌شود.' : 'Names in the margins with a leader line to each structure, the way an atlas plate does it. Select structures — or isolate a region — to name them.'}
-        </p>
+                  <button
+                    type="button"
+                    onClick={() => stepSystemOpacity(systemKey)}
+                    title={
+                      systemOpacityMap[systemKey] === undefined
+                        ? `Make ${systemKey} translucent — see what is under it`
+                        : `${systemKey} is at ${Math.round(systemOpacityMap[systemKey]! * 100)}% — click for less, again for solid`
+                    }
+                    className={`shrink-0 rounded border px-1 py-0.5 text-[9px] leading-none ${
+                      systemOpacityMap[systemKey] === undefined
+                        ? "border-slate-700 text-slate-500 hover:border-sky-600 hover:text-sky-300"
+                        : "border-sky-700/70 bg-sky-600/15 text-sky-300"
+                    }`}
+                  >
+                    ◐
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => applyXrayOnSystem(systemKey)}
+                    title={`Keep ${systemKey} solid and ghost everything else`}
+                    className="shrink-0 rounded border border-slate-700 px-1 py-0.5 text-[9px] uppercase tracking-wide text-slate-500 hover:border-sky-600 hover:text-sky-300"
+                  >
+                    {isPersian ? "شفاف‌سازی" : "X-ray"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => isolateSystemAlone(systemKey)}
+                    title={`Study ${systemKey} on its own`}
+                    className="shrink-0 rounded border border-slate-700 px-1 py-0.5 text-[9px] uppercase tracking-wide text-slate-500 hover:border-sky-600 hover:text-sky-300"
+                  >
+                    {isPersian ? "تکی" : "Solo"}
+                  </button>
+                </div>
 
-        <label className="flex cursor-pointer items-center gap-2 pt-1 text-xs text-slate-300">
-          <input
-            type="checkbox"
-            checked={depthProbeVisible}
-            onChange={(event) => setDepthProbeVisible(event.target.checked)}
-            className="accent-sky-500"
-          />
-          <span>{fa ? 'فهرست ساختارهای زیر نشانگر' : 'List what is under the cursor'}</span>
-        </label>
-        <p className="text-[10px] leading-snug text-slate-600">
-          {fa ? 'پنل سمت راست ساختارهای زیر نشانگر را از سطح به عمق فهرست می‌کند. در صفحهٔ کوچک می‌توانید آن را از اینجا یا منوی راست‌کلیک خاموش کنید.' : 'The panel on the right, naming everything the cursor passes through from the surface inwards. On a small screen it can be switched off here or from the right-click menu.'}
-        </p>
+                {isSystemFolderOpen && (
+                  <ul className="ml-5 space-y-0.5">
+                    {organList.map((organItem) => {
+                      const isEntityVisible = isOrganVisible(
+                        {
+                          hiddenSystems,
+                          isolatedOrganIds,
+                          hiddenOrganIds,
+                          hideConnective,
+                          connectiveIds,
+                        },
+                        organItem,
+                      );
+                      const activeOverlay = pathologyOverlays[organItem.organ_id];
+                      const isSelected = selectedOrganIds.includes(organItem.organ_id);
 
-        <label className="flex cursor-pointer items-center gap-2 pt-1 text-xs text-slate-300">
-          <input
-            type="checkbox"
-            checked={hideConnective}
-            onChange={(event) => setHideConnective(event.target.checked)}
-            className="accent-sky-500"
-          />
-          <span>{fa ? 'پنهان‌کردن تاندون‌ها و فاشیا' : 'Take off the tendons & fascia'}</span>
-        </label>
-        <p className="text-[10px] leading-snug text-slate-600">
-          {fa ? 'لایه‌های تاندونی و فاشیا روی عضلات قرار دارند؛ با پنهان‌کردن آن‌ها عضلات زیرین دیده می‌شوند.' : 'The muscular system carries 116 sheets — the pectoral fascia, the rectus sheath, the fascia lata — lying directly on the muscles they wrap. Take them off to see the muscles underneath.'}
-        </p>
+                      return (
+                        <li key={organItem.organ_id}>
+                          <button
+                            type="button"
+                            onMouseEnter={() => setHoveredOrganId(organItem.organ_id)}
+                            onMouseLeave={() => setHoveredOrganId(null)}
+                            onClick={(event) =>
+                              selectOrgan(organItem.organ_id, event.ctrlKey || event.metaKey)
+                            }
+                            className={`flex w-full items-center gap-1.5 rounded px-1.5 py-1 text-left text-xs transition ${
+                              isSelected
+                                ? "bg-sky-500/15 text-sky-300"
+                                : "text-slate-400 hover:bg-slate-800/60"
+                            } ${isEntityVisible ? "" : "opacity-40"}`}
+                          >
+                            <span className="min-w-0 flex-1">
+                              <span className="block truncate italic">{organLabel(organItem)}</span>
+                              <span className="block truncate text-[10px] text-slate-500">
+                                {organSubtitle(organItem)}
+                              </span>
+                            </span>
+                            {activeOverlay && (
+                              <span
+                                className="shrink-0 text-[10px] text-amber-400"
+                                title={`${activeOverlay.pathology} (${Math.round(activeOverlay.severity * 100)}%)`}
+                              >
+                                ●
+                              </span>
+                            )}
+                          </button>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                )}
+              </div>
+            );
+          })}
+        </section>
 
-        <div className="flex items-center gap-2 pt-1">
-          <span className="text-xs text-slate-300">{fa ? 'پس‌زمینه' : 'Background'}</span>
-          <div className="ml-auto flex overflow-hidden rounded border border-slate-700">
-            {(["dark", "light"] as const).map((mode) => (
+        <section className="space-y-1 border-t border-slate-800 pt-3">
+          <h2 className="text-xs font-semibold uppercase tracking-wider text-slate-500">
+            {isPersian ? "نمایش" : "View"}
+          </h2>
+
+          <label className="flex cursor-pointer items-center gap-2 text-xs text-slate-300">
+            <input
+              type="checkbox"
+              checked={isEyeTrackingActive}
+              onChange={(event) => setEyeTrackingActive(event.target.checked)}
+              className="accent-sky-500"
+            />
+            <span>{isPersian ? "حرکت چشم‌ها با دوربین" : "Eyes follow you"}</span>
+          </label>
+          <p className="text-[10px] leading-snug text-slate-600">
+            {isPersian
+              ? "چشم‌ها در حد تقریبی ۳۵ درجه در حدقه حرکت می‌کنند."
+              : "The globes turn in their orbits, up to about 35° — as far as a real eye goes before the head has to follow."}
+          </p>
+
+          <label className="flex cursor-pointer items-center gap-2 pt-1 text-xs text-slate-300">
+            <input
+              type="checkbox"
+              checked={labelsVisible}
+              onChange={(event) => setLabelsVisible(event.target.checked)}
+              className="accent-sky-500"
+            />
+            <span>{isPersian ? "نمایش نام ساختار انتخاب‌شده" : "Label what I select"}</span>
+          </label>
+          <p className="text-[10px] leading-snug text-slate-600">
+            {isPersian
+              ? "نام ساختارهای انتخاب‌شده با خط راهنما در کنار مدل نمایش داده می‌شود."
+              : "Names in the margins with a leader line to each structure, the way an atlas plate does it. Select structures — or isolate a region — to name them."}
+          </p>
+
+          <label className="flex cursor-pointer items-center gap-2 pt-1 text-xs text-slate-300">
+            <input
+              type="checkbox"
+              checked={depthProbeVisible}
+              onChange={(event) => setDepthProbeVisible(event.target.checked)}
+              className="accent-sky-500"
+            />
+            <span>{isPersian ? "فهرست ساختارهای زیر نشانگر" : "List what is under the cursor"}</span>
+          </label>
+          <p className="text-[10px] leading-snug text-slate-600">
+            {isPersian
+              ? "پنل سمت راست ساختارهای زیر نشانگر را از سطح به عمق فهرست می‌کند. در صفحهٔ کوچک می‌توانید آن را از اینجا یا منوی راست‌کلیک خاموش کنید."
+              : "The panel on the right, naming everything the cursor passes through from the surface inwards. On a small screen it can be switched off here or from the right-click menu."}
+          </p>
+
+          <label className="flex cursor-pointer items-center gap-2 pt-1 text-xs text-slate-300">
+            <input
+              type="checkbox"
+              checked={hideConnective}
+              onChange={(event) => setHideConnective(event.target.checked)}
+              className="accent-sky-500"
+            />
+            <span>{isPersian ? "پنهان‌کردن تاندون‌ها و فاشیا" : "Take off the tendons & fascia"}</span>
+          </label>
+          <p className="text-[10px] leading-snug text-slate-600">
+            {isPersian
+              ? "لایه‌های تاندونی و فاشیا روی عضلات قرار دارند؛ با پنهان‌کردن آن‌ها عضلات زیرین دیده می‌شوند."
+              : "The muscular system carries 116 sheets — the pectoral fascia, the rectus sheath, the fascia lata — lying directly on the muscles they wrap. Take them off to see the muscles underneath."}
+          </p>
+
+          <div className="flex items-center gap-2 pt-1">
+            <span className="text-xs text-slate-300">{isPersian ? "پس‌زمینه" : "Background"}</span>
+            <div className="ml-auto flex overflow-hidden rounded border border-slate-700">
+              {(["dark", "light"] as const).map((mode) => (
+                <button
+                  key={mode}
+                  type="button"
+                  onClick={() => setSceneBackground(mode)}
+                  aria-pressed={sceneBackground === mode}
+                  title={
+                    mode === "dark"
+                      ? "Easier on the eye for a long session"
+                      : "For handouts, slides and anything not itself dark"
+                  }
+                  className={`px-2 py-0.5 text-[10px] capitalize transition ${
+                    sceneBackground === mode
+                      ? "bg-slate-700/70 text-slate-100"
+                      : "text-slate-500 hover:text-slate-300"
+                  }`}
+                >
+                  {isPersian ? (mode === "dark" ? "تیره" : "روشن") : mode}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <StudyCoverageDisplay />
+          <ViewportCaptureButton />
+        </section>
+
+        <section className="space-y-2 border-t border-slate-800 pt-3">
+          <h2 className="text-xs font-semibold uppercase tracking-wider text-slate-500">
+            {isPersian ? "برش مقطعی" : "Cross-section"}
+          </h2>
+          <div className="flex gap-1">
+            {SECTION_PLANES_LIST.map((plane) => (
               <button
-                key={mode}
+                key={plane}
                 type="button"
-                onClick={() => setBackground(mode)}
-                aria-pressed={background === mode}
-                title={
-                  mode === "dark"
-                    ? "Easier on the eye for a long session"
-                    : "For handouts, slides and anything not itself dark"
+                onClick={() =>
+                  dispatchCommand({
+                    action: "set_cross_section",
+                    plane,
+                    position:
+                      activeCrossSection?.plane === plane ? activeCrossSection.position : 0,
+                  })
                 }
-                className={`px-2 py-0.5 text-[10px] capitalize transition ${
-                  background === mode
-                    ? "bg-slate-700/70 text-slate-100"
-                    : "text-slate-500 hover:text-slate-300"
+                className={`flex-1 rounded border px-2 py-1 text-xs capitalize ${
+                  activeCrossSection?.plane === plane
+                    ? "border-sky-500 bg-sky-500/10 text-sky-300"
+                    : "border-slate-700 text-slate-400"
                 }`}
               >
-                {fa ? (mode === 'dark' ? 'تیره' : 'روشن') : mode}
+                {isPersian
+                  ? ({ axial: "افقی", coronal: "تاجی", sagittal: "سهمی" } as const)[plane]
+                  : plane}
               </button>
             ))}
           </div>
-        </div>
+          <input
+            type="range"
+            min={-1}
+            max={1}
+            step={0.01}
+            value={activeCrossSection?.position ?? 0}
+            disabled={!activeCrossSection}
+            onChange={(e) =>
+              activeCrossSection &&
+              dispatchCommand({
+                action: "set_cross_section",
+                plane: activeCrossSection.plane,
+                position: Number(e.target.value),
+              })
+            }
+            className="w-full accent-sky-500 disabled:opacity-30"
+          />
+        </section>
 
-        <CoverageToggle />
-        <SaveImageButton />
-      </section>
-
-      <section className="space-y-2 border-t border-slate-800 pt-3">
-        <h2 className="text-xs font-semibold uppercase tracking-wider text-slate-500">
-          {fa ? 'برش مقطعی' : 'Cross-section'}
-        </h2>
-        <div className="flex gap-1">
-          {PLANES.map((plane) => (
-            <button
-              key={plane}
-              type="button"
-              onClick={() =>
-                applyCommand({
-                  action: "set_cross_section",
-                  plane,
-                  position: crossSection?.plane === plane ? crossSection.position : 0,
-                })
-              }
-              className={`flex-1 rounded border px-2 py-1 text-xs capitalize ${
-                crossSection?.plane === plane
-                  ? "border-sky-500 bg-sky-500/10 text-sky-300"
-                  : "border-slate-700 text-slate-400"
-              }`}
-            >
-              {fa ? ({ axial: 'افقی', coronal: 'تاجی', sagittal: 'سهمی' } as const)[plane] : plane}
-            </button>
-          ))}
-        </div>
-        <input
-          type="range"
-          min={-1}
-          max={1}
-          step={0.01}
-          value={crossSection?.position ?? 0}
-          disabled={!crossSection}
-          onChange={(e) =>
-            crossSection &&
-            applyCommand({
-              action: "set_cross_section",
-              plane: crossSection.plane,
-              position: Number(e.target.value),
-            })
-          }
-          className="w-full accent-sky-500 disabled:opacity-30"
-        />
-      </section>
-
-      <ExplodeControl />
+        <ExplodedViewSlider />
       </div>
-
     </div>
   );
 }

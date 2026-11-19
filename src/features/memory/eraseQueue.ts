@@ -1,64 +1,60 @@
 /**
- * Erasing a memory, with a way back.
+ * Undoable memory disposal management queue.
  *
- * The journal's delete is final, so the Memory Lab never calls it straight
- * away. Erasing starts a countdown: the memory dissolves on screen and a
- * Restore button counts down, and only when it reaches zero is the journal
- * asked to delete. Closing the lab commits what is pending — that is the
- * reader leaving, having seen it go — but a crash or a power cut deletes
- * nothing, because nothing was deleted yet.
- *
- * Pure bookkeeping, so the rule can be tested without a clock.
+ * Implements a grace period mechanism so that user-initiated erasures in MemoryLab
+ * are not instantly executed in the persistent journal database. While pending,
+ * the memory item may be restored by user action or will be flushed automatically
+ * on session termination.
  */
 
-/** Seconds a memory can still be restored after it is erased. */
 export const RESTORE_WINDOW_S = 8;
 
 export interface PendingErase {
   key: string;
-  /** When the journal will be asked to delete it, in milliseconds. */
   deadline: number;
 }
 
 export class EraseQueue {
-  private pending = new Map<string, PendingErase>();
+  private readonly items = new Map<string, PendingErase>();
 
   erase(key: string, nowMs: number): PendingErase {
-    const entry = { key, deadline: nowMs + RESTORE_WINDOW_S * 1000 };
-    this.pending.set(key, entry);
-    return entry;
+    const record: PendingErase = {
+      key,
+      deadline: nowMs + RESTORE_WINDOW_S * 1000,
+    };
+    this.items.set(key, record);
+    return record;
   }
 
-  /** True if it was still pending and is now saved. */
   restore(key: string): boolean {
-    return this.pending.delete(key);
+    return this.items.delete(key);
   }
 
   isPending(key: string): boolean {
-    return this.pending.has(key);
+    return this.items.has(key);
   }
 
   secondsLeft(key: string, nowMs: number): number {
-    const entry = this.pending.get(key);
-    return entry ? Math.max(0, Math.ceil((entry.deadline - nowMs) / 1000)) : 0;
+    const entry = this.items.get(key);
+    if (!entry) return 0;
+    const diff = entry.deadline - nowMs;
+    return diff <= 0 ? 0 : Math.ceil(diff / 1000);
   }
 
-  /** The ones whose time is up, removed from the queue: delete these now. */
   due(nowMs: number): string[] {
-    const out: string[] = [];
-    for (const [key, entry] of this.pending) {
-      if (entry.deadline <= nowMs) {
-        out.push(key);
-        this.pending.delete(key);
+    const expired: string[] = [];
+    for (const [key, item] of this.items) {
+      if (item.deadline <= nowMs) {
+        expired.push(key);
+        this.items.delete(key);
       }
     }
-    return out;
+    return expired;
   }
 
-  /** Everything still pending, removed: the reader is leaving the lab. */
   flush(): string[] {
-    const out = [...this.pending.keys()];
-    this.pending.clear();
-    return out;
+    const snapshot = Array.from(this.items.keys());
+    this.items.clear();
+    return snapshot;
   }
 }

@@ -3,32 +3,19 @@ import { useCallback, useEffect, useRef } from "react";
 import type { WidthUpdate } from "./useLayout";
 
 interface ResizeHandleProps {
-  /** Current width of the panel this handle resizes. */
   width: number;
-  onResize: (width: WidthUpdate) => void;
-  /** Which side the panel sits on — decides which way dragging grows it. */
+  onResize: (update: WidthUpdate) => void;
   side: "left" | "right";
   min: number;
   max: number;
   label: string;
-  /** Double-click / Home restores this width. */
   defaultWidth: number;
 }
 
-/** How much one arrow-key press moves the divider. */
-const STEP = 16;
+const STEP_DELTA = 16;
 
 /**
- * A draggable divider between a side panel and the viewport.
- *
- * Uses pointer capture rather than window-level mouse listeners, so the drag
- * keeps tracking when the cursor crosses the 3D canvas — which swallows pointer
- * events for its own orbit controls and would otherwise strand the drag the
- * moment the user moved fast.
- *
- * It is also a real control, not just a hit area: focusable, arrow-key
- * adjustable, and exposed as a separator with its current value, so the layout
- * can be set without a mouse.
+ * Interactive split divider enabling mouse drag resizing and keyboard step adjustments for side panels.
  */
 export function ResizeHandle({
   width,
@@ -39,68 +26,56 @@ export function ResizeHandle({
   label,
   defaultWidth,
 }: ResizeHandleProps) {
-  const dragging = useRef(false);
-  const startX = useRef(0);
-  const startWidth = useRef(0);
-  /** Undoes the document-wide cursor lock, or null when nothing is locked. */
-  const unlock = useRef<(() => void) | null>(null);
+  const isDraggingRef = useRef(false);
+  const dragOriginX = useRef(0);
+  const initialWidthRef = useRef(0);
+  const cursorUnlockCleanup = useRef<(() => void) | null>(null);
 
-  /**
-   * Hold the resize cursor across the whole document for the duration of a drag.
-   *
-   * Imperative, and paired directly with the pointer events rather than driven
-   * from an effect. `dragging` is a ref, so setting it schedules no render — an
-   * effect keyed on it therefore runs at the mercy of whatever else happens to
-   * re-render, and on release it may never run at all. That is precisely how
-   * the cursor used to be left stuck as a resize arrow for the rest of the
-   * session.
-   */
-  const lockCursor = useCallback(() => {
-    if (unlock.current) return;
-    const { style } = document.body;
-    const previousCursor = style.cursor;
-    const previousSelect = style.userSelect;
-    style.cursor = "col-resize";
-    // Crossing a label mid-drag would otherwise highlight it.
-    style.userSelect = "none";
-    unlock.current = () => {
-      style.cursor = previousCursor;
-      style.userSelect = previousSelect;
-      unlock.current = null;
+  const engageCursorLock = useCallback(() => {
+    if (cursorUnlockCleanup.current) return;
+    const bodyStyle = document.body.style;
+    const previousCursorStyle = bodyStyle.cursor;
+    const previousUserSelect = bodyStyle.userSelect;
+
+    bodyStyle.cursor = "col-resize";
+    bodyStyle.userSelect = "none";
+
+    cursorUnlockCleanup.current = () => {
+      bodyStyle.cursor = previousCursorStyle;
+      bodyStyle.userSelect = previousUserSelect;
+      cursorUnlockCleanup.current = null;
     };
   }, []);
 
-  // A panel collapsed or unmounted mid-drag never sees a pointerup. Without
-  // this the lock would outlive the handle that owns it.
-  useEffect(() => () => unlock.current?.(), []);
+  useEffect(() => () => cursorUnlockCleanup.current?.(), []);
 
-  const onPointerDown = useCallback(
+  const handlePointerDown = useCallback(
     (event: React.PointerEvent<HTMLDivElement>) => {
       if (event.button !== 0) return;
-      dragging.current = true;
-      startX.current = event.clientX;
-      startWidth.current = width;
-      lockCursor();
+      isDraggingRef.current = true;
+      dragOriginX.current = event.clientX;
+      initialWidthRef.current = width;
+
+      engageCursorLock();
       event.currentTarget.setPointerCapture(event.pointerId);
       event.preventDefault();
     },
-    [width, lockCursor],
+    [width, engageCursorLock],
   );
 
-  const onPointerMove = useCallback(
+  const handlePointerMove = useCallback(
     (event: React.PointerEvent<HTMLDivElement>) => {
-      if (!dragging.current) return;
-      const delta = event.clientX - startX.current;
-      // A handle on the right-hand panel grows the panel as the pointer moves
-      // left, so the delta is inverted there.
-      onResize(startWidth.current + (side === "left" ? delta : -delta));
+      if (!isDraggingRef.current) return;
+      const horizontalOffset = event.clientX - dragOriginX.current;
+      const signedOffset = side === "left" ? horizontalOffset : -horizontalOffset;
+      onResize(initialWidthRef.current + signedOffset);
     },
     [onResize, side],
   );
 
-  const endDrag = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
-    dragging.current = false;
-    unlock.current?.();
+  const handlePointerEnd = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+    isDraggingRef.current = false;
+    cursorUnlockCleanup.current?.();
     if (event.currentTarget.hasPointerCapture(event.pointerId)) {
       event.currentTarget.releasePointerCapture(event.pointerId);
     }
@@ -115,26 +90,26 @@ export function ResizeHandle({
       aria-valuemin={min}
       aria-valuemax={max}
       tabIndex={0}
-      onPointerDown={onPointerDown}
-      onPointerMove={onPointerMove}
-      onPointerUp={endDrag}
-      onPointerCancel={endDrag}
+      onPointerDown={handlePointerDown}
+      onPointerMove={handlePointerMove}
+      onPointerUp={handlePointerEnd}
+      onPointerCancel={handlePointerEnd}
       onDoubleClick={() => onResize(defaultWidth)}
       onKeyDown={(event) => {
-        // Functional updates, not `width + step`: several presses in one frame
-        // all see the same rendered prop, and absolute updates would collapse
-        // them into a single step.
-        const towardsPanel = side === "left" ? -STEP : STEP;
-        if (event.key === "ArrowLeft") onResize((current) => current + towardsPanel);
-        else if (event.key === "ArrowRight") onResize((current) => current - towardsPanel);
-        else if (event.key === "Home") onResize(defaultWidth);
-        else return;
+        const adjustmentSign = side === "left" ? -STEP_DELTA : STEP_DELTA;
+        if (event.key === "ArrowLeft") {
+          onResize((prev) => prev + adjustmentSign);
+        } else if (event.key === "ArrowRight") {
+          onResize((prev) => prev - adjustmentSign);
+        } else if (event.key === "Home") {
+          onResize(defaultWidth);
+        } else {
+          return;
+        }
         event.preventDefault();
       }}
       className="group relative w-1 shrink-0 cursor-col-resize bg-slate-800 transition-colors hover:bg-sky-600 focus-visible:bg-sky-500 focus-visible:outline-none"
     >
-      {/* Widen the grab area well past the visible line — a 4px target is a
-          frustrating thing to hunt for. */}
       <span className="absolute inset-y-0 -left-1.5 -right-1.5" />
     </div>
   );

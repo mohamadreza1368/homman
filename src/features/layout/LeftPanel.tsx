@@ -15,64 +15,66 @@ import { AnatomyQuiz } from "@/features/anatomy/AnatomyQuiz";
 import { HeartLearningPath } from "@/features/anatomy/HeartLearningPath";
 import { StructureEducation } from "@/features/anatomy/StructureEducation";
 
-type Tab = "atlas" | "diseases" | "education" | "study" | "usage";
+type NavigationTab = "atlas" | "diseases" | "education" | "study" | "usage";
 
 /**
- * The left column: the atlas, the student's own journal, and what the
- * assistant has cost.
- *
- * All three panels stay mounted and are hidden with CSS rather than unmounted.
- * The tree carries which systems are expanded and where the list is scrolled —
- * state that is expensive to rebuild and infuriating to lose because you
- * glanced at a note. The journal, symmetrically, keeps a half-written note.
- *
- * Consumption is a tab here rather than anything in the assistant panel. It is
- * a separate activity from asking a question: you come looking for it once,
- * when a bill surprises you, and it would tax every reading of every answer if
- * it lived alongside them. The one number that does belong next to an answer —
- * what that answer cost — is already there, as a single faint line.
+ * Primary left sidebar container hosting Anatomy Tree, Disease Knowledgebase, Education,
+ * Study Notebook, and Usage Accounting panels.
  */
 export function LeftPanel() {
-  const [tab, setTab] = useState<Tab>("atlas");
-  const [quizActive, setQuizActive] = useState(false);
-  const [status, setStatus] = useState(false);
-  const noteCount = useStudyStore((s) => s.stats?.notes ?? 0);
-  const language = useInterfaceLanguage((s) => s.language);
-  const setLanguage = useInterfaceLanguage((s) => s.setLanguage);
-  const fa = language === 'fa';
+  const [currentTab, setCurrentTab] = useState<NavigationTab>("atlas");
+  const [isQuizActive, setIsQuizActive] = useState(false);
+  const [isStatusVisible, setIsStatusVisible] = useState(false);
+
+  const registeredNotesCount = useStudyStore((state) => state.stats?.notes ?? 0);
+  const currentLanguage = useInterfaceLanguage((state) => state.language);
+  const switchLanguage = useInterfaceLanguage((state) => state.setLanguage);
+  const isPersian = currentLanguage === "fa";
 
   return (
-    <div dir={fa ? "rtl" : "ltr"} className="flex h-full min-h-0 flex-col bg-slate-900/95 backdrop-blur-2xl">
+    <div
+      dir={isPersian ? "rtl" : "ltr"}
+      className="flex h-full min-h-0 flex-col bg-slate-900/95 backdrop-blur-2xl"
+    >
       <div className="flex items-center gap-3 border-b border-teal-900/50 px-4 py-4">
         <BrandLogo variant="mark-dark" className="h-9 w-9" decorative />
-        <div className="min-w-0"><div className="text-sm font-bold tracking-[0.18em] text-white" dir="ltr">HOOMAAN STUDIO</div><div className="mt-0.5 text-[10px] text-teal-300/80">{fa ? "فضای یادگیری بدن انسان" : "Explore the human body"}</div></div>
+        <div className="min-w-0">
+          <div className="text-sm font-bold tracking-[0.18em] text-white" dir="ltr">
+            HOOMAAN STUDIO
+          </div>
+          <div className="mt-0.5 text-[10px] text-teal-300/80">
+            {isPersian ? "فضای یادگیری بدن انسان" : "Explore the human body"}
+          </div>
+        </div>
       </div>
+
       <div className="flex shrink-0 border-b border-slate-800 bg-slate-950/40 px-1">
-        <TabButton active={tab === "atlas"} onClick={() => setTab("atlas")}>
-          {fa ? 'اطلس' : 'Atlas'}
-        </TabButton>
-        <TabButton active={tab === "diseases"} onClick={() => setTab("diseases")}>
-          {fa ? 'بیماری‌ها' : 'Diseases'}
-        </TabButton>
-        <TabButton active={tab === "education"} onClick={() => setTab("education")}>
-          {fa ? 'آموزش' : 'Learn'}
-        </TabButton>
-        <TabButton active={tab === "study"} onClick={() => setTab("study")}>
-          {fa ? 'مطالعه' : 'Study'}
-          {noteCount > 0 && (
+        <PanelTabButton active={currentTab === "atlas"} onClick={() => setCurrentTab("atlas")}>
+          {isPersian ? "اطلس" : "Atlas"}
+        </PanelTabButton>
+        <PanelTabButton active={currentTab === "diseases"} onClick={() => setCurrentTab("diseases")}>
+          {isPersian ? "بیماری‌ها" : "Diseases"}
+        </PanelTabButton>
+        <PanelTabButton active={currentTab === "education"} onClick={() => setCurrentTab("education")}>
+          {isPersian ? "آموزش" : "Learn"}
+        </PanelTabButton>
+        <PanelTabButton active={currentTab === "study"} onClick={() => setCurrentTab("study")}>
+          {isPersian ? "مطالعه" : "Study"}
+          {registeredNotesCount > 0 && (
             <span className="ml-1 rounded-full bg-teal-500/20 px-1.5 py-0.2 text-[9px] text-teal-300 ring-1 ring-teal-500/30">
-              {noteCount}
+              {registeredNotesCount}
             </span>
           )}
-        </TabButton>
-        <TabButton active={tab === "usage"} onClick={() => setTab("usage")}>
-          {fa ? 'مصرف' : 'Usage'}
-        </TabButton>
+        </PanelTabButton>
+        <PanelTabButton active={currentTab === "usage"} onClick={() => setCurrentTab("usage")}>
+          {isPersian ? "مصرف" : "Usage"}
+        </PanelTabButton>
       </div>
+
       <div className="flex items-center justify-between border-b border-slate-800/80 bg-slate-950/20 px-3 py-1.5">
         <button
           type="button"
-          onClick={() => setStatus(true)}
+          onClick={() => setIsStatusVisible(true)}
           className="rounded px-1.5 py-0.5 text-[10px] font-mono text-slate-500 transition hover:bg-slate-800 hover:text-teal-300"
           title={`HOOMAAN ${APP_VERSION_LABEL} — click for status and log`}
         >
@@ -81,20 +83,24 @@ export function LeftPanel() {
         <div className="flex items-center gap-1" aria-label="Interface language">
           <button
             type="button"
-            aria-pressed={fa}
-            onClick={() => setLanguage('fa')}
+            aria-pressed={isPersian}
+            onClick={() => switchLanguage("fa")}
             className={`rounded-full px-2 py-0.5 text-[10px] font-medium transition ${
-              fa ? 'bg-teal-600/90 text-white ring-1 ring-teal-400/40' : 'text-slate-400 hover:text-slate-200'
+              isPersian
+                ? "bg-teal-600/90 text-white ring-1 ring-teal-400/40"
+                : "text-slate-400 hover:text-slate-200"
             }`}
           >
             فارسی
           </button>
           <button
             type="button"
-            aria-pressed={!fa}
-            onClick={() => setLanguage('en')}
+            aria-pressed={!isPersian}
+            onClick={() => switchLanguage("en")}
             className={`rounded-full px-2 py-0.5 text-[10px] font-medium transition ${
-              !fa ? 'bg-teal-600/90 text-white ring-1 ring-teal-400/40' : 'text-slate-400 hover:text-slate-200'
+              !isPersian
+                ? "bg-teal-600/90 text-white ring-1 ring-teal-400/40"
+                : "text-slate-400 hover:text-slate-200"
             }`}
           >
             English
@@ -102,48 +108,35 @@ export function LeftPanel() {
         </div>
       </div>
 
-      {/* Rendered from here rather than from `App`, because the button that
-          opens it lives here and the two have no reason to know about a third
-          place. It covers the whole window by its own positioning. */}
-      {status && <StatusWindow onClose={() => setStatus(false)} />}
+      {isStatusVisible && <StatusWindow onClose={() => setIsStatusVisible(false)} />}
 
-      <div className={`min-h-0 flex-1 ${tab === "atlas" ? "" : "hidden"}`}>
+      <div className={`min-h-0 flex-1 ${currentTab === "atlas" ? "" : "hidden"}`}>
         <AnatomyTree />
       </div>
-      <div className={`min-h-0 flex-1 ${tab === "diseases" ? "" : "hidden"}`}>
+      <div className={`min-h-0 flex-1 ${currentTab === "diseases" ? "" : "hidden"}`}>
         <DiseasePanel />
       </div>
-      <div className={`min-h-0 flex-1 overflow-y-auto ${tab === "education" ? "" : "hidden"}`}>
+      <div className={`min-h-0 flex-1 overflow-y-auto ${currentTab === "education" ? "" : "hidden"}`}>
         <div className="space-y-4 p-4">
-          {!quizActive && <StructureEducation />}
+          {!isQuizActive && <StructureEducation />}
           <HeartLearningPath />
-          <AnatomyQuiz onActiveChange={setQuizActive} />
+          <AnatomyQuiz onActiveChange={setIsQuizActive} />
         </div>
       </div>
-      <div className={`min-h-0 flex-1 ${tab === "study" ? "" : "hidden"}`}>
+      <div className={`min-h-0 flex-1 ${currentTab === "study" ? "" : "hidden"}`}>
         <StudyPanel />
       </div>
-      <div className={`min-h-0 flex-1 ${tab === "usage" ? "" : "hidden"}`}>
+      <div className={`min-h-0 flex-1 ${currentTab === "usage" ? "" : "hidden"}`}>
         <UsagePanel />
       </div>
 
-      {/*
-        Below all three tabs rather than inside one. How the model is drawn is
-        not a property of the tab you happen to be reading: someone taking notes
-        in Study needs the body turned to glass exactly as much as someone
-        browsing the tree, and used to have to leave the tab to do it.
-      */}
-      {/* Above the controls rather than below them, so it is the last thing
-          read before the settings it is about — and so it never lands in the
-          strip's wrapping row, which is the one part of this column that can
-          be pushed out of a short window. */}
       <StorageNotice />
       <ViewControls />
     </div>
   );
 }
 
-function TabButton({
+function PanelTabButton({
   active,
   onClick,
   children,

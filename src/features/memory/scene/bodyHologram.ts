@@ -7,40 +7,17 @@ import { projector } from "./environment";
 import { brainMaterial, brainPoints, RegionLight } from "./hologram";
 import type { SceneLayer } from "./memoryScene";
 
-/**
- * A whole body in the hologram's light, standing on a projector of its own
- * beside the brain.
- *
- * Only a figure to look at: it is drawn from the atlas's body-surface regions
- * (one skin-deep shell, so the lit edges read as a silhouette instead of
- * saturating the way a hundred nested organs would) and it does nothing to the
- * atlas or its viewport. It can be turned by dragging, and when a memory is
- * opened the structures it was about light up inside it, in amber, with a scan
- * running down to find them.
- *
- * A scene of its own, drawn by the brain's renderer into the rectangle of the
- * page element it is given, so the page can place it like a panel: the brain is
- * framed into whatever space is left, and a body standing in the brain's scene
- * would slide around with it. Not a canvas of its own: a second canvas has to
- * be blended over the first by the page, and on some GPUs that drew a black
- * box and made the whole window blink.
- */
-
 export interface BodyHologramOptions {
   meshUrl: string;
   structures: readonly BrainStructure[];
   dracoPath: string;
   reducedMotion?: boolean;
-  /** What draws it: the brain's scene. */
   host: { addLayer(layer: SceneLayer): () => void };
-  /** The element everything is measured from — the one the host draws across. */
   frame: HTMLElement;
-  /** Where a system's mesh file is, by its file name. */
   fileUrl: (file: string) => string;
   onError?: (error: unknown) => void;
 }
 
-/** A structure to light: the node that holds it, in which of the atlas's files. */
 export interface OrganRef {
   id: string;
   node: string;
@@ -48,382 +25,444 @@ export interface OrganRef {
 }
 
 export interface BodyHologram {
-  /** 1 is fully present; lower while something is laid over it. */
   setPresence(level: number): void;
-  /**
-   * Light these structures inside the figure, replacing any lit before; an
-   * empty list puts them out. Resolves with the ids that were found and drawn.
-   */
   show(organs: readonly OrganRef[]): Promise<string[]>;
-  /**
-   * Single out one of the lit structures — the others step back — or none. An
-   * id that is not lit is ignored.
-   */
   pick(id: string | null): void;
-  /**
-   * Move in on what is lit — on `id` when it is one of them, otherwise on all
-   * of them together — or, off, back out to the whole figure. The move glides.
-   */
   zoom(on: boolean, id?: string | null): void;
   skipIntro(): void;
   dispose(): void;
 }
 
-const INTRO = { boot: 1.1, deploy: 2.4, materialize: 1.4 } as const;
-const SCAN_S = 1.8;
-/**
- * The surface's strength against the brain's. One shell instead of many, so it
- * needs more light per layer to be seen at all.
- */
-const BODY_GAIN = 2.6;
-/** How much of the projector's size the body's pad is: a figure stands on less than a brain floats over. */
-const PAD_SCALE = 0.4;
-/** Seconds for a structure to come up to full light. */
-const ORGAN_IN_S = 0.9;
-/** How fast a picked structure comes forward, per frame. */
-const PICK_RATE = 0.15;
-/** How fast the camera glides between the whole figure and a structure, per frame. */
-const VIEW_RATE = 0.07;
-/** How much of the view a zoomed structure fills, as its radius against the half-view: more is farther. */
-const ZOOM_ROOM = 2.4;
-/** A structure's smallest radius when zoomed, in figure units: a nerve twig is framed with some of its surroundings. */
-const ZOOM_MIN_RADIUS = 0.035;
-const UP = new THREE.Vector3(0, 1, 0);
-/**
- * Where a zoomed structure sits, as a share of the view's height above its
- * middle: the names are listed across the bottom of the column, and the
- * structure should be seen clear of them.
- */
-const ZOOM_LIFT = 0.16;
+const STAGES = { boot: 1.1, deploy: 2.4, materialize: 1.4 } as const;
+const SCAN_DURATION_SEC = 1.8;
+const FIGURE_OPACITY_GAIN = 2.6;
+const PROJECTOR_PAD_SCALE = 0.4;
+const ORGAN_FADE_IN_SEC = 0.9;
+const STRUCTURE_PICK_RATE = 0.15;
+const CAMERA_ZOOM_EASE = 0.07;
+const ZOOM_OCCUPANCY_RATIO = 2.4;
+const ZOOM_MIN_SPAN = 0.035;
+const VERTICAL_AXIS = new THREE.Vector3(0, 1, 0);
+const VERTICAL_VIEW_OFFSET = 0.16;
 
-const smooth = (x: number) => {
-  const t = Math.min(1, Math.max(0, x));
-  return t * t * (3 - 2 * t);
+const cubicEase = (v: number) => {
+  const clamped = Math.min(1, Math.max(0, v));
+  return clamped * clamped * (3 - 2 * clamped);
 };
 
-export function createBodyHologram(container: HTMLElement, options: BodyHologramOptions): BodyHologram {
-  const reducedMotion =
-    options.reducedMotion ?? window.matchMedia?.("(prefers-reduced-motion: reduce)").matches === true;
-  const scene = new THREE.Scene();
-  const camera = new THREE.PerspectiveCamera(30, 1, 0.05, 60);
-  const pad = projector();
-  pad.scale.setScalar(PAD_SCALE);
-  const holder = new THREE.Group();
-  scene.add(pad, holder);
+export function createBodyHologram(container: HTMLElement, config: BodyHologramOptions): BodyHologram {
+  const isReducedMotion =
+    config.reducedMotion ?? window.matchMedia?.("(prefers-reduced-motion: reduce)").matches === true;
 
-  let body: Brain | null = null;
-  let surface: THREE.Mesh<THREE.BufferGeometry, THREE.ShaderMaterial> | null = null;
-  let dust: THREE.Points<THREE.BufferGeometry, THREE.ShaderMaterial> | null = null;
-  let light: RegionLight | null = null;
-  let started: number | null = null;
-  let offset = 0;
-  let presence = 1;
-  let shown = 1;
-  let scanStarted = -100;
-  let spin = 0;
-  let disposed = false;
-  const dustTotal = reducedMotion ? 4000 : 9000;
-  let lit: THREE.Mesh<THREE.BufferGeometry, THREE.ShaderMaterial> | null = null;
-  let litAt = 0;
-  /** The lit structures in the order their geometry was merged; the index is their `region`. */
-  let litIds: string[] = [];
-  let picked = -1;
-  /** Kept while the pick fades out, so the one that was picked goes back last. */
-  let lastPicked = -1;
-  let pickShown = 0;
-  /** Each lit structure's box in the figure's space, by index; and all of them together. */
-  let bounds: THREE.Box3[] = [];
-  let boundsAll: THREE.Box3 | null = null;
-  /** -2: whole figure; -1: every lit structure; otherwise the one at that index. */
-  let zoomIndex = -2;
-  /** Where the camera is looking and from how far, eased toward where it should. */
-  const view = { target: new THREE.Vector3(), distance: 1, ready: false };
-  const aim = new THREE.Vector3();
-  const size3 = new THREE.Vector3();
-  /** Bumped by every `show`, so a slow load cannot land over a newer one. */
-  let request = 0;
-  let loaded: Promise<void> = Promise.resolve();
+  const sceneGraph = new THREE.Scene();
+  const perspectiveCam = new THREE.PerspectiveCamera(30, 1, 0.05, 60);
 
-  // The atlas's files, each loaded once and only when a structure in it is asked for.
-  const gltf = new GLTFLoader().setDRACOLoader(acquireDraco(options.dracoPath));
-  const files = new Map<string, Promise<Map<string, THREE.Object3D>>>();
-  const nodesIn = (file: string) => {
-    let nodes = files.get(file);
-    if (!nodes) {
-      nodes = gltf.loadAsync(options.fileUrl(file)).then((result) => {
-        result.scene.updateMatrixWorld(true);
-        const byName = new Map<string, THREE.Object3D>();
-        result.scene.traverse((object) => byName.set(object.name, object));
-        return byName;
+  const floorPad = projector();
+  floorPad.scale.setScalar(PROJECTOR_PAD_SCALE);
+
+  const pivotGroup = new THREE.Group();
+  sceneGraph.add(floorPad, pivotGroup);
+
+  let avatarModel: Brain | null = null;
+  let skinMesh: THREE.Mesh<THREE.BufferGeometry, THREE.ShaderMaterial> | null = null;
+  let particleDust: THREE.Points<THREE.BufferGeometry, THREE.ShaderMaterial> | null = null;
+  let lightingProfile: RegionLight | null = null;
+
+  let startEpochSec: number | null = null;
+  let timeSkipOffset = 0;
+  let targetPresence = 1;
+  let currentVisibility = 1;
+  let scanStartEpoch = -100;
+  let currentAzimuth = 0;
+  let isDisposed = false;
+
+  const targetDustCount = isReducedMotion ? 4000 : 9000;
+  let highlightedOrgansMesh: THREE.Mesh<THREE.BufferGeometry, THREE.ShaderMaterial> | null = null;
+  let highlightTimestamp = 0;
+  let activeOrganIds: string[] = [];
+
+  let selectedOrganIndex = -1;
+  let previousOrganIndex = -1;
+  let organFocusProgress = 0;
+
+  let organBoundingBoxes: THREE.Box3[] = [];
+  let collectiveBounds: THREE.Box3 | null = null;
+  let activeZoomTarget = -2; // -2: whole body, -1: all organs, >=0: specific organ
+
+  const cameraState = { target: new THREE.Vector3(), distance: 1, initialized: false };
+  const targetLookAt = new THREE.Vector3();
+  const boxDimension = new THREE.Vector3();
+
+  let activeRequestId = 0;
+  let initializationPromise: Promise<void> = Promise.resolve();
+
+  const assetLoader = new GLTFLoader().setDRACOLoader(acquireDraco(config.dracoPath));
+  const cachedFileHierarchy = new Map<string, Promise<Map<string, THREE.Object3D>>>();
+
+  const getFileNodes = (fileName: string) => {
+    let pendingNodes = cachedFileHierarchy.get(fileName);
+    if (!pendingNodes) {
+      pendingNodes = assetLoader.loadAsync(config.fileUrl(fileName)).then((gltf) => {
+        gltf.scene.updateMatrixWorld(true);
+        const nodeIndex = new Map<string, THREE.Object3D>();
+        gltf.scene.traverse((n) => nodeIndex.set(n.name, n));
+        return nodeIndex;
       });
-      // A file that failed is forgotten, so the next memory can try it again.
-      nodes.catch(() => files.delete(file));
-      files.set(file, nodes);
+      pendingNodes.catch(() => cachedFileHierarchy.delete(fileName));
+      cachedFileHierarchy.set(fileName, pendingNodes);
     }
-    return nodes;
+    return pendingNodes;
   };
 
-  /** Everything is sized from the body: its height, and where its feet are. */
-  const size = { height: 2, bottom: -1 };
+  const anatomicalDimensions = { height: 2, bottom: -1 };
 
-  loaded = (async () => {
+  initializationPromise = (async () => {
     try {
-      const loaded = await loadBrain({ meshUrl: options.meshUrl, structures: options.structures, dracoPath: options.dracoPath });
-      if (disposed) {
-        loaded.geometry.dispose();
+      const loadedAvatar = await loadBrain({
+        meshUrl: config.meshUrl,
+        structures: config.structures,
+        dracoPath: config.dracoPath,
+      });
+
+      if (isDisposed) {
+        loadedAvatar.geometry.dispose();
         return;
       }
-      body = loaded;
-      size.height = body.top - body.bottom;
-      size.bottom = body.bottom;
-      light = new RegionLight(body.regions.length);
-      surface = new THREE.Mesh(body.geometry, brainMaterial(light));
-      dust = brainPoints(body.geometry, dustTotal, 11);
-      dust.material.uniforms.uRegions!.value = light.texture;
-      dust.material.uniforms.uRegionCount!.value = light.size;
-      holder.add(surface, dust);
-      // Feet on the pad.
-      holder.position.y = -1.55 * PAD_SCALE - body.bottom + 0.02;
-      pad.position.y = -1.55 * PAD_SCALE;
-      started = performance.now() / 1000;
-    } catch (error) {
-      options.onError?.(error);
+
+      avatarModel = loadedAvatar;
+      anatomicalDimensions.height = avatarModel.top - avatarModel.bottom;
+      anatomicalDimensions.bottom = avatarModel.bottom;
+
+      lightingProfile = new RegionLight(avatarModel.regions.length);
+      skinMesh = new THREE.Mesh(avatarModel.geometry, brainMaterial(lightingProfile));
+
+      particleDust = brainPoints(avatarModel.geometry, targetDustCount, 11);
+      particleDust.material.uniforms.uRegions!.value = lightingProfile.texture;
+      particleDust.material.uniforms.uRegionCount!.value = lightingProfile.size;
+
+      pivotGroup.add(skinMesh, particleDust);
+      pivotGroup.position.y = -1.55 * PROJECTOR_PAD_SCALE - avatarModel.bottom + 0.02;
+      floorPad.position.y = -1.55 * PROJECTOR_PAD_SCALE;
+
+      startEpochSec = performance.now() / 1000;
+    } catch (err) {
+      config.onError?.(err);
     }
   })();
 
-  const putOut = () => {
-    if (!lit) return;
-    holder.remove(lit);
-    lit.geometry.dispose();
-    lit.material.dispose();
-    lit = null;
-    litIds = [];
-    picked = -1;
-    lastPicked = -1;
-    pickShown = 0;
-    bounds = [];
-    boundsAll = null;
-    zoomIndex = -2;
+  const clearLitGeometry = () => {
+    if (!highlightedOrgansMesh) return;
+    pivotGroup.remove(highlightedOrgansMesh);
+    highlightedOrgansMesh.geometry.dispose();
+    highlightedOrgansMesh.material.dispose();
+    highlightedOrgansMesh = null;
+    activeOrganIds = [];
+    selectedOrganIndex = -1;
+    previousOrganIndex = -1;
+    organFocusProgress = 0;
+    organBoundingBoxes = [];
+    collectiveBounds = null;
+    activeZoomTarget = -2;
   };
 
-  // Drag to turn it. Nothing else happens in its column.
-  let pressed: { x: number; spin: number } | null = null;
+  // Pointer drag interaction
+  let pointerDragAnchor: { startX: number; baseSpin: number } | null = null;
   container.style.cursor = "grab";
-  const onDown = (event: PointerEvent) => {
-    // The names under the figure are buttons; capturing their press would swallow the click.
-    if ((event.target as Element | null)?.closest?.("button")) return;
-    // A drag turns the figure; it must not also start selecting the text around it.
-    event.preventDefault();
-    pressed = { x: event.clientX, spin };
-    container.setPointerCapture(event.pointerId);
+
+  const handlePointerDown = (evt: PointerEvent) => {
+    if ((evt.target as Element | null)?.closest?.("button")) return;
+    evt.preventDefault();
+    pointerDragAnchor = { startX: evt.clientX, baseSpin: currentAzimuth };
+    container.setPointerCapture(evt.pointerId);
     container.style.cursor = "grabbing";
   };
-  const onMove = (event: PointerEvent) => {
-    if (pressed) spin = pressed.spin + (event.clientX - pressed.x) * 0.008;
+
+  const handlePointerMove = (evt: PointerEvent) => {
+    if (pointerDragAnchor) {
+      currentAzimuth = pointerDragAnchor.baseSpin + (evt.clientX - pointerDragAnchor.startX) * 0.008;
+    }
   };
-  const onUp = () => {
-    pressed = null;
+
+  const handlePointerUp = () => {
+    pointerDragAnchor = null;
     container.style.cursor = "grab";
   };
-  container.addEventListener("pointerdown", onDown);
-  container.addEventListener("pointermove", onMove);
-  container.addEventListener("pointerup", onUp);
-  container.addEventListener("pointercancel", onUp);
 
-  const elapsed = () => (started === null ? 0 : performance.now() / 1000 - started + offset);
+  container.addEventListener("pointerdown", handlePointerDown);
+  container.addEventListener("pointermove", handlePointerMove);
+  container.addEventListener("pointerup", handlePointerUp);
+  container.addEventListener("pointercancel", handlePointerUp);
 
-  const update = (now: number, aspect: number, pixelRatio: number, particles: number) => {
-    camera.aspect = aspect;
-    camera.updateProjectionMatrix();
-    const t = elapsed();
-    const gridFade = smooth(t / INTRO.boot);
-    const assemble = smooth((t - INTRO.boot) / INTRO.deploy);
-    const reveal = smooth((t - INTRO.boot - INTRO.deploy) / INTRO.materialize);
-    shown += (presence - shown) * 0.08;
+  const getRunningTime = () =>
+    startEpochSec === null ? 0 : performance.now() / 1000 - startEpochSec + timeSkipOffset;
 
-    const calm = reducedMotion ? 0.35 : 1;
-    // Looking closely at a structure holds the figure still; a drag still turns it.
-    if (!pressed && zoomIndex === -2) spin += 0.0025 * calm;
-    holder.rotation.y = spin;
+  const renderFrameUpdate = (
+    currentTimeSec: number,
+    aspectRatio: number,
+    screenPixelRatio: number,
+    particleWeight: number,
+  ) => {
+    perspectiveCam.aspect = aspectRatio;
+    perspectiveCam.updateProjectionMatrix();
 
-    // Frame the whole figure and its pad, whatever the column's proportions.
-    const halfFov = THREE.MathUtils.degToRad(camera.fov) / 2;
-    const tall = (size.height + 0.55) / 2;
-    const wide = (1.8 * PAD_SCALE) / Math.max(0.2, camera.aspect);
-    const whole = Math.max(tall, wide) / Math.tan(halfFov);
-    let distance = whole;
-    aim.set(0, holder.position.y + size.bottom + size.height / 2 - 0.12, 0);
-    // Or move in on a structure: its centre turns with the figure, and the camera follows it round.
-    const box = zoomIndex >= 0 ? bounds[zoomIndex] : zoomIndex === -1 ? boundsAll : null;
-    if (box) {
-      const radius = Math.max(ZOOM_MIN_RADIUS, box.getSize(size3).length() / 2);
-      box.getCenter(aim).applyAxisAngle(UP, spin).add(holder.position);
-      const across = Math.tan(halfFov) * Math.min(1, camera.aspect);
-      distance = Math.min(distance, (radius * ZOOM_ROOM) / across);
+    const t = getRunningTime();
+    const bootStage = cubicEase(t / STAGES.boot);
+    const deployStage = cubicEase((t - STAGES.boot) / STAGES.deploy);
+    const materializationStage = cubicEase((t - STAGES.boot - STAGES.deploy) / STAGES.materialize);
+
+    currentVisibility += (targetPresence - currentVisibility) * 0.08;
+
+    const motionScale = isReducedMotion ? 0.35 : 1.0;
+    if (!pointerDragAnchor && activeZoomTarget === -2) {
+      currentAzimuth += 0.0025 * motionScale;
     }
-    const ease = view.ready && !reducedMotion ? VIEW_RATE : 1;
-    view.target.lerp(aim, ease);
-    view.distance += (distance - view.distance) * ease;
-    view.ready = true;
-    camera.position.set(view.target.x, view.target.y + view.distance * 0.08, view.target.z + view.distance);
-    // Up close, look a little below the structure, so it stands in the upper part of the column.
-    const closeness = Math.min(1, Math.max(0, 1 - view.distance / whole));
-    const lift = ZOOM_LIFT * 2 * Math.tan(halfFov) * view.distance * Math.min(1, closeness * 2);
-    camera.position.y -= lift;
-    camera.lookAt(view.target.x, view.target.y - lift, view.target.z);
+    pivotGroup.rotation.y = currentAzimuth;
 
-    for (const child of pad.children) {
-      const u = ((child as THREE.Mesh).material as THREE.ShaderMaterial).uniforms;
-      u.uFade!.value = gridFade * shown;
-      u.uTime!.value = now;
+    const halfVertFov = THREE.MathUtils.degToRad(perspectiveCam.fov) * 0.5;
+    const verticalSpan = (anatomicalDimensions.height + 0.55) * 0.5;
+    const horizontalSpan = (1.8 * PROJECTOR_PAD_SCALE) / Math.max(0.2, perspectiveCam.aspect);
+    const baselineDistance = Math.max(verticalSpan, horizontalSpan) / Math.tan(halfVertFov);
+
+    let optimalCamDistance = baselineDistance;
+    targetLookAt.set(
+      0,
+      pivotGroup.position.y + anatomicalDimensions.bottom + anatomicalDimensions.height * 0.5 - 0.12,
+      0,
+    );
+
+    const activeBounds =
+      activeZoomTarget >= 0
+        ? organBoundingBoxes[activeZoomTarget]
+        : activeZoomTarget === -1
+          ? collectiveBounds
+          : null;
+
+    if (activeBounds) {
+      const organSpanRadius = Math.max(ZOOM_MIN_SPAN, activeBounds.getSize(boxDimension).length() * 0.5);
+      activeBounds.getCenter(targetLookAt).applyAxisAngle(VERTICAL_AXIS, currentAzimuth).add(pivotGroup.position);
+      const viewportTangent = Math.tan(halfVertFov) * Math.min(1, perspectiveCam.aspect);
+      optimalCamDistance = Math.min(optimalCamDistance, (organSpanRadius * ZOOM_OCCUPANCY_RATIO) / viewportTangent);
     }
-    if (lit) {
-      const u = lit.material.uniforms;
-      u.uTime!.value = now;
-      u.uIn!.value = smooth((now - litAt) / ORGAN_IN_S) * shown;
-      pickShown += ((picked >= 0 ? 1 : 0) - pickShown) * PICK_RATE;
-      u.uPicked!.value = picked >= 0 ? picked : lastPicked;
-      u.uPick!.value = pickShown;
+
+    const cameraLerpSpeed = cameraState.initialized && !isReducedMotion ? CAMERA_ZOOM_EASE : 1.0;
+    cameraState.target.lerp(targetLookAt, cameraLerpSpeed);
+    cameraState.distance += (optimalCamDistance - cameraState.distance) * cameraLerpSpeed;
+    cameraState.initialized = true;
+
+    perspectiveCam.position.set(
+      cameraState.target.x,
+      cameraState.target.y + cameraState.distance * 0.08,
+      cameraState.target.z + cameraState.distance,
+    );
+
+    const zoomProximity = Math.min(1, Math.max(0, 1 - cameraState.distance / baselineDistance));
+    const verticalElevationShift =
+      VERTICAL_VIEW_OFFSET * 2 * Math.tan(halfVertFov) * cameraState.distance * Math.min(1, zoomProximity * 2);
+
+    perspectiveCam.position.y -= verticalElevationShift;
+    perspectiveCam.lookAt(cameraState.target.x, cameraState.target.y - verticalElevationShift, cameraState.target.z);
+
+    for (const padElem of floorPad.children) {
+      const padUniforms = ((padElem as THREE.Mesh).material as THREE.ShaderMaterial).uniforms;
+      padUniforms.uFade!.value = bootStage * currentVisibility;
+      padUniforms.uTime!.value = currentTimeSec;
     }
-    if (surface && dust && body) {
-      const u = surface.material.uniforms;
-      u.uTime!.value = now;
-      u.uReveal!.value = reveal;
-      u.uCentre!.value = camera.position.length();
-      // The skin steps back a little while something inside it is lit.
-      u.uFade!.value = BODY_GAIN * shown * (lit ? 0.7 : 1);
-      const k = (now - scanStarted) / SCAN_S;
-      u.uScanOn!.value = k >= 0 && k <= 1 ? 1 : 0;
-      u.uScanY!.value = body.top - (body.top - body.bottom) * smooth(k);
-      const d = dust.material.uniforms;
-      d.uTime!.value = now;
-      d.uAssemble!.value = assemble;
-      // Dust is sized by distance, so up close each grain would swell to a blot: it thins out instead.
-      d.uDust!.value = (1 - reveal * 0.85) * shown * (1 - closeness);
-      d.uPixel!.value = pixelRatio * (container.clientHeight / 700);
-      dust.geometry.setDrawRange(0, Math.round(dustTotal * particles));
+
+    if (highlightedOrgansMesh) {
+      const organUniforms = highlightedOrgansMesh.material.uniforms;
+      organUniforms.uTime!.value = currentTimeSec;
+      organUniforms.uIn!.value = cubicEase((currentTimeSec - highlightTimestamp) / ORGAN_FADE_IN_SEC) * currentVisibility;
+
+      organFocusProgress += ((selectedOrganIndex >= 0 ? 1 : 0) - organFocusProgress) * STRUCTURE_PICK_RATE;
+      organUniforms.uPicked!.value = selectedOrganIndex >= 0 ? selectedOrganIndex : previousOrganIndex;
+      organUniforms.uPick!.value = organFocusProgress;
+    }
+
+    if (skinMesh && particleDust && avatarModel) {
+      const skinUniforms = skinMesh.material.uniforms;
+      skinUniforms.uTime!.value = currentTimeSec;
+      skinUniforms.uReveal!.value = materializationStage;
+      skinUniforms.uCentre!.value = perspectiveCam.position.length();
+      skinUniforms.uFade!.value = FIGURE_OPACITY_GAIN * currentVisibility * (highlightedOrgansMesh ? 0.7 : 1.0);
+
+      const scanProgress = (currentTimeSec - scanStartEpoch) / SCAN_DURATION_SEC;
+      skinUniforms.uScanOn!.value = scanProgress >= 0 && scanProgress <= 1 ? 1 : 0;
+      skinUniforms.uScanY!.value =
+        avatarModel.top - (avatarModel.top - avatarModel.bottom) * cubicEase(scanProgress);
+
+      const dustUniforms = particleDust.material.uniforms;
+      dustUniforms.uTime!.value = currentTimeSec;
+      dustUniforms.uAssemble!.value = deployStage;
+      dustUniforms.uDust!.value = (1 - materializationStage * 0.85) * currentVisibility * (1 - zoomProximity);
+      dustUniforms.uPixel!.value = screenPixelRatio * (container.clientHeight / 700);
+      particleDust.geometry.setDrawRange(0, Math.round(targetDustCount * particleWeight));
     }
   };
 
-  const remove = options.host.addLayer({
-    scene,
-    camera,
-    update,
+  const unbindLayer = config.host.addLayer({
+    scene: sceneGraph,
+    camera: perspectiveCam,
+    update: renderFrameUpdate,
     rect() {
-      // Hidden (a small screen, or no memories): nothing to draw.
-      if (container.offsetParent === null || container.classList.contains("ml-hidden")) return null;
+      if (container.offsetParent === null || container.classList.contains("ml-hidden")) {
+        return null;
+      }
       const box = container.getBoundingClientRect();
-      const origin = options.frame.getBoundingClientRect();
-      return { left: box.left - origin.left, top: box.top - origin.top, width: box.width, height: box.height };
+      const originBox = config.frame.getBoundingClientRect();
+      return {
+        left: box.left - originBox.left,
+        top: box.top - originBox.top,
+        width: box.width,
+        height: box.height,
+      };
     },
   });
 
   return {
-    setPresence(level) {
-      presence = Math.min(1, Math.max(0, level));
+    setPresence(lvl: number) {
+      targetPresence = Math.min(1, Math.max(0, lvl));
     },
-    async show(organs) {
-      const mine = ++request;
-      if (organs.length === 0) {
-        putOut();
+    async show(requestedOrgans: readonly OrganRef[]): Promise<string[]> {
+      const curReq = ++activeRequestId;
+      if (requestedOrgans.length === 0) {
+        clearLitGeometry();
         return [];
       }
-      await loaded;
-      if (disposed || mine !== request || !body) return [];
-      const parts: THREE.BufferGeometry[] = [];
-      const byFile = new Map<string, OrganRef[]>();
-      for (const organ of organs) byFile.set(organ.file, [...(byFile.get(organ.file) ?? []), organ]);
-      const found: string[] = [];
-      for (const [file, refs] of byFile) {
-        let names: Map<string, THREE.Object3D>;
+
+      await initializationPromise;
+      if (isDisposed || curReq !== activeRequestId || !avatarModel) {
+        return [];
+      }
+
+      const mergedSubgeometries: THREE.BufferGeometry[] = [];
+      const fileOrganMap = new Map<string, OrganRef[]>();
+      for (const organ of requestedOrgans) {
+        fileOrganMap.set(organ.file, [...(fileOrganMap.get(organ.file) ?? []), organ]);
+      }
+
+      const verifiedIds: string[] = [];
+
+      for (const [filePath, refs] of fileOrganMap) {
+        let nodeDict: Map<string, THREE.Object3D>;
         try {
-          names = await nodesIn(file);
+          nodeDict = await getFileNodes(filePath);
         } catch {
-          continue; // One system that fails to load does not stop the others.
+          continue;
         }
-        if (disposed || mine !== request) return [];
+
+        if (isDisposed || curReq !== activeRequestId) {
+          return [];
+        }
+
         for (const ref of refs) {
-          const object = names.get(ref.node) ?? names.get(THREE.PropertyBinding.sanitizeNodeName(ref.node));
-          if (!object) continue;
-          const index = found.push(ref.id) - 1;
-          object.traverse((child) => {
-            const mesh = child as THREE.Mesh;
-            if (mesh.isMesh && mesh.geometry) parts.push(worldGeometry(mesh, index));
+          const targetObj =
+            nodeDict.get(ref.node) ??
+            nodeDict.get(THREE.PropertyBinding.sanitizeNodeName(ref.node));
+          if (!targetObj) continue;
+
+          const assignedIndex = verifiedIds.push(ref.id) - 1;
+          targetObj.traverse((sub) => {
+            const m = sub as THREE.Mesh;
+            if (m.isMesh && m.geometry) {
+              mergedSubgeometries.push(worldGeometry(m, assignedIndex));
+            }
           });
         }
       }
-      putOut();
-      if (parts.length === 0) return [];
-      const merged = mergeGeometries(parts, false);
-      for (const part of parts) part.dispose();
-      if (!merged) return [];
-      // Into the figure's own space: the same two steps the body went through.
-      const { centre, scale } = body.normalise;
-      merged.translate(-centre.x, -centre.y, -centre.z);
-      merged.scale(scale, scale, scale);
-      lit = new THREE.Mesh(merged, organMaterial());
-      lit.renderOrder = 2;
-      holder.add(lit);
-      litIds = found;
-      // Each structure's box, read off the merged mesh by the index every vertex carries.
-      const position = merged.getAttribute("position");
-      const region = merged.getAttribute("region");
-      bounds = found.map(() => new THREE.Box3());
-      const point = new THREE.Vector3();
-      for (let v = 0; v < position.count; v++) bounds[region.getX(v)]?.expandByPoint(point.fromBufferAttribute(position, v));
-      boundsAll = new THREE.Box3();
-      for (const b of bounds) if (!b.isEmpty()) boundsAll.union(b);
-      litAt = performance.now() / 1000;
-      scanStarted = litAt;
-      return found;
+
+      clearLitGeometry();
+      if (mergedSubgeometries.length === 0) {
+        return [];
+      }
+
+      const unifiedGeo = mergeGeometries(mergedSubgeometries, false);
+      for (const part of mergedSubgeometries) {
+        part.dispose();
+      }
+
+      if (!unifiedGeo) {
+        return [];
+      }
+
+      const { centre: normCenter, scale: normScale } = avatarModel.normalise;
+      unifiedGeo.translate(-normCenter.x, -normCenter.y, -normCenter.z);
+      unifiedGeo.scale(normScale, normScale, normScale);
+
+      highlightedOrgansMesh = new THREE.Mesh(unifiedGeo, organMaterial());
+      highlightedOrgansMesh.renderOrder = 2;
+      pivotGroup.add(highlightedOrgansMesh);
+
+      activeOrganIds = verifiedIds;
+
+      const positionBuffer = unifiedGeo.getAttribute("position");
+      const regionBuffer = unifiedGeo.getAttribute("region");
+      organBoundingBoxes = verifiedIds.map(() => new THREE.Box3());
+
+      const coordSample = new THREE.Vector3();
+      for (let v = 0; v < positionBuffer.count; v++) {
+        const rIndex = regionBuffer.getX(v);
+        coordSample.fromBufferAttribute(positionBuffer, v);
+        organBoundingBoxes[rIndex]?.expandByPoint(coordSample);
+      }
+
+      collectiveBounds = new THREE.Box3();
+      for (const b of organBoundingBoxes) {
+        if (!b.isEmpty()) collectiveBounds.union(b);
+      }
+
+      highlightTimestamp = performance.now() / 1000;
+      scanStartEpoch = highlightTimestamp;
+      return verifiedIds;
     },
-    zoom(on, id = null) {
-      if (!on || !lit) {
-        zoomIndex = -2;
+    zoom(enableZoom: boolean, targetId: string | null = null) {
+      if (!enableZoom || !highlightedOrgansMesh) {
+        activeZoomTarget = -2;
         return;
       }
-      const index = id === null ? -1 : litIds.indexOf(id);
-      zoomIndex = index >= 0 && !bounds[index]!.isEmpty() ? index : -1;
+      const organIdx = targetId === null ? -1 : activeOrganIds.indexOf(targetId);
+      activeZoomTarget = organIdx >= 0 && !organBoundingBoxes[organIdx]!.isEmpty() ? organIdx : -1;
     },
-    pick(id) {
-      const index = id === null ? -1 : litIds.indexOf(id);
-      if (index >= 0) lastPicked = index;
-      picked = index;
+    pick(id: string | null) {
+      const idx = id === null ? -1 : activeOrganIds.indexOf(id);
+      if (idx >= 0) {
+        previousOrganIndex = idx;
+      }
+      selectedOrganIndex = idx;
     },
     skipIntro() {
-      const end = INTRO.boot + INTRO.deploy + INTRO.materialize;
-      if (started !== null && elapsed() < end) offset += end - elapsed();
+      const totalIntroSeconds = STAGES.boot + STAGES.deploy + STAGES.materialize;
+      if (startEpochSec !== null && getRunningTime() < totalIntroSeconds) {
+        timeSkipOffset += totalIntroSeconds - getRunningTime();
+      }
     },
     dispose() {
-      disposed = true;
-      remove();
-      container.removeEventListener("pointerdown", onDown);
-      container.removeEventListener("pointermove", onMove);
-      container.removeEventListener("pointerup", onUp);
-      container.removeEventListener("pointercancel", onUp);
-      putOut();
-      releaseDraco(options.dracoPath);
-      files.clear();
-      light?.dispose();
-      scene.traverse((object) => {
-        const mesh = object as THREE.Mesh;
-        mesh.geometry?.dispose();
-        const material = mesh.material as THREE.Material | THREE.Material[] | undefined;
-        if (Array.isArray(material)) material.forEach((m) => m.dispose());
-        else material?.dispose();
+      isDisposed = true;
+      unbindLayer();
+
+      container.removeEventListener("pointerdown", handlePointerDown);
+      container.removeEventListener("pointermove", handlePointerMove);
+      container.removeEventListener("pointerup", handlePointerUp);
+      container.removeEventListener("pointercancel", handlePointerUp);
+
+      clearLitGeometry();
+      releaseDraco(config.dracoPath);
+      cachedFileHierarchy.clear();
+      lightingProfile?.dispose();
+
+      sceneGraph.traverse((node) => {
+        const m = node as THREE.Mesh;
+        m.geometry?.dispose();
+        const mat = m.material as THREE.Material | THREE.Material[] | undefined;
+        if (Array.isArray(mat)) {
+          mat.forEach((entry) => entry.dispose());
+        } else {
+          mat?.dispose();
+        }
       });
     },
   };
 }
 
-/**
- * A studied structure: amber, lit mostly at its edges so the shape reads, with
- * a slow pulse so it is plainly the thing being pointed at.
- *
- * All of a memory's structures are one mesh; `region` says which structure a
- * vertex belongs to, so one of them can be brought forward and the rest dimmed
- * without drawing anything twice.
- */
 function organMaterial(): THREE.ShaderMaterial {
   return new THREE.ShaderMaterial({
     transparent: true,
@@ -440,15 +479,16 @@ function organMaterial(): THREE.ShaderMaterial {
       attribute float region;
       varying vec3 vNormal;
       varying vec3 vView;
-      varying float vY;
-      varying float vOrgan;
+      varying float vElevation;
+      varying float vOrganIndex;
+
       void main() {
-        vY = position.y;
-        vOrgan = region;
-        vec4 mv = modelViewMatrix * vec4(position, 1.0);
+        vElevation = position.y;
+        vOrganIndex = region;
+        vec4 mvPos = modelViewMatrix * vec4(position, 1.0);
         vNormal = normalize(normalMatrix * normal);
-        vView = normalize(-mv.xyz);
-        gl_Position = projectionMatrix * mv;
+        vView = normalize(-mvPos.xyz);
+        gl_Position = projectionMatrix * mvPos;
       }
     `,
     fragmentShader: /* glsl */ `
@@ -459,18 +499,20 @@ function organMaterial(): THREE.ShaderMaterial {
       uniform float uPick;
       varying vec3 vNormal;
       varying vec3 vView;
-      varying float vY;
-      varying float vOrgan;
+      varying float vElevation;
+      varying float vOrganIndex;
+
       void main() {
-        float facing = abs(dot(normalize(vNormal), normalize(vView)));
-        float rim = pow(1.0 - facing, 2.2);
-        float pulse = 0.8 + 0.2 * sin(uTime * 2.4);
-        float lines = 0.85 + 0.15 * sin(vY * 220.0 - uTime * 2.0);
-        float a = (0.05 + rim * 0.5) * pulse * lines * uIn;
-        // The picked one brighter, the others down to a trace of themselves.
-        float isPicked = 1.0 - step(0.5, abs(vOrgan - uPicked));
-        a *= mix(1.0, mix(0.22, 2.0, isPicked), uPick);
-        gl_FragColor = vec4(uAmber * a, 1.0);
+        float incidence = abs(dot(normalize(vNormal), normalize(vView)));
+        float rimLight = pow(1.0 - incidence, 2.2);
+        float pulseRate = 0.8 + 0.2 * sin(uTime * 2.4);
+        float horizontalGrid = 0.85 + 0.15 * sin(vElevation * 220.0 - uTime * 2.0);
+
+        float baseAlpha = (0.05 + rimLight * 0.5) * pulseRate * horizontalGrid * uIn;
+        float isSingledOut = 1.0 - step(0.5, abs(vOrganIndex - uPicked));
+        baseAlpha *= mix(1.0, mix(0.22, 2.0, isSingledOut), uPick);
+
+        gl_FragColor = vec4(uAmber * baseAlpha, 1.0);
       }
     `,
   });

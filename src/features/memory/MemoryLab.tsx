@@ -4,7 +4,13 @@ import { Markdown } from "@/features/chat/Markdown";
 import { stripOrganRefs } from "@/features/chat/organRefs";
 import { loadManifest, meshUrl } from "@/lib/manifest";
 import type { ManifestOrgan } from "@/lib/schemas";
-import { getStudySession, listNotes, listStudySessions, type SessionDetail, type StudyNote } from "@/lib/studyDb";
+import {
+  getStudySession,
+  listNotes,
+  listStudySessions,
+  type SessionDetail,
+  type StudyNote,
+} from "@/lib/studyDb";
 import { useSceneStore } from "@/stores/sceneStore";
 import { useStudyStore } from "@/stores/studyStore";
 
@@ -16,229 +22,231 @@ import { byMonth, memoriesFrom, stepMemory, tally, type Memory, type MemoryKind 
 import { createBodyHologram, type BodyHologram } from "./scene/bodyHologram";
 import type { BrainStructure } from "./scene/brainLoader";
 import { studiedIds, studiedOrgans, type StudiedOrgan } from "./studied";
-import { createMemoryScene, type GraphicsStatus, type LabPhase, type MemoryScene } from "./scene/memoryScene";
+import {
+  createMemoryScene,
+  type GraphicsStatus,
+  type LabPhase,
+  type MemoryScene,
+} from "./scene/memoryScene";
 
-/**
- * The Memory Lab: the study journal as a map of memories on a holographic brain.
- *
- * A screen of its own, over everything, and deliberately apart from the atlas:
- * nothing here touches the body or the viewport. It reads the journal, lets a
- * memory be opened and read, and lets one be erased — with a countdown during
- * which it can still be restored, because the journal's delete is final.
- *
- * Loaded only when opened, and it frees everything it made when closed, so the
- * rest of the application does not pay for it.
- */
-
-const KIND_LABEL: Record<MemoryKind, string> = {
+const CLASSIFICATION_TITLES: Record<MemoryKind, string> = {
   session: "STUDY SESSION",
   case: "CASE VISIT",
   note: "NOTE",
 };
 
-/**
- * Three ways to lay the lab out, chosen from the real size of the window —
- * never from the device. `wide` tilts the panels in 3D, `medium` flattens and
- * narrows them, `compact` folds the index into a rail and raises the reader
- * from the bottom as a sheet.
- */
-type Size = "wide" | "medium" | "compact";
-function sizeFor(width: number, height: number): Size {
+type ViewportLayoutTier = "wide" | "medium" | "compact";
+
+function computeLayoutTier(width: number, height: number): ViewportLayoutTier {
   if (width < 960 || height < 600) return "compact";
   if (width < 1320 || height < 780) return "medium";
   return "wide";
 }
 
-/** Hair is drawn as strands, which the hologram turns into noise; the figure is better bare. */
-const NOT_SURFACE = /^(Hairs of|Eyelashes|Pubic hairs)/;
+const EXCLUDE_SURFACE_FILTER = /^(Hairs of|Eyelashes|Pubic hairs)/;
+const LOCAL_STORAGE_FOCUS_KEY = "hoomaan.memory.focus.v1";
 
-const FOCUS_KEY = "hoomaan.memory.focus.v1";
-
-/** Focus is remembered: someone who reads with it on will want it on next time. */
-function storedFocus(): boolean {
+function retrievePersistedFocus(): boolean {
   try {
-    return window.localStorage.getItem(FOCUS_KEY) === "on";
+    return window.localStorage.getItem(LOCAL_STORAGE_FOCUS_KEY) === "on";
   } catch {
     return false;
   }
 }
 
-function storeFocus(on: boolean): void {
+function persistFocusSetting(active: boolean): void {
   try {
-    window.localStorage.setItem(FOCUS_KEY, on ? "on" : "off");
+    window.localStorage.setItem(LOCAL_STORAGE_FOCUS_KEY, active ? "on" : "off");
   } catch {
-    // Blocked storage: the choice lasts until the lab closes.
+    // Gracefully ignore local storage restrictions
   }
 }
 
-/** How long the hologram may take to appear before the page says it is slow. */
-const SLOW_LOAD_MS = 15000;
-/** How long a graphics reset may last before the page offers to start again. */
-const RESET_GRACE_MS = 6000;
+const EXTENDED_LOAD_WARNING_DELAY_MS = 15000;
+const CONTEXT_RESTORE_TIMEOUT_MS = 6000;
+const ERASE_HOLD_DURATION_MS = 1400;
 
-/**
- * One line under the title saying how the hologram is running, only when that
- * is worth knowing. Worst news first; nothing at all when all is well.
- */
-function graphicsNotice(noGraphics: boolean, status: GraphicsStatus | null): string | null {
-  if (noGraphics) return "THIS COMPUTER CANNOT DRAW THE HOLOGRAM · EVERY MEMORY IS STILL HERE TO READ";
-  if (!status) return null;
-  if (status.lost) return "THE GRAPHICS CARD RESET · RESTORING THE HOLOGRAM…";
-  if (status.adapter === "software") return "NO GRAPHICS ACCELERATION ON THIS COMPUTER · RUNNING LIGHT";
-  if (status.eased) return "EFFECTS EASED TO KEEP THE HOLOGRAM SMOOTH ON THIS COMPUTER";
+function evaluateGraphicsAdvisory(
+  hasNoHardwareWebGL: boolean,
+  gpuStatus: GraphicsStatus | null,
+): string | null {
+  if (hasNoHardwareWebGL) {
+    return "THIS COMPUTER CANNOT DRAW THE HOLOGRAM · EVERY MEMORY IS STILL HERE TO READ";
+  }
+  if (!gpuStatus) return null;
+  if (gpuStatus.lost) {
+    return "THE GRAPHICS CARD RESET · RESTORING THE HOLOGRAM…";
+  }
+  if (gpuStatus.adapter === "software") {
+    return "NO GRAPHICS ACCELERATION ON THIS COMPUTER · RUNNING LIGHT";
+  }
+  if (gpuStatus.eased) {
+    return "EFFECTS EASED TO KEEP THE HOLOGRAM SMOOTH ON THIS COMPUTER";
+  }
   return null;
 }
 
-/** How long Erase must be held down, in milliseconds. */
-const HOLD_MS = 1400;
-
-type Reading =
+type MemoryInspectionState =
   | { state: "loading" }
   | { state: "session"; detail: SessionDetail }
   | { state: "note"; note: StudyNote }
   | { state: "missing" };
 
-/**
- * One formatter, made once. `toLocaleString` with options builds a new one on
- * every call, and the timeline formats a date per memory on every render —
- * with two hundred memories that was most of the time a hover took.
- */
-const DATE = new Intl.DateTimeFormat("en-GB", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
-const when = (ms: number) => DATE.format(ms);
+const REUSABLE_TIMESTAMP_FORMATTER = new Intl.DateTimeFormat("en-GB", {
+  day: "2-digit",
+  month: "short",
+  year: "numeric",
+  hour: "2-digit",
+  minute: "2-digit",
+});
 
-/** A failure to load, said as what could not be reached rather than as a stack. */
-function unreachable(reason: unknown): string {
-  const text = reason instanceof Error ? reason.message : String(reason);
-  return /fetch|network|load/i.test(text)
-    ? "The brain hologram could not be loaded. Your memories are safe — try again."
-    : `The hologram stopped: ${text}`;
+const formatEpochTimestamp = (ms: number) => REUSABLE_TIMESTAMP_FORMATTER.format(ms);
+
+function formatDiagnosticError(err: unknown): string {
+  const messageStr = err instanceof Error ? err.message : String(err);
+  if (/fetch|network|load/i.test(messageStr)) {
+    return "The brain hologram could not be loaded. Your memories are safe — try again.";
+  }
+  return `The hologram stopped: ${messageStr}`;
 }
 
 export function MemoryLab({ onClose }: { onClose: () => void }) {
-  const root = useRef<HTMLDivElement>(null);
-  const stage = useRef<HTMLDivElement>(null);
-  const bodyBox = useRef<HTMLDivElement>(null);
-  const body = useRef<BodyHologram | null>(null);
-  const sound = useRef<LabSound | null>(null);
-  const head = useRef<HTMLElement>(null);
-  const left = useRef<HTMLElement>(null);
-  const right = useRef<HTMLElement>(null);
-  const footer = useRef<HTMLElement>(null);
-  const callout = useRef<HTMLDivElement>(null);
-  const scene = useRef<MemoryScene | null>(null);
-  const queue = useRef(new EraseQueue());
+  const containerRootRef = useRef<HTMLDivElement>(null);
+  const webglStageRef = useRef<HTMLDivElement>(null);
+  const avatarContainerRef = useRef<HTMLDivElement>(null);
+  const avatarInstanceRef = useRef<BodyHologram | null>(null);
+  const audioSynthRef = useRef<LabSound | null>(null);
 
-  const [memories, setMemories] = useState<Memory[] | null>(null);
-  const [notes, setNotes] = useState<Map<string, StudyNote>>(new Map());
-  const [error, setError] = useState<string | null>(null);
-  const [phase, setPhase] = useState<LabPhase>("boot");
-  const [mapped, setMapped] = useState(0);
-  const [hovered, setHovered] = useState<string | null>(null);
-  const [selected, setSelected] = useState<string | null>(null);
-  const [reading, setReading] = useState<Reading | null>(null);
-  const [erased, setErased] = useState<Set<string>>(new Set());
-  const [pending, setPending] = useState<{ key: string; left: number } | null>(null);
-  const [holding, setHolding] = useState(false);
-  const [size, setSize] = useState<Size>(() => sizeFor(window.innerWidth, window.innerHeight));
-  const [railOpen, setRailOpen] = useState(false);
-  const [wide, setWide] = useState(false);
-  /** The lab's own short guide to its controls. */
-  const [help, setHelp] = useState(false);
-  const [soundOn, setSoundOn] = useState(storedLabSound);
-  /**
-   * Focus mode, for reading: the film grain over the whole screen goes, and the
-   * panels lie flat with plain crisp text. The hologram and all its motion stay.
-   */
-  const [focus, setFocusMode] = useState(storedFocus);
-  const focusNow = useRef(focus);
-  const [graphics, setGraphics] = useState<GraphicsStatus | null>(null);
-  /** No WebGL at all: the lab carries on as an index and a reader. */
-  const [noGraphics, setNoGraphics] = useState(false);
-  const [slowLoad, setSlowLoad] = useState(false);
-  const [atlas, setAtlas] = useState<readonly ManifestOrgan[]>([]);
-  /** What the open memory was about, as lit in the figure; null while it is being found. */
-  const [studied, setStudied] = useState<StudiedOrgan[] | null>([]);
-  /** A studied structure singled out in the figure: pinned by a click, or pointed at for a moment. */
-  const [pinnedOrgan, setPinnedOrgan] = useState<string | null>(null);
-  const [pointedOrgan, setPointedOrgan] = useState<string | null>(null);
-  /** The whole list of studied structures unfolded, and the figure moved in on them. */
-  const [allStudied, setAllStudied] = useState(false);
-  const [zoomed, setZoomed] = useState(false);
-  /** How many names fit under the figure folded, from the height of its column. */
-  const [studiedRows, setStudiedRows] = useState(4);
-  /** Bumped by Retry, to load the hologram again after a failure. */
-  const [attempt, setAttempt] = useState(0);
+  const headerRef = useRef<HTMLElement>(null);
+  const leftPanelRef = useRef<HTMLElement>(null);
+  const rightPanelRef = useRef<HTMLElement>(null);
+  const footerRef = useRef<HTMLElement>(null);
+  const calloutTagRef = useRef<HTMLDivElement>(null);
 
-  const byKey = useMemo(() => new Map((memories ?? []).map((m) => [m.key, m])), [memories]);
-  const live = useMemo(() => (memories ?? []).filter((m) => !erased.has(m.key)), [memories, erased]);
+  const sceneInstanceRef = useRef<MemoryScene | null>(null);
+  const eraseBufferRef = useRef(new EraseQueue());
 
-  // --- the journal ---------------------------------------------------------
+  const [memoryList, setMemoryList] = useState<Memory[] | null>(null);
+  const [cachedNotesMap, setCachedNotesMap] = useState<Map<string, StudyNote>>(new Map());
+  const [displayErrorMessage, setDisplayErrorMessage] = useState<string | null>(null);
+  const [currentHoloPhase, setCurrentHoloPhase] = useState<LabPhase>("boot");
+  const [mappedMemoryCount, setMappedMemoryCount] = useState(0);
+
+  const [hoveredMemoryKey, setHoveredMemoryKey] = useState<string | null>(null);
+  const [selectedMemoryKey, setSelectedMemoryKey] = useState<string | null>(null);
+  const [activeInspection, setActiveInspection] = useState<MemoryInspectionState | null>(null);
+  const [erasedKeysSet, setErasedKeysSet] = useState<Set<string>>(new Set());
+  const [pendingEraseItem, setPendingEraseItem] = useState<{ key: string; left: number } | null>(null);
+
+  const [isHoldingErase, setIsHoldingErase] = useState(false);
+  const [currentTier, setCurrentTier] = useState<ViewportLayoutTier>(() =>
+    computeLayoutTier(window.innerWidth, window.innerHeight),
+  );
+  const [isRailNavOpen, setIsRailNavOpen] = useState(false);
+  const [isExpandedReader, setIsExpandedReader] = useState(false);
+  const [isHelpGuideVisible, setIsHelpGuideVisible] = useState(false);
+
+  const [isAudioEnabled, setIsAudioEnabled] = useState(storedLabSound);
+  const [isFocusReaderActive, setIsFocusReaderActive] = useState(retrievePersistedFocus);
+  const focusStateTracker = useRef(isFocusReaderActive);
+
+  const [hardwareGraphicsStatus, setHardwareGraphicsStatus] = useState<GraphicsStatus | null>(null);
+  const [isSoftwareOnlyFallback, setIsSoftwareOnlyFallback] = useState(false);
+  const [isSlowInitialLoad, setIsSlowInitialLoad] = useState(false);
+  const [anatomicalAtlas, setAnatomicalAtlas] = useState<readonly ManifestOrgan[]>([]);
+
+  const [associatedOrganList, setAssociatedOrganList] = useState<StudiedOrgan[] | null>([]);
+  const [pinnedOrganNode, setPinnedOrganNode] = useState<string | null>(null);
+  const [hoveredOrganNode, setHoveredOrganNode] = useState<string | null>(null);
+  const [isAllOrgansUnfolded, setIsAllOrgansUnfolded] = useState(false);
+  const [isOrganCameraZoomed, setIsOrganCameraZoomed] = useState(false);
+  const [visibleOrganRowCount, setVisibleOrganRowCount] = useState(4);
+  const [reconnectAttempts, setReconnectAttempts] = useState(0);
+
+  const memoryLookupMap = useMemo(
+    () => new Map((memoryList ?? []).map((m) => [m.key, m])),
+    [memoryList],
+  );
+
+  const availableLiveMemories = useMemo(
+    () => (memoryList ?? []).filter((m) => !erasedKeysSet.has(m.key)),
+    [memoryList, erasedKeysSet],
+  );
+
+  // Load clinical sessions and study notes
   useEffect(() => {
-    let cancelled = false;
+    let unmounted = false;
     Promise.all([listStudySessions(null, null, null, 1000), listNotes(null, null, 1000)])
-      .then(([sessions, noteList]) => {
-        if (cancelled) return;
-        setNotes(new Map(noteList.map((note) => [String(note.id), note])));
-        setMemories(memoriesFrom(sessions, noteList));
+      .then(([sessions, fetchedNotes]) => {
+        if (unmounted) return;
+        setCachedNotesMap(new Map(fetchedNotes.map((entry) => [String(entry.id), entry])));
+        setMemoryList(memoriesFrom(sessions, fetchedNotes));
       })
-      .catch((reason: unknown) => !cancelled && setError(String(reason)));
+      .catch((err: unknown) => {
+        if (!unmounted) setDisplayErrorMessage(String(err));
+      });
+
     return () => {
-      cancelled = true;
+      unmounted = true;
     };
   }, []);
 
-  // --- the hologram --------------------------------------------------------
+  // Initialize 3D scene and male anatomical avatar
   useEffect(() => {
-    const element = stage.current;
-    if (!element || !memories || memories.length === 0) return;
-    let disposed = false;
-    // The male atlas always: the brain lives there, whichever body is on screen.
-    // Read, never changed: when the atlas already holds the male index it is
-    // reused, instead of fetching and validating 1.3 MB again while the
-    // hologram is trying to start.
-    const atlas = useSceneStore.getState();
-    const known = atlas.genderModel === "male" ? atlas.manifest : null;
-    (known ? Promise.resolve(known) : loadManifest("male"))
-      .then((manifest) => {
-        if (disposed) return;
-        setAtlas(manifest.organs);
-        const structures: BrainStructure[] = manifest.organs
+    const stageDom = webglStageRef.current;
+    if (!stageDom || !memoryList || memoryList.length === 0) return;
+
+    let cancelled = false;
+    const sceneStoreRef = useSceneStore.getState();
+    const existingAtlas = sceneStoreRef.genderModel === "male" ? sceneStoreRef.manifest : null;
+
+    (existingAtlas ? Promise.resolve(existingAtlas) : loadManifest("male"))
+      .then((atlasManifest) => {
+        if (cancelled) return;
+        setAnatomicalAtlas(atlasManifest.organs);
+
+        const brainNodes: BrainStructure[] = atlasManifest.organs
           .filter((organ) => organ.path?.includes("Brain") && organ.mesh_file === "nervous_male.glb")
           .map((organ) => ({
             node: organ.node,
             name: organ.name_en.replace(/\s*\((left|right)\)$/, ""),
             latin: organ.ta2_latin,
             region: organ.path![organ.path!.indexOf("Brain") + 1] ?? "Brain",
-            side: /\(left\)$/.test(organ.name_en) ? "left" : /\(right\)$/.test(organ.name_en) ? "right" : "midline",
+            side: /\(left\)$/.test(organ.name_en)
+              ? "left"
+              : /\(right\)$/.test(organ.name_en)
+                ? "right"
+                : "midline",
           }));
+
         try {
-          scene.current = createMemoryScene(element, {
+          sceneInstanceRef.current = createMemoryScene(stageDom, {
             meshUrl: meshUrl("nervous_male.glb"),
-            structures,
+            structures: brainNodes,
             dracoPath: "/draco/",
-            memories: memories.map(({ key, kind }) => ({ key, kind })),
-            onGraphics: setGraphics,
-            onHover: setHovered,
-            onSelect: setSelected,
-            onPhase: (next, count) => {
-              setPhase(next);
-              setMapped(count);
+            memories: memoryList.map(({ key, kind }) => ({ key, kind })),
+            onGraphics: setHardwareGraphicsStatus,
+            onHover: setHoveredMemoryKey,
+            onSelect: setSelectedMemoryKey,
+            onPhase: (nextStage, count) => {
+              setCurrentHoloPhase(nextStage);
+              setMappedMemoryCount(count);
             },
-            onError: (reason) => setError(unreachable(reason)),
+            onError: (reason) => setDisplayErrorMessage(formatDiagnosticError(reason)),
           });
-          scene.current.setFilm(!focusNow.current);
+          sceneInstanceRef.current.setFilm(!focusStateTracker.current);
         } catch {
-          // No WebGL on this machine. Everything except the hologram still works,
-          // so open the index and let the memories be read.
-          setNoGraphics(true);
-          setRailOpen(true);
+          setIsSoftwareOnlyFallback(true);
+          setIsRailNavOpen(true);
           return;
         }
-        const figure = bodyBox.current;
-        const frame = root.current;
-        if (!figure || !frame || !scene.current) return;
-        const surface: BrainStructure[] = manifest.organs
-          .filter((organ) => organ.mesh_file === "regional_male.glb" && !NOT_SURFACE.test(organ.name_en))
+
+        const avatarDom = avatarContainerRef.current;
+        const mainFrame = containerRootRef.current;
+        if (!avatarDom || !mainFrame || !sceneInstanceRef.current) return;
+
+        const bodySurfaceStructures: BrainStructure[] = atlasManifest.organs
+          .filter((organ) => organ.mesh_file === "regional_male.glb" && !EXCLUDE_SURFACE_FILTER.test(organ.name_en))
           .map((organ) => ({
             node: organ.node,
             name: organ.name_en,
@@ -246,425 +254,559 @@ export function MemoryLab({ onClose }: { onClose: () => void }) {
             region: "Body",
             side: "midline",
           }));
-        // The figure is decoration: if it cannot load, the lab goes on without it.
-        body.current = createBodyHologram(figure, {
+
+        avatarInstanceRef.current = createBodyHologram(avatarDom, {
           meshUrl: meshUrl("regional_male.glb"),
-          structures: surface,
+          structures: bodySurfaceStructures,
           dracoPath: "/draco/",
-          host: scene.current,
-          frame,
+          host: sceneInstanceRef.current,
+          frame: mainFrame,
           fileUrl: meshUrl,
           onError: () => {
-            body.current?.dispose();
-            body.current = null;
+            avatarInstanceRef.current?.dispose();
+            avatarInstanceRef.current = null;
           },
         });
       })
-      .catch((reason: unknown) => !disposed && setError(unreachable(reason)));
-    return () => {
-      disposed = true;
-      scene.current?.dispose();
-      scene.current = null;
-      body.current?.dispose();
-      body.current = null;
-    };
-  }, [memories, attempt]);
+      .catch((err: unknown) => {
+        if (!cancelled) setDisplayErrorMessage(formatDiagnosticError(err));
+      });
 
-  useEffect(() => {
-    focusNow.current = focus;
-    storeFocus(focus);
-    scene.current?.setFilm(!focus);
-  }, [focus]);
-
-  // --- saying so when loading is slow or the graphics card resets -------------
-  useEffect(() => {
-    setSlowLoad(false);
-    if (!memories || memories.length === 0 || phase !== "boot" || noGraphics) return;
-    const timer = window.setTimeout(() => setSlowLoad(true), SLOW_LOAD_MS);
-    return () => window.clearTimeout(timer);
-  }, [memories, phase, noGraphics, attempt]);
-  useEffect(() => {
-    if (!graphics?.lost) return;
-    const timer = window.setTimeout(
-      () => setError("The graphics card reset and the hologram did not come back. Your memories are safe — try again."),
-      RESET_GRACE_MS,
-    );
-    return () => window.clearTimeout(timer);
-  }, [graphics?.lost]);
-
-  // --- sound -------------------------------------------------------------------
-  useEffect(() => {
-    sound.current = createLabSound(storedLabSound());
-    return () => {
-      sound.current?.close();
-      sound.current = null;
-    };
-  }, []);
-  useEffect(() => {
-    sound.current?.setEnabled(soundOn);
-    storeLabSound(soundOn);
-  }, [soundOn]);
-  useEffect(() => sound.current?.phase(phase), [phase]);
-  useEffect(() => {
-    if (phase === "mapping" && mapped > 0) sound.current?.mapped(mapped - 1, memories?.length ?? 1);
-  }, [phase, mapped, memories]);
-  useEffect(() => {
-    const kind = hovered ? memories?.find((m) => m.key === hovered)?.kind : undefined;
-    if (kind) sound.current?.hover(kind);
-  }, [hovered, memories]);
-  useEffect(() => {
-    const kind = selected ? memories?.find((m) => m.key === selected)?.kind : undefined;
-    sound.current?.select(kind ?? null);
-  }, [selected, memories]);
-
-  // What the open memory was about, lit inside the figure.
-  useEffect(() => {
-    const known = new Set(atlas.map((organ) => organ.organ_id));
-    const ids =
-      reading?.state === "session"
-        ? studiedIds(
-            reading.detail.structures,
-            reading.detail.messages.filter((m) => m.role === "assistant").map((m) => m.content),
-            (id) => known.has(id),
-          )
-        : reading?.state === "note"
-          ? studiedIds(reading.note.organ_id ? [reading.note.organ_id] : [], [reading.note.body], (id) => known.has(id))
-          : [];
-    const organs = studiedOrgans(ids, atlas);
-    const figure = body.current;
-    if (!figure || organs.length === 0) {
-      void figure?.show([]);
-      setStudied([]);
-      return;
-    }
-    let cancelled = false;
-    setStudied(null);
-    // Named under the figure only once found: a name with nothing lit above it would mislead.
-    void figure.show(organs).then((found) => {
-      if (cancelled) return;
-      const lit = new Set(found);
-      setStudied(organs.filter((organ) => lit.has(organ.id)));
-    });
     return () => {
       cancelled = true;
+      sceneInstanceRef.current?.dispose();
+      sceneInstanceRef.current = null;
+      avatarInstanceRef.current?.dispose();
+      avatarInstanceRef.current = null;
     };
-  }, [reading, atlas]);
+  }, [memoryList, reconnectAttempts]);
 
-  // A new memory starts with none of its structures singled out.
   useEffect(() => {
-    setPinnedOrgan(null);
-    setPointedOrgan(null);
-    setAllStudied(false);
-    setZoomed(false);
-  }, [studied]);
-  // Zoom follows the pinned structure only: sweeping the pointer down the list must not swing the camera.
-  useEffect(() => body.current?.zoom(zoomed, pinnedOrgan), [zoomed, pinnedOrgan]);
-  const pickedOrgan = pointedOrgan ?? pinnedOrgan;
-  useEffect(() => body.current?.pick(pickedOrgan), [pickedOrgan]);
-  const pointOrgan = useCallback((id: string | null) => {
-    setPointedOrgan(id);
-    if (id) sound.current?.hover("case");
+    focusStateTracker.current = isFocusReaderActive;
+    persistFocusSetting(isFocusReaderActive);
+    sceneInstanceRef.current?.setFilm(!isFocusReaderActive);
+  }, [isFocusReaderActive]);
+
+  // Loading timer & hardware fault resilience
+  useEffect(() => {
+    setIsSlowInitialLoad(false);
+    if (!memoryList || memoryList.length === 0 || currentHoloPhase !== "boot" || isSoftwareOnlyFallback) {
+      return;
+    }
+    const timer = window.setTimeout(() => setIsSlowInitialLoad(true), EXTENDED_LOAD_WARNING_DELAY_MS);
+    return () => window.clearTimeout(timer);
+  }, [memoryList, currentHoloPhase, isSoftwareOnlyFallback, reconnectAttempts]);
+
+  useEffect(() => {
+    if (!hardwareGraphicsStatus?.lost) return;
+    const timer = window.setTimeout(() => {
+      setDisplayErrorMessage(
+        "The graphics card reset and the hologram did not come back. Your memories are safe — try again.",
+      );
+    }, CONTEXT_RESTORE_TIMEOUT_MS);
+    return () => window.clearTimeout(timer);
+  }, [hardwareGraphicsStatus?.lost]);
+
+  // Sound effects integration
+  useEffect(() => {
+    audioSynthRef.current = createLabSound(storedLabSound());
+    return () => {
+      audioSynthRef.current?.close();
+      audioSynthRef.current = null;
+    };
   }, []);
 
-  // The index is laid over the figure; the figure steps back while it is open.
-  useEffect(() => body.current?.setPresence(railOpen ? 0.15 : 1), [railOpen]);
-
-  // --- making room: the size class, and where the hologram may go ------------
   useEffect(() => {
-    const element = root.current;
-    if (!element) return;
-    const measure = () => {
-      setSize(sizeFor(element.clientWidth, element.clientHeight));
-      setStudiedRows(studiedRowsFor(bodyBox.current?.clientHeight ?? 0));
-      const frame = element.getBoundingClientRect();
-      const boxes: Box[] = [];
-      // The title is a corner, not a panel: it would push the brain aside for nothing.
-      for (const ref of [bodyBox, left, right, footer]) {
-        const panel = ref.current;
-        if (!panel || panel.classList.contains("ml-hidden") || panel.classList.contains("ml-wide")) continue;
-        if (panel.offsetParent === null) continue;
-        const r = panel.getBoundingClientRect();
-        boxes.push({ left: r.left - frame.left, top: r.top - frame.top, right: r.right - frame.left, bottom: r.bottom - frame.top });
-      }
-      scene.current?.setFocus(freeMargins(boxes, element.clientWidth, element.clientHeight));
-    };
-    // A class change moves a panel on the next frame, so measure just after it.
-    const timer = window.setTimeout(measure, 40);
-    const observer = new ResizeObserver(measure);
-    observer.observe(element);
-    return () => {
-      window.clearTimeout(timer);
-      observer.disconnect();
-    };
-  }, [selected, railOpen, wide, size, phase, memories]);
+    audioSynthRef.current?.setEnabled(isAudioEnabled);
+    storeLabSound(isAudioEnabled);
+  }, [isAudioEnabled]);
 
-  // --- erasing -------------------------------------------------------------
-  const commit = useCallback(async (keys: string[]) => {
-    const study = useStudyStore.getState();
-    for (const key of keys) {
-      const [kind, id] = key.split(":") as [string, string];
-      const ok = kind === "note" ? await study.removeNote(Number(id)) : await study.removeSession(id);
-      if (!ok) setError("A memory could not be erased. It is still in your journal.");
+  useEffect(() => {
+    audioSynthRef.current?.phase(currentHoloPhase);
+  }, [currentHoloPhase]);
+
+  useEffect(() => {
+    if (currentHoloPhase === "mapping" && mappedMemoryCount > 0) {
+      audioSynthRef.current?.mapped(mappedMemoryCount - 1, memoryList?.length ?? 1);
+    }
+  }, [currentHoloPhase, mappedMemoryCount, memoryList]);
+
+  useEffect(() => {
+    const memoryKind = hoveredMemoryKey
+      ? memoryList?.find((m) => m.key === hoveredMemoryKey)?.kind
+      : undefined;
+    if (memoryKind) {
+      audioSynthRef.current?.hover(memoryKind);
+    }
+  }, [hoveredMemoryKey, memoryList]);
+
+  useEffect(() => {
+    const memoryKind = selectedMemoryKey
+      ? memoryList?.find((m) => m.key === selectedMemoryKey)?.kind
+      : undefined;
+    audioSynthRef.current?.select(memoryKind ?? null);
+  }, [selectedMemoryKey, memoryList]);
+
+  // Resolve organs discussed in current memory inspection
+  useEffect(() => {
+    const recognizedIdSet = new Set(anatomicalAtlas.map((item) => item.organ_id));
+    const extractedOrgans =
+      activeInspection?.state === "session"
+        ? studiedIds(
+            activeInspection.detail.structures,
+            activeInspection.detail.messages
+              .filter((msg) => msg.role === "assistant")
+              .map((msg) => msg.content),
+            (id) => recognizedIdSet.has(id),
+          )
+        : activeInspection?.state === "note"
+          ? studiedIds(
+              activeInspection.note.organ_id ? [activeInspection.note.organ_id] : [],
+              [activeInspection.note.body],
+              (id) => recognizedIdSet.has(id),
+            )
+          : [];
+
+    const resolvedOrganProfiles = studiedOrgans(extractedOrgans, anatomicalAtlas);
+    const figureAvatar = avatarInstanceRef.current;
+
+    if (!figureAvatar || resolvedOrganProfiles.length === 0) {
+      void figureAvatar?.show([]);
+      setAssociatedOrganList([]);
+      return;
+    }
+
+    let isOutdated = false;
+    setAssociatedOrganList(null);
+
+    void figureAvatar.show(resolvedOrganProfiles).then((verifiedMeshIds) => {
+      if (isOutdated) return;
+      const verifiedSet = new Set(verifiedMeshIds);
+      setAssociatedOrganList(resolvedOrganProfiles.filter((item) => verifiedSet.has(item.id)));
+    });
+
+    return () => {
+      isOutdated = true;
+    };
+  }, [activeInspection, anatomicalAtlas]);
+
+  useEffect(() => {
+    setPinnedOrganNode(null);
+    setHoveredOrganNode(null);
+    setIsAllOrgansUnfolded(false);
+    setIsOrganCameraZoomed(false);
+  }, [associatedOrganList]);
+
+  useEffect(() => {
+    avatarInstanceRef.current?.zoom(isOrganCameraZoomed, pinnedOrganNode);
+  }, [isOrganCameraZoomed, pinnedOrganNode]);
+
+  const activeHighlightedOrgan = hoveredOrganNode ?? pinnedOrganNode;
+  useEffect(() => {
+    avatarInstanceRef.current?.pick(activeHighlightedOrgan);
+  }, [activeHighlightedOrgan]);
+
+  const handleOrganHover = useCallback((id: string | null) => {
+    setHoveredOrganNode(id);
+    if (id) {
+      audioSynthRef.current?.hover("case");
     }
   }, []);
 
-  // The countdown, and deleting whatever has run out.
   useEffect(() => {
-    const timer = window.setInterval(() => {
-      const now = Date.now();
-      const due = queue.current.due(now);
-      if (due.length > 0) void commit(due);
-      setPending((current) => {
-        if (!current) return null;
-        if (!queue.current.isPending(current.key)) return null;
-        return { key: current.key, left: queue.current.secondsLeft(current.key, now) };
+    avatarInstanceRef.current?.setPresence(isRailNavOpen ? 0.15 : 1);
+  }, [isRailNavOpen]);
+
+  // Viewport layout responsiveness and dynamic stage margins
+  useEffect(() => {
+    const hostEl = containerRootRef.current;
+    if (!hostEl) return;
+
+    const performMeasurement = () => {
+      setCurrentTier(computeLayoutTier(hostEl.clientWidth, hostEl.clientHeight));
+      setVisibleOrganRowCount(studiedRowsFor(avatarContainerRef.current?.clientHeight ?? 0));
+
+      const hostRect = hostEl.getBoundingClientRect();
+      const registeredPanels: Box[] = [];
+
+      for (const panelRef of [avatarContainerRef, leftPanelRef, rightPanelRef, footerRef]) {
+        const p = panelRef.current;
+        if (!p || p.classList.contains("ml-hidden") || p.classList.contains("ml-wide")) continue;
+        if (p.offsetParent === null) continue;
+
+        const bounds = p.getBoundingClientRect();
+        registeredPanels.push({
+          left: bounds.left - hostRect.left,
+          top: bounds.top - hostRect.top,
+          right: bounds.right - hostRect.left,
+          bottom: bounds.bottom - hostRect.top,
+        });
+      }
+
+      sceneInstanceRef.current?.setFocus(
+        freeMargins(registeredPanels, hostEl.clientWidth, hostEl.clientHeight),
+      );
+    };
+
+    const debounceTimer = window.setTimeout(performMeasurement, 40);
+    const ro = new ResizeObserver(performMeasurement);
+    ro.observe(hostEl);
+
+    return () => {
+      window.clearTimeout(debounceTimer);
+      ro.disconnect();
+    };
+  }, [selectedMemoryKey, isRailNavOpen, isExpandedReader, currentTier, currentHoloPhase, memoryList]);
+
+  // Erase queue flush and execution
+  const executeJournalDeletions = useCallback(async (keysToPurge: string[]) => {
+    const store = useStudyStore.getState();
+    for (const key of keysToPurge) {
+      const [type, strId] = key.split(":") as [string, string];
+      const isSuccessful =
+        type === "note" ? await store.removeNote(Number(strId)) : await store.removeSession(strId);
+      if (!isSuccessful) {
+        setDisplayErrorMessage("A memory could not be erased. It is still in your journal.");
+      }
+    }
+  }, []);
+
+  useEffect(() => {
+    const intervalTimer = window.setInterval(() => {
+      const currentMs = Date.now();
+      const readyForDeletion = eraseBufferRef.current.due(currentMs);
+      if (readyForDeletion.length > 0) {
+        void executeJournalDeletions(readyForDeletion);
+      }
+      setPendingEraseItem((prev) => {
+        if (!prev) return null;
+        if (!eraseBufferRef.current.isPending(prev.key)) return null;
+        return {
+          key: prev.key,
+          left: eraseBufferRef.current.secondsLeft(prev.key, currentMs),
+        };
       });
     }, 250);
-    return () => window.clearInterval(timer);
-  }, [commit]);
 
-  // Leaving commits what is pending: the reader saw it go and walked away.
-  const close = useCallback(() => {
-    const leftover = queue.current.flush();
-    if (leftover.length > 0) void commit(leftover);
+    return () => window.clearInterval(intervalTimer);
+  }, [executeJournalDeletions]);
+
+  const handleLabDismissal = useCallback(() => {
+    const queuedItems = eraseBufferRef.current.flush();
+    if (queuedItems.length > 0) {
+      void executeJournalDeletions(queuedItems);
+    }
     onClose();
-  }, [commit, onClose]);
+  }, [executeJournalDeletions, onClose]);
 
-  const erase = useCallback(
-    (key: string) => {
-      queue.current.erase(key, Date.now());
-      scene.current?.erase(key);
-      sound.current?.erase();
-      setErased((current) => new Set(current).add(key));
-      setPending({ key, left: RESTORE_WINDOW_S });
-      setSelected(null);
-      scene.current?.select(null);
-    },
-    [],
-  );
+  const dispatchMemoryErase = useCallback((key: string) => {
+    eraseBufferRef.current.erase(key, Date.now());
+    sceneInstanceRef.current?.erase(key);
+    audioSynthRef.current?.erase();
+    setErasedKeysSet((prev) => new Set(prev).add(key));
+    setPendingEraseItem({ key, left: RESTORE_WINDOW_S });
+    setSelectedMemoryKey(null);
+    sceneInstanceRef.current?.select(null);
+  }, []);
 
-  const restore = useCallback((key: string) => {
-    if (!queue.current.restore(key)) return;
-    scene.current?.restore(key);
-    sound.current?.restore();
-    setErased((current) => {
-      const next = new Set(current);
+  const dispatchMemoryRestore = useCallback((key: string) => {
+    if (!eraseBufferRef.current.restore(key)) return;
+    sceneInstanceRef.current?.restore(key);
+    audioSynthRef.current?.restore();
+    setErasedKeysSet((prev) => {
+      const next = new Set(prev);
       next.delete(key);
       return next;
     });
-    setPending(null);
+    setPendingEraseItem(null);
   }, []);
 
-  // --- reading the selected memory -------------------------------------------
+  // Inspect selected memory details
   useEffect(() => {
-    if (!selected) {
-      setReading(null);
+    if (!selectedMemoryKey) {
+      setActiveInspection(null);
       return;
     }
-    const memory = byKey.get(selected);
-    if (!memory) return;
-    if (memory.kind === "note") {
-      const note = notes.get(memory.id);
-      setReading(note ? { state: "note", note } : { state: "missing" });
-      return;
-    }
-    setReading({ state: "loading" });
-    let cancelled = false;
-    getStudySession(memory.id)
-      .then((detail) => !cancelled && setReading(detail ? { state: "session", detail } : { state: "missing" }))
-      .catch(() => !cancelled && setReading({ state: "missing" }));
-    return () => {
-      cancelled = true;
-    };
-  }, [selected, byKey, notes]);
 
-  const sizeNow = useRef(size);
-  sizeNow.current = size;
-  // Stable, so the index, the reader and the timeline below are not redrawn
-  // just because the lab around them was.
-  const choose = useCallback((key: string | null) => {
-    setSelected(key);
-    scene.current?.select(key);
-    if (key === null) setWide(false);
-    // On a small screen the rail folds away once something is picked from it.
-    if (key !== null && sizeNow.current === "compact") setRailOpen(false);
+    const targetMemory = memoryLookupMap.get(selectedMemoryKey);
+    if (!targetMemory) return;
+
+    if (targetMemory.kind === "note") {
+      const studyNote = cachedNotesMap.get(targetMemory.id);
+      setActiveInspection(studyNote ? { state: "note", note: studyNote } : { state: "missing" });
+      return;
+    }
+
+    setActiveInspection({ state: "loading" });
+    let isStale = false;
+
+    getStudySession(targetMemory.id)
+      .then((sessionData) => {
+        if (!isStale) {
+          setActiveInspection(
+            sessionData ? { state: "session", detail: sessionData } : { state: "missing" },
+          );
+        }
+      })
+      .catch(() => {
+        if (!isStale) setActiveInspection({ state: "missing" });
+      });
+
+    return () => {
+      isStale = true;
+    };
+  }, [selectedMemoryKey, memoryLookupMap, cachedNotesMap]);
+
+  const activeTierTracker = useRef(currentTier);
+  activeTierTracker.current = currentTier;
+
+  const selectMemoryItem = useCallback((key: string | null) => {
+    setSelectedMemoryKey(key);
+    sceneInstanceRef.current?.select(key);
+    if (key === null) {
+      setIsExpandedReader(false);
+    }
+    if (key !== null && activeTierTracker.current === "compact") {
+      setIsRailNavOpen(false);
+    }
   }, []);
-  const toggleWide = useCallback(() => setWide((w) => !w), []);
-  const holdStart = useCallback(() => {
-    setHolding(true);
-    sound.current?.holdStart();
+
+  const toggleExpandedReader = useCallback(() => setIsExpandedReader((exp) => !exp), []);
+
+  const onHoldBegin = useCallback(() => {
+    setIsHoldingErase(true);
+    audioSynthRef.current?.holdStart();
   }, []);
-  const holdEnd = useCallback(() => {
-    setHolding(false);
-    sound.current?.holdEnd();
+
+  const onHoldCancel = useCallback(() => {
+    setIsHoldingErase(false);
+    audioSynthRef.current?.holdEnd();
   }, []);
-  const holdDone = useCallback(
+
+  const onHoldCompleted = useCallback(
     (key: string) => {
-      setHolding(false);
-      sound.current?.holdEnd();
-      erase(key);
+      setIsHoldingErase(false);
+      audioSynthRef.current?.holdEnd();
+      dispatchMemoryErase(key);
     },
-    [erase],
+    [dispatchMemoryErase],
   );
 
-  // --- the label that follows the pointed memory -----------------------------
-  // Reading large covers the brain, and a label pointing into it would float over the page.
-  const labelled = wide ? null : (hovered ?? selected);
+  // Floating memory pointer callout alignment
+  const activeFocusKey = isExpandedReader ? null : (hoveredMemoryKey ?? selectedMemoryKey);
+
   useEffect(() => {
-    let frame = 0;
-    const place = () => {
-      frame = requestAnimationFrame(place);
-      const element = callout.current;
-      if (!element) return;
-      const at = labelled ? scene.current?.screenPosition(labelled) : null;
-      if (!at) {
-        element.style.opacity = "0";
+    let animId = 0;
+    const alignCallout = () => {
+      animId = requestAnimationFrame(alignCallout);
+      const calloutEl = calloutTagRef.current;
+      if (!calloutEl) return;
+
+      const screenPos = activeFocusKey ? sceneInstanceRef.current?.screenPosition(activeFocusKey) : null;
+      if (!screenPos) {
+        calloutEl.style.opacity = "0";
         return;
       }
-      element.style.opacity = "1";
-      element.style.transform = `translate(${at.x}px, ${at.y}px)`;
-      const tag = element.querySelector<HTMLElement>(".ml-tag");
-      const frame_ = root.current?.getBoundingClientRect();
-      if (!tag || !frame_) return;
-      // The clear stretch between whatever stands on the left and the reader on the right.
-      // Only panels standing at a side count: the sheet a small screen reads in
-      // lies across the bottom, and the label is never beside it.
-      const standing = (panel: HTMLElement | null): DOMRect | null => {
+
+      calloutEl.style.opacity = "1";
+      calloutEl.style.transform = `translate(${screenPos.x}px, ${screenPos.y}px)`;
+
+      const tagContainer = calloutEl.querySelector<HTMLElement>(".ml-tag");
+      const hostFrame = containerRootRef.current?.getBoundingClientRect();
+      if (!tagContainer || !hostFrame) return;
+
+      const getLateralPanelBounds = (panel: HTMLElement | null): DOMRect | null => {
         if (!panel || panel.offsetParent === null) return null;
         if (panel.classList.contains("ml-hidden") || panel.classList.contains("ml-wide")) return null;
-        const r = panel.getBoundingClientRect();
-        return r.width < frame_.width * 0.55 ? r : null;
+        const rect = panel.getBoundingClientRect();
+        return rect.width < hostFrame.width * 0.55 ? rect : null;
       };
-      let from = 0;
-      for (const panel of [bodyBox.current, left.current]) {
-        const r = standing(panel);
-        if (r) from = Math.max(from, r.right - frame_.left);
-      }
-      const reader = standing(right.current);
-      const to = reader ? reader.left - frame_.left : frame_.width;
-      const natural = Math.max(...[...tag.children].map((child) => child.scrollWidth)) + 32;
-      const placed = calloutPlacement(at.x, natural, from, to);
-      element.classList.toggle("ml-flip", placed.side === "left");
-      tag.style.maxWidth = `${placed.maxWidth}px`;
-    };
-    frame = requestAnimationFrame(place);
-    return () => cancelAnimationFrame(frame);
-  }, [labelled]);
 
-  // --- keys --------------------------------------------------------------
-  // Left and right walk the memories in the order they were made; Enter reads
-  // the open one large; Escape steps back one thing at a time.
-  const liveKeys = useMemo(() => live.map((m) => m.key), [live]);
+      let minLeftBound = 0;
+      for (const p of [avatarContainerRef.current, leftPanelRef.current]) {
+        const bounds = getLateralPanelBounds(p);
+        if (bounds) {
+          minLeftBound = Math.max(minLeftBound, bounds.right - hostFrame.left);
+        }
+      }
+
+      const readerBounds = getLateralPanelBounds(rightPanelRef.current);
+      const maxRightBound = readerBounds ? readerBounds.left - hostFrame.left : hostFrame.width;
+      const naturalTagWidth =
+        Math.max(...[...tagContainer.children].map((child) => child.scrollWidth)) + 32;
+
+      const placement = calloutPlacement(screenPos.x, naturalTagWidth, minLeftBound, maxRightBound);
+      calloutEl.classList.toggle("ml-flip", placement.side === "left");
+      tagContainer.style.maxWidth = `${placement.maxWidth}px`;
+    };
+
+    animId = requestAnimationFrame(alignCallout);
+    return () => cancelAnimationFrame(animId);
+  }, [activeFocusKey]);
+
+  // Global hotkeys
+  const activeKeysList = useMemo(
+    () => availableLiveMemories.map((m) => m.key),
+    [availableLiveMemories],
+  );
+
   useEffect(() => {
-    const onKey = (event: KeyboardEvent) => {
-      if (event.ctrlKey || event.altKey || event.metaKey) return;
-      // While the guide is open it has the keys: Escape closes it, nothing else moves behind it.
-      if (help) {
-        if (event.key === "Escape" || event.key === "?") setHelp(false);
+    const handleGlobalKeyDown = (evt: KeyboardEvent) => {
+      if (evt.ctrlKey || evt.altKey || evt.metaKey) return;
+
+      if (isHelpGuideVisible) {
+        if (evt.key === "Escape" || evt.key === "?") {
+          setIsHelpGuideVisible(false);
+        }
         return;
       }
-      if (event.key === "?") {
-        setHelp(true);
+
+      if (evt.key === "?") {
+        setIsHelpGuideVisible(true);
         return;
       }
-      const target = event.target as HTMLElement | null;
-      const typing = target?.closest?.("input, textarea, select, [contenteditable='true']");
-      if ((event.key === "ArrowLeft" || event.key === "ArrowRight") && !typing && !intro && !event.repeat) {
-        const next = stepMemory(liveKeys, selected, event.key === "ArrowLeft" ? -1 : 1);
-        if (next && next !== selected) choose(next);
-        event.preventDefault();
+
+      const targetTag = (evt.target as HTMLElement | null)?.closest?.(
+        "input, textarea, select, [contenteditable='true']",
+      );
+
+      if (
+        (evt.key === "ArrowLeft" || evt.key === "ArrowRight") &&
+        !targetTag &&
+        currentHoloPhase === "live" &&
+        !evt.repeat
+      ) {
+        const nextKey = stepMemory(activeKeysList, selectedMemoryKey, evt.key === "ArrowLeft" ? -1 : 1);
+        if (nextKey && nextKey !== selectedMemoryKey) {
+          selectMemoryItem(nextKey);
+        }
+        evt.preventDefault();
         return;
       }
-      // A focused button answers Enter itself.
-      if (event.key === "Enter" && selected && !typing && !target?.closest?.("button, a")) {
-        setWide((w) => !w);
-        event.preventDefault();
+
+      if (
+        evt.key === "Enter" &&
+        selectedMemoryKey &&
+        !targetTag &&
+        !(evt.target as HTMLElement | null)?.closest?.("button, a")
+      ) {
+        setIsExpandedReader((w) => !w);
+        evt.preventDefault();
         return;
       }
-      if (event.key === "Escape") {
-        if (wide) setWide(false);
-        else if (selected) choose(null);
-        else if (railOpen) setRailOpen(false);
-        else close();
+
+      if (evt.key === "Escape") {
+        if (isExpandedReader) {
+          setIsExpandedReader(false);
+        } else if (selectedMemoryKey) {
+          selectMemoryItem(null);
+        } else if (isRailNavOpen) {
+          setIsRailNavOpen(false);
+        } else {
+          handleLabDismissal();
+        }
       }
     };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+
+    window.addEventListener("keydown", handleGlobalKeyDown);
+    return () => window.removeEventListener("keydown", handleGlobalKeyDown);
   });
 
-  const total = memories?.length ?? 0;
-  // Without a hologram there is no opening sequence to wait for.
-  const intro = phase !== "live" && !noGraphics;
-  const notice = graphicsNotice(noGraphics, graphics);
-  const labelMemory = labelled ? byKey.get(labelled) : undefined;
-  const selectedMemory = selected ? byKey.get(selected) : undefined;
+  const totalRegisteredMemories = memoryList?.length ?? 0;
+  const isIntroSequenceActive = currentHoloPhase !== "live" && !isSoftwareOnlyFallback;
+  const advisoryStatusNotice = evaluateGraphicsAdvisory(isSoftwareOnlyFallback, hardwareGraphicsStatus);
+  const activeCalloutMemory = activeFocusKey ? memoryLookupMap.get(activeFocusKey) : undefined;
+  const inspectedMemoryRecord = selectedMemoryKey ? memoryLookupMap.get(selectedMemoryKey) : undefined;
 
   return (
     <div
-      ref={root}
-      className={`ml-root ${focus ? "ml-focus" : ""}`}
-      data-size={size}
+      ref={containerRootRef}
+      className={`ml-root ${isFocusReaderActive ? "ml-focus" : ""}`}
+      data-size={currentTier}
       role="dialog"
       aria-label="Study memory"
-      onPointerDown={() => sound.current?.resume()}
+      onPointerDown={() => audioSynthRef.current?.resume()}
       onClick={() => {
-        if (!intro) return;
-        scene.current?.skipIntro();
-        body.current?.skipIntro();
+        if (!isIntroSequenceActive) return;
+        sceneInstanceRef.current?.skipIntro();
+        avatarInstanceRef.current?.skipIntro();
       }}
     >
-      <div ref={stage} className="ml-stage" />
-      <div ref={bodyBox} className={`ml-body ${total > 0 && !noGraphics ? "" : "ml-hidden"}`}>
-        {selectedMemory && studied !== null && studied.length > 0 && (
+      <div ref={webglStageRef} className="ml-stage" />
+
+      <div
+        ref={avatarContainerRef}
+        className={`ml-body ${totalRegisteredMemories > 0 && !isSoftwareOnlyFallback ? "" : "ml-hidden"}`}
+      >
+        {inspectedMemoryRecord && associatedOrganList !== null && associatedOrganList.length > 0 && (
           <div className="ml-studied" aria-live="polite">
             <span>STUDIED IN THIS MEMORY</span>
-            <div className={`ml-studied-list ${allStudied ? "ml-all" : ""}`}>
-            {(allStudied ? studied : studied.slice(0, studiedRows)).map((organ) => (
-              <button
-                type="button"
-                key={organ.id}
-                className={organ.id === pickedOrgan ? "ml-on" : ""}
-                aria-pressed={organ.id === pinnedOrgan}
-                title={organ.id === pinnedOrgan ? "Show them all again" : "Show it alone in the figure"}
-                onPointerEnter={() => pointOrgan(organ.id)}
-                onPointerLeave={() => setPointedOrgan(null)}
-                onFocus={() => pointOrgan(organ.id)}
-                onBlur={() => setPointedOrgan(null)}
-                onClick={() => setPinnedOrgan((id) => (id === organ.id ? null : organ.id))}
-              >
-                {organ.name}
-              </button>
-            ))}
+            <div className={`ml-studied-list ${isAllOrgansUnfolded ? "ml-all" : ""}`}>
+              {(isAllOrgansUnfolded
+                ? associatedOrganList
+                : associatedOrganList.slice(0, visibleOrganRowCount)
+              ).map((organ) => (
+                <button
+                  type="button"
+                  key={organ.id}
+                  className={organ.id === activeHighlightedOrgan ? "ml-on" : ""}
+                  aria-pressed={organ.id === pinnedOrganNode}
+                  title={
+                    organ.id === pinnedOrganNode
+                      ? "Show them all again"
+                      : "Show it alone in the figure"
+                  }
+                  onPointerEnter={() => handleOrganHover(organ.id)}
+                  onPointerLeave={() => setHoveredOrganNode(null)}
+                  onFocus={() => handleOrganHover(organ.id)}
+                  onBlur={() => setHoveredOrganNode(null)}
+                  onClick={() =>
+                    setPinnedOrganNode((prev) => (prev === organ.id ? null : organ.id))
+                  }
+                >
+                  {organ.name}
+                </button>
+              ))}
             </div>
+
             <div className="ml-studied-tools">
-              {studied.length > studiedRows && (
-                <button type="button" className="ml-tool" aria-expanded={allStudied} onClick={() => setAllStudied((all) => !all)}>
-                  {allStudied ? "SHOW FEWER" : `+${studied.length - studiedRows} MORE`}
+              {associatedOrganList.length > visibleOrganRowCount && (
+                <button
+                  type="button"
+                  className="ml-tool"
+                  aria-expanded={isAllOrgansUnfolded}
+                  onClick={() => setIsAllOrgansUnfolded((all) => !all)}
+                >
+                  {isAllOrgansUnfolded
+                    ? "SHOW FEWER"
+                    : `+${associatedOrganList.length - visibleOrganRowCount} MORE`}
                 </button>
               )}
               <button
                 type="button"
                 className="ml-tool"
-                aria-pressed={zoomed}
+                aria-pressed={isOrganCameraZoomed}
                 title={
-                  zoomed
+                  isOrganCameraZoomed
                     ? "Back to the whole figure"
-                    : pinnedOrgan
+                    : pinnedOrganNode
                       ? "Move in on the chosen structure"
                       : "Move in on what was studied — click a name first to go to that one"
                 }
                 onClick={() => {
-                  // Moving in folds the list away, so the names do not stand over what is being looked at.
-                  if (!zoomed) setAllStudied(false);
-                  setZoomed(!zoomed);
+                  if (!isOrganCameraZoomed) {
+                    setIsAllOrgansUnfolded(false);
+                  }
+                  setIsOrganCameraZoomed(!isOrganCameraZoomed);
                 }}
               >
-                {zoomed ? "⊖ WHOLE BODY" : "⊕ ZOOM IN"}
+                {isOrganCameraZoomed ? "⊖ WHOLE BODY" : "⊕ ZOOM IN"}
               </button>
             </div>
           </div>
         )}
-        {selectedMemory && studied === null && (
+
+        {inspectedMemoryRecord && associatedOrganList === null && (
           <div className="ml-studied">
             <span>LOCATING…</span>
           </div>
@@ -672,17 +814,19 @@ export function MemoryLab({ onClose }: { onClose: () => void }) {
       </div>
 
       <div className="ml-hud">
-        <header ref={head} className="ml-head">
+        <header ref={headerRef} className="ml-head">
           <div className="ml-title">STUDY MEMORY</div>
-          <div className="ml-sub">YOUR JOURNAL · {live.length} MEMORIES · STORED ON THIS COMPUTER</div>
-
+          <div className="ml-sub">
+            YOUR JOURNAL · {availableLiveMemories.length} MEMORIES · STORED ON THIS COMPUTER
+          </div>
         </header>
+
         <div className="ml-corner">
           <button
             type="button"
-            className={`ml-help-toggle ${help ? "ml-on" : ""}`}
-            onClick={() => setHelp((open) => !open)}
-            aria-expanded={help}
+            className={`ml-help-toggle ${isHelpGuideVisible ? "ml-on" : ""}`}
+            onClick={() => setIsHelpGuideVisible((v) => !v)}
+            aria-expanded={isHelpGuideVisible}
             aria-label="How this screen works"
             title="How this screen works (?)"
           >
@@ -690,20 +834,24 @@ export function MemoryLab({ onClose }: { onClose: () => void }) {
           </button>
           <button
             type="button"
-            className={`ml-focus-toggle ${focus ? "ml-on" : ""}`}
-            onClick={() => setFocusMode((on) => !on)}
-            aria-pressed={focus}
-            title={focus ? "Bring the film texture back" : "Clear the film texture and sharpen the text for reading"}
+            className={`ml-focus-toggle ${isFocusReaderActive ? "ml-on" : ""}`}
+            onClick={() => setIsFocusReaderActive((active) => !active)}
+            aria-pressed={isFocusReaderActive}
+            title={
+              isFocusReaderActive
+                ? "Bring the film texture back"
+                : "Clear the film texture and sharpen the text for reading"
+            }
           >
             <i aria-hidden>◎</i>
-            FOCUS {focus ? "ON" : "OFF"}
+            FOCUS {isFocusReaderActive ? "ON" : "OFF"}
           </button>
           <button
             type="button"
-            className={`ml-sound ${soundOn ? "ml-on" : ""}`}
-            onClick={() => setSoundOn((on) => !on)}
-            aria-pressed={soundOn}
-            title={soundOn ? "Turn the lab's sound off" : "Turn the lab's sound on"}
+            className={`ml-sound ${isAudioEnabled ? "ml-on" : ""}`}
+            onClick={() => setIsAudioEnabled((enabled) => !enabled)}
+            aria-pressed={isAudioEnabled}
+            title={isAudioEnabled ? "Turn the lab's sound off" : "Turn the lab's sound on"}
           >
             <i aria-hidden>
               <b />
@@ -711,127 +859,156 @@ export function MemoryLab({ onClose }: { onClose: () => void }) {
               <b />
               <b />
             </i>
-            SOUND {soundOn ? "ON" : "OFF"}
+            SOUND {isAudioEnabled ? "ON" : "OFF"}
           </button>
-          <button type="button" className="ml-exit" onClick={close}>
+          <button type="button" className="ml-exit" onClick={handleLabDismissal}>
             EXIT <span aria-hidden>✕</span>
           </button>
         </div>
 
-        {memories && memories.length === 0 && (
+        {memoryList && memoryList.length === 0 && (
           <div className="ml-empty">
             <b>NO MEMORIES YET</b>
-            Every conversation with the assistant, every case and every note you keep becomes a memory here.
+            Every conversation with the assistant, every case and every note you keep becomes a
+            memory here.
           </div>
         )}
 
-        {total > 0 && (
+        {totalRegisteredMemories > 0 && (
           <>
-            {!intro && (
+            {!isIntroSequenceActive && (
               <button
                 type="button"
-                className={`ml-rail ${railOpen ? "ml-on" : ""}`}
-                onClick={() => setRailOpen((open) => !open)}
-                aria-expanded={railOpen}
+                className={`ml-rail ${isRailNavOpen ? "ml-on" : ""}`}
+                onClick={() => setIsRailNavOpen((open) => !open)}
+                aria-expanded={isRailNavOpen}
               >
-                <span aria-hidden>{railOpen ? "▴" : "▾"}</span> MEMORY INDEX · {live.length}
+                <span aria-hidden>{isRailNavOpen ? "▴" : "▾"}</span> MEMORY INDEX ·{" "}
+                {availableLiveMemories.length}
               </button>
             )}
+
             <section
-              ref={left}
+              ref={leftPanelRef}
               className={`ml-panel ml-left ${
-                intro || !railOpen ? "ml-hidden" : ""
+                isIntroSequenceActive || !isRailNavOpen ? "ml-hidden" : ""
               }`}
             >
-              <MemoryIndex live={live} selected={selected} onChoose={choose} />
+              <MemoryIndex
+                live={availableLiveMemories}
+                selected={selectedMemoryKey}
+                onChoose={selectMemoryItem}
+              />
             </section>
 
             <section
-              ref={right}
-              className={`ml-panel ml-right ${selectedMemory ? "" : "ml-hidden"} ${wide ? "ml-wide" : ""}`}
+              ref={rightPanelRef}
+              className={`ml-panel ml-right ${inspectedMemoryRecord ? "" : "ml-hidden"} ${
+                isExpandedReader ? "ml-wide" : ""
+              }`}
               aria-live="polite"
             >
-              {selectedMemory && (
+              {inspectedMemoryRecord && (
                 <MemoryReader
-                  memory={selectedMemory}
-                  reading={reading}
-                  wide={wide}
-                  holding={holding}
-                  onToggleWide={toggleWide}
-                  onClose={choose}
-                  onHoldStart={holdStart}
-                  onHoldEnd={holdEnd}
-                  onHoldDone={holdDone}
+                  memory={inspectedMemoryRecord}
+                  reading={activeInspection}
+                  wide={isExpandedReader}
+                  holding={isHoldingErase}
+                  onToggleWide={toggleExpandedReader}
+                  onClose={selectMemoryItem}
+                  onHoldStart={onHoldBegin}
+                  onHoldEnd={onHoldCancel}
+                  onHoldDone={onHoldCompleted}
                 />
               )}
             </section>
 
-            <footer ref={footer} className="ml-bottom">
-              {intro ? (
+            <footer ref={footerRef} className="ml-bottom">
+              {isIntroSequenceActive ? (
                 <>
                   <div className="ml-row">
                     <div className="ml-status">
-                      {phase === "boot" &&
-                        (slowLoad ? "STILL LOADING · THIS COMPUTER IS TAKING LONGER THAN USUAL" : "ACCESSING STUDY MEMORY")}
-                      {phase === "deploy" && "DEPLOYING HOLOGRAPHIC PROJECTION"}
-                      {phase === "materialize" && "RECONSTRUCTING NEURAL SURFACE"}
-                      {phase === "mapping" && `MAPPING STUDY MEMORY · ${byKey.get(memories![Math.max(0, mapped - 1)]!.key)?.title.toUpperCase() ?? ""}`}
+                      {currentHoloPhase === "boot" &&
+                        (isSlowInitialLoad
+                          ? "STILL LOADING · THIS COMPUTER IS TAKING LONGER THAN USUAL"
+                          : "ACCESSING STUDY MEMORY")}
+                      {currentHoloPhase === "deploy" && "DEPLOYING HOLOGRAPHIC PROJECTION"}
+                      {currentHoloPhase === "materialize" && "RECONSTRUCTING NEURAL SURFACE"}
+                      {currentHoloPhase === "mapping" &&
+                        `MAPPING STUDY MEMORY · ${
+                          memoryLookupMap
+                            .get(memoryList![Math.max(0, mappedMemoryCount - 1)]!.key)
+                            ?.title.toUpperCase() ?? ""
+                        }`}
                     </div>
                     <div className="ml-percent">
-                      {mapped}
-                      <small>/ {total} MAPPED</small>
+                      {mappedMemoryCount}
+                      <small>/ {totalRegisteredMemories} MAPPED</small>
                     </div>
                   </div>
                   <div className="ml-bar">
-                    <i style={{ width: `${(mapped / total) * 100}%` }} />
+                    <i
+                      style={{
+                        width: `${(mappedMemoryCount / totalRegisteredMemories) * 100}%`,
+                      }}
+                    />
                   </div>
                   <div className="ml-skip">CLICK TO SKIP</div>
                 </>
               ) : (
-                <Timeline memories={memories!} erased={erased} selected={selected} onChoose={choose} onHover={setHovered} />
+                <Timeline
+                  memories={memoryList!}
+                  erased={erasedKeysSet}
+                  selected={selectedMemoryKey}
+                  onChoose={selectMemoryItem}
+                  onHover={setHoveredMemoryKey}
+                />
               )}
             </footer>
           </>
         )}
 
-        <div ref={callout} className="ml-callout" aria-hidden>
+        <div ref={calloutTagRef} className="ml-callout" aria-hidden>
           <svg width="160" height="60">
             <circle cx="0" cy="0" r="9" />
             <polyline points="0,0 34,-30 150,-30" />
           </svg>
-          {labelMemory && (
+          {activeCalloutMemory && (
             <div className="ml-tag">
-              <b>{labelMemory.title}</b>
+              <b>{activeCalloutMemory.title}</b>
               <span>
-                {KIND_LABEL[labelMemory.kind]} · {when(labelMemory.at)}
+                {CLASSIFICATION_TITLES[activeCalloutMemory.kind]} ·{" "}
+                {formatEpochTimestamp(activeCalloutMemory.at)}
               </span>
             </div>
           )}
         </div>
 
-        {help && <LabHelp onClose={() => setHelp(false)} />}
+        {isHelpGuideVisible && <LabHelp onClose={() => setIsHelpGuideVisible(false)} />}
 
-        {pending && (
+        {pendingEraseItem && (
           <div className="ml-toast" role="status">
             <span>MEMORY ERASED</span>
-            <button type="button" onClick={() => restore(pending.key)}>
-              RESTORE ({pending.left})
+            <button type="button" onClick={() => dispatchMemoryRestore(pendingEraseItem.key)}>
+              RESTORE ({pendingEraseItem.left})
             </button>
           </div>
         )}
-        {notice && !error && (
+
+        {advisoryStatusNotice && !displayErrorMessage && (
           <div className="ml-notice" role="status">
-            {notice}
+            {advisoryStatusNotice}
           </div>
         )}
-        {error && (
+
+        {displayErrorMessage && (
           <div className="ml-error" role="alert">
-            <span>{error}</span>
+            <span>{displayErrorMessage}</span>
             <button
               type="button"
               onClick={() => {
-                setError(null);
-                setAttempt((n) => n + 1);
+                setDisplayErrorMessage(null);
+                setReconnectAttempts((prev) => prev + 1);
               }}
             >
               RETRY
@@ -843,24 +1020,23 @@ export function MemoryLab({ onClose }: { onClose: () => void }) {
   );
 }
 
-/**
- * The pieces below are drawn only when what they show changes.
- *
- * Pointing at a memory changes one thing — the label that follows it — and it
- * used to redraw everything: the index, the reader with its Markdown, and a
- * button per memory along the timeline. That took long enough to drop frames,
- * and on a variable-refresh monitor a dropped frame is a visible blink.
- */
-
-/** One control and what it does. */
-const HELP: readonly { title: string; items: readonly (readonly [string, string])[] }[] = [
+const CONTROL_GUIDE_CATALOG: readonly {
+  title: string;
+  items: readonly (readonly [string, string])[];
+}[] = [
   {
     title: "THE BRAIN",
     items: [
-      ["Point at a light", "Every light is a memory: cyan a study session, amber a case visit, violet a note. Pointing names it."],
+      [
+        "Point at a light",
+        "Every light is a memory: cyan a study session, amber a case visit, violet a note. Pointing names it.",
+      ],
       ["Click a light", "Opens that memory in the reader on the right."],
       ["Drag", "Turns the brain."],
-      ["The strip at the bottom", "Every memory in the order you made it. Point or click, the same as on the brain."],
+      [
+        "The strip at the bottom",
+        "Every memory in the order you made it. Point or click, the same as on the brain.",
+      ],
     ],
   },
   {
@@ -868,7 +1044,10 @@ const HELP: readonly { title: string; items: readonly (readonly [string, string]
     items: [
       ["← →", "The previous or next memory, in the order you made them."],
       ["Enter", "Reads the open memory large, or back at the side."],
-      ["Esc", "Steps back one thing at a time — the large reader, the memory, the index — and then leaves."],
+      [
+        "Esc",
+        "Steps back one thing at a time — the large reader, the memory, the index — and then leaves.",
+      ],
       ["?", "Opens and closes this guide."],
     ],
   },
@@ -877,16 +1056,28 @@ const HELP: readonly { title: string; items: readonly (readonly [string, string]
     items: [
       ["⤢ / ⤡", "Reads the memory large, or back at the side."],
       ["Close", "Puts the memory away."],
-      ["Hold to erase", "Hold until the bar fills. The memory dissolves and Restore brings it back for eight seconds; after that it is deleted from your journal for good."],
+      [
+        "Hold to erase",
+        "Hold until the bar fills. The memory dissolves and Restore brings it back for eight seconds; after that it is deleted from your journal for good.",
+      ],
     ],
   },
   {
     title: "THE FIGURE",
     items: [
       ["Amber inside the body", "The structures the open memory was about, named underneath."],
-      ["Point at a name", "Shows that structure alone, the others dimmed. Click it to keep it so; click again to see them all."],
-      ["+ More / Show fewer", "Unfolds the rest of the list when there are more than the screen has room for."],
-      ["⊕ Zoom in / ⊖ Whole body", "Moves in on the chosen structure — or on all of them — and holds the figure still; drag to turn it. Whole body steps back."],
+      [
+        "Point at a name",
+        "Shows that structure alone, the others dimmed. Click it to keep it so; click again to see them all.",
+      ],
+      [
+        "+ More / Show fewer",
+        "Unfolds the rest of the list when there are more than the screen has room for.",
+      ],
+      [
+        "⊕ Zoom in / ⊖ Whole body",
+        "Moves in on the chosen structure — or on all of them — and holds the figure still; drag to turn it. Whole body steps back.",
+      ],
       ["Drag", "Turns the figure."],
     ],
   },
@@ -906,25 +1097,33 @@ const LabHelp = memo(function LabHelp({ onClose }: { onClose: () => void }) {
     <section className="ml-panel ml-help" role="dialog" aria-label="How this screen works">
       <h3>
         HOW THIS SCREEN WORKS
-        <button type="button" className="ml-expand" onClick={onClose} aria-label="Close the guide" title="Close (Esc)">
+        <button
+          type="button"
+          className="ml-expand"
+          onClick={onClose}
+          aria-label="Close the guide"
+          title="Close (Esc)"
+        >
           ✕
         </button>
       </h3>
       <div className="ml-help-body">
-        {HELP.map((group) => (
-          <div key={group.title} className="ml-help-group">
-            <h4>{group.title}</h4>
+        {CONTROL_GUIDE_CATALOG.map((section) => (
+          <div key={section.title} className="ml-help-group">
+            <h4>{section.title}</h4>
             <dl>
-              {group.items.map(([control, what]) => (
-                <div key={control}>
-                  <dt>{control}</dt>
-                  <dd>{what}</dd>
+              {section.items.map(([shortcut, description]) => (
+                <div key={shortcut}>
+                  <dt>{shortcut}</dt>
+                  <dd>{description}</dd>
                 </div>
               ))}
             </dl>
           </div>
         ))}
-        <p className="ml-help-foot">Everything here is read from this computer; nothing is sent anywhere.</p>
+        <p className="ml-help-foot">
+          Everything here is read from this computer; nothing is sent anywhere.
+        </p>
       </div>
     </section>
   );
@@ -939,10 +1138,11 @@ const MemoryIndex = memo(function MemoryIndex({
   selected: string | null;
   onChoose: (key: string | null) => void;
 }) {
-  const counts = useMemo(() => tally(live), [live]);
-  const months = useMemo(() => byMonth(live), [live]);
-  const busiest = Math.max(1, ...months.map((m) => m.count));
-  const recent = useMemo(() => [...live].reverse().slice(0, 12), [live]);
+  const kindTally = useMemo(() => tally(live), [live]);
+  const monthDist = useMemo(() => byMonth(live), [live]);
+  const maxBucketCount = Math.max(1, ...monthDist.map((m) => m.count));
+  const recentHistory = useMemo(() => [...live].reverse().slice(0, 12), [live]);
+
   return (
     <>
       <h3>
@@ -951,27 +1151,31 @@ const MemoryIndex = memo(function MemoryIndex({
       {(["session", "case", "note"] as const).map((kind) => (
         <div key={kind} className="ml-count">
           <i className={`ml-dot ml-${kind}`} />
-          <span>{KIND_LABEL[kind]}S</span>
-          <b>{counts[kind]}</b>
+          <span>{CLASSIFICATION_TITLES[kind]}S</span>
+          <b>{kindTally[kind]}</b>
         </div>
       ))}
       <h3 className="ml-gap">BY MONTH</h3>
       <div className="ml-months">
-        {months.map((m) => (
+        {monthDist.map((m) => (
           <div key={m.month} className="ml-month" title={`${m.month}: ${m.count}`}>
-            <i style={{ height: `${(m.count / busiest) * 100}%` }} />
+            <i style={{ height: `${(m.count / maxBucketCount) * 100}%` }} />
           </div>
         ))}
       </div>
       <div className="ml-months-scale">
-        <span>{months[0]?.month}</span>
-        <span>{months[months.length - 1]?.month}</span>
+        <span>{monthDist[0]?.month}</span>
+        <span>{monthDist[monthDist.length - 1]?.month}</span>
       </div>
       <h3 className="ml-gap">RECENT</h3>
       <ol className="ml-recent">
-        {recent.map((m) => (
+        {recentHistory.map((m) => (
           <li key={m.key}>
-            <button type="button" onClick={() => onChoose(m.key)} className={m.key === selected ? "ml-on" : ""}>
+            <button
+              type="button"
+              onClick={() => onChoose(m.key)}
+              className={m.key === selected ? "ml-on" : ""}
+            >
               <i className={`ml-dot ml-${m.kind}`} />
               <em>{m.title}</em>
             </button>
@@ -994,7 +1198,7 @@ const MemoryReader = memo(function MemoryReader({
   onHoldDone,
 }: {
   memory: Memory;
-  reading: Reading | null;
+  reading: MemoryInspectionState | null;
   wide: boolean;
   holding: boolean;
   onToggleWide: () => void;
@@ -1006,7 +1210,7 @@ const MemoryReader = memo(function MemoryReader({
   return (
     <>
       <h3>
-        {KIND_LABEL[memory.kind]} <span>{when(memory.at)}</span>
+        {CLASSIFICATION_TITLES[memory.kind]} <span>{formatEpochTimestamp(memory.at)}</span>
         <button
           type="button"
           className="ml-expand"
@@ -1020,7 +1224,9 @@ const MemoryReader = memo(function MemoryReader({
       <div className="ml-reading-title">{memory.title}</div>
       <div className="ml-reading">
         {reading?.state === "loading" && <p className="ml-faint">RECALLING…</p>}
-        {reading?.state === "missing" && <p className="ml-faint">This memory is no longer in the journal.</p>}
+        {reading?.state === "missing" && (
+          <p className="ml-faint">This memory is no longer in the journal.</p>
+        )}
         {reading?.state === "note" && <p className="ml-note">{stripOrganRefs(reading.note.body)}</p>}
         {reading?.state === "session" && (
           <>
@@ -1030,15 +1236,13 @@ const MemoryReader = memo(function MemoryReader({
                 {reading.detail.session.verdict ? ` · ${reading.detail.session.verdict}` : ""}
               </p>
             )}
-            {reading.detail.messages.map((message, i) => (
-              <div key={i} className={`ml-message ml-${message.role}`}>
-                <span>{message.role === "user" ? "YOU" : "ASSISTANT"}</span>
-                {message.role === "assistant" ? (
-                  // The lab does not link into the atlas, so the answer's
-                  // structure markers are taken out rather than shown raw.
-                  <Markdown structurePins={false}>{stripOrganRefs(message.content)}</Markdown>
+            {reading.detail.messages.map((msg, idx) => (
+              <div key={idx} className={`ml-message ml-${msg.role}`}>
+                <span>{msg.role === "user" ? "YOU" : "ASSISTANT"}</span>
+                {msg.role === "assistant" ? (
+                  <Markdown structurePins={false}>{stripOrganRefs(msg.content)}</Markdown>
                 ) : (
-                  <p>{message.content}</p>
+                  <p>{msg.content}</p>
                 )}
               </div>
             ))}
@@ -1052,7 +1256,7 @@ const MemoryReader = memo(function MemoryReader({
         <button
           type="button"
           className={`ml-erase ${holding ? "ml-holding" : ""}`}
-          style={{ ["--ml-hold" as string]: `${HOLD_MS}ms` }}
+          style={{ ["--ml-hold" as string]: `${ERASE_HOLD_DURATION_MS}ms` }}
           onPointerDown={onHoldStart}
           onPointerUp={onHoldEnd}
           onPointerLeave={onHoldEnd}
@@ -1067,10 +1271,6 @@ const MemoryReader = memo(function MemoryReader({
   );
 });
 
-/**
- * One button per memory, in the order they were made. The pointer is read once
- * on the strip rather than by a pair of handlers per button.
- */
 const Timeline = memo(function Timeline({
   memories,
   erased,
@@ -1084,28 +1284,31 @@ const Timeline = memo(function Timeline({
   onChoose: (key: string | null) => void;
   onHover: (key: string | null) => void;
 }) {
-  const keyOf = (target: EventTarget | null) => {
-    const key = (target as HTMLElement | null)?.closest<HTMLElement>(".ml-tick")?.dataset.key;
-    return key && !erased.has(key) ? key : null;
+  const extractKeyFromEvent = (evtTarget: EventTarget | null) => {
+    const tickKey = (evtTarget as HTMLElement | null)?.closest<HTMLElement>(".ml-tick")?.dataset.key;
+    return tickKey && !erased.has(tickKey) ? tickKey : null;
   };
+
   return (
     <div
       className="ml-timeline"
       aria-label="Memories in the order they were made"
-      onClick={(event) => {
-        const key = keyOf(event.target);
-        if (key) onChoose(key);
+      onClick={(e) => {
+        const foundKey = extractKeyFromEvent(e.target);
+        if (foundKey) onChoose(foundKey);
       }}
-      onMouseOver={(event) => onHover(keyOf(event.target))}
+      onMouseOver={(e) => onHover(extractKeyFromEvent(e.target))}
       onMouseLeave={() => onHover(null)}
     >
-      {memories.map((m) => (
+      {memories.map((entry) => (
         <button
           type="button"
-          key={m.key}
-          data-key={m.key}
-          className={`ml-tick ml-${m.kind} ${erased.has(m.key) ? "ml-gone" : ""} ${m.key === selected ? "ml-on" : ""}`}
-          aria-label={`${m.title}, ${when(m.at)}`}
+          key={entry.key}
+          data-key={entry.key}
+          className={`ml-tick ml-${entry.kind} ${erased.has(entry.key) ? "ml-gone" : ""} ${
+            entry.key === selected ? "ml-on" : ""
+          }`}
+          aria-label={`${entry.title}, ${formatEpochTimestamp(entry.at)}`}
         />
       ))}
     </div>

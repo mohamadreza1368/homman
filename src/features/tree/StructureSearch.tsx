@@ -4,58 +4,48 @@ import type { ManifestOrgan } from "@/lib/schemas";
 import { organLabel, useSceneStore } from "@/stores/sceneStore";
 import { useInterfaceLanguage } from "@/stores/interfaceLanguage";
 
-/** Enough to choose from without turning the panel into a scroll marathon. */
-const MAX_RESULTS = 40;
+const MAX_DISPLAY_MATCHES = 40;
 
 /**
- * Search every structure in the atlas, loaded or not.
- *
- * With ~2,400 structures across nine systems, browsing the tree stops being a
- * way to find anything specific. Searching covers the whole manifest rather
- * than the visible systems, because "where is the cornea?" is exactly the
- * question you ask *before* knowing which system to switch on — a result from a
- * hidden system says so and offers to load it.
- *
- * Matching runs over Latin and English together, so either nomenclature finds
- * the structure.
+ * Global search input querying all anatomical entities across loaded and unmounted systems.
  */
 export function StructureSearch() {
-  const fa = useInterfaceLanguage((s) => s.language === 'fa');
-  const organs = useSceneStore((s) => s.organs);
-  const hiddenSystems = useSceneStore((s) => s.hiddenSystems);
-  const selectOrgan = useSceneStore((s) => s.selectOrgan);
-  const setHovered = useSceneStore((s) => s.setHovered);
-  const applyCommand = useSceneStore((s) => s.applyCommand);
-  const toggleSystem = useSceneStore((s) => s.toggleSystem);
+  const isPersian = useInterfaceLanguage((state) => state.language === "fa");
+  const organInventory = useSceneStore((state) => state.organs);
+  const hiddenSystemsList = useSceneStore((state) => state.hiddenSystems);
+  const markOrganSelected = useSceneStore((state) => state.selectOrgan);
+  const setHoveredOrganId = useSceneStore((state) => state.setHovered);
+  const executeSceneCmd = useSceneStore((state) => state.applyCommand);
+  const toggleSystemVisibility = useSceneStore((state) => state.toggleSystem);
 
-  const [query, setQuery] = useState("");
-  const needle = query.trim().toLowerCase();
+  const [inputQuery, setInputQuery] = useState("");
+  const normalizedQuery = inputQuery.trim().toLowerCase();
 
-  const results = useMemo(() => {
-    if (needle.length < 2) return [];
-    const matches: ManifestOrgan[] = [];
-    for (const organ of Object.values(organs)) {
+  const matchingStructures = useMemo(() => {
+    if (normalizedQuery.length < 2) return [];
+
+    const matchedItems: ManifestOrgan[] = [];
+    for (const item of Object.values(organInventory)) {
       if (
-        organ.ta2_latin.toLowerCase().includes(needle) ||
-        organ.name_en.toLowerCase().includes(needle)
+        item.ta2_latin.toLowerCase().includes(normalizedQuery) ||
+        item.name_en.toLowerCase().includes(normalizedQuery)
       ) {
-        matches.push(organ);
+        matchedItems.push(item);
       }
     }
-    // Shortest name first: an near-exact term outranks the long compound names
-    // that merely contain it.
-    matches.sort((a, b) => a.ta2_latin.length - b.ta2_latin.length);
-    return matches;
-  }, [organs, needle]);
 
-  const shown = results.slice(0, MAX_RESULTS);
+    matchedItems.sort((first, second) => first.ta2_latin.length - second.ta2_latin.length);
+    return matchedItems;
+  }, [organInventory, normalizedQuery]);
 
-  function reveal(organ: ManifestOrgan) {
-    // A hit in a system that is switched off is useless until it is loaded, so
-    // selecting one turns its system on rather than quietly doing nothing.
-    if (hiddenSystems.includes(organ.system)) toggleSystem(organ.system);
-    selectOrgan(organ.organ_id);
-    applyCommand({ action: "focus_organ", organ_id: organ.organ_id });
+  const visibleMatches = matchingStructures.slice(0, MAX_DISPLAY_MATCHES);
+
+  function handleSelectStructure(organ: ManifestOrgan) {
+    if (hiddenSystemsList.includes(organ.system)) {
+      toggleSystemVisibility(organ.system);
+    }
+    markOrganSelected(organ.organ_id);
+    executeSceneCmd({ action: "focus_organ", organ_id: organ.organ_id });
   }
 
   return (
@@ -63,32 +53,34 @@ export function StructureSearch() {
       <div className="relative">
         <input
           type="search"
-          value={query}
-          onChange={(event) => setQuery(event.target.value)}
-          placeholder={fa ? 'جست‌وجوی ساختار به انگلیسی یا لاتین…' : 'Search all structures…'}
+          value={inputQuery}
+          onChange={(event) => setInputQuery(event.target.value)}
+          placeholder={isPersian ? "جست‌وجوی ساختار به انگلیسی یا لاتین…" : "Search all structures…"}
           className="w-full rounded border border-slate-700 bg-slate-950 px-2 py-1.5 pr-12 text-xs outline-none placeholder:text-slate-600 focus:border-sky-500"
         />
-        {needle.length >= 2 && (
+        {normalizedQuery.length >= 2 && (
           <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-slate-600">
-            {results.length}
+            {matchingStructures.length}
           </span>
         )}
       </div>
 
-      {needle.length >= 2 && (
+      {normalizedQuery.length >= 2 && (
         <div className="mt-1 max-h-64 overflow-y-auto rounded border border-slate-800 bg-slate-950/60">
-          {shown.length === 0 && (
-            <p className="px-2 py-2 text-[11px] text-slate-600">{fa ? 'ساختاری پیدا نشد.' : 'No structure matches.'}</p>
+          {visibleMatches.length === 0 && (
+            <p className="px-2 py-2 text-[11px] text-slate-600">
+              {isPersian ? "ساختاری پیدا نشد." : "No structure matches."}
+            </p>
           )}
-          {shown.map((organ) => {
-            const notLoaded = hiddenSystems.includes(organ.system);
+          {visibleMatches.map((organ) => {
+            const isSystemInactive = hiddenSystemsList.includes(organ.system);
             return (
               <button
                 key={organ.organ_id}
                 type="button"
-                onMouseEnter={() => !notLoaded && setHovered(organ.organ_id)}
-                onMouseLeave={() => setHovered(null)}
-                onClick={() => reveal(organ)}
+                onMouseEnter={() => !isSystemInactive && setHoveredOrganId(organ.organ_id)}
+                onMouseLeave={() => setHoveredOrganId(null)}
+                onClick={() => handleSelectStructure(organ)}
                 className="flex w-full flex-col items-start gap-0.5 border-b border-slate-900 px-2 py-1.5 text-left last:border-0 hover:bg-slate-800/60"
               >
                 {organ.path.length > 0 && (
@@ -105,20 +97,20 @@ export function StructureSearch() {
                   </span>
                   <span
                     className={`shrink-0 rounded px-1 text-[9px] ${
-                      notLoaded
+                      isSystemInactive
                         ? "bg-amber-500/15 text-amber-400"
                         : "bg-slate-800 text-slate-500"
                     }`}
                   >
-                    {notLoaded ? `load ${organ.system}` : organ.system}
+                    {isSystemInactive ? `load ${organ.system}` : organ.system}
                   </span>
                 </span>
               </button>
             );
           })}
-          {results.length > shown.length && (
+          {matchingStructures.length > visibleMatches.length && (
             <p className="px-2 py-1.5 text-[10px] text-slate-600">
-              {results.length - shown.length} more — narrow the search.
+              {matchingStructures.length - visibleMatches.length} more — narrow the search.
             </p>
           )}
         </div>

@@ -1,155 +1,190 @@
 import type { SessionSummary, StudyNote } from "@/lib/studyDb";
 
-/**
- * The study journal, read as a sequence of memories.
- *
- * Every conversation with the assistant, every case visit and every note is
- * one memory, and they are laid out in the order they happened. Nothing new is
- * stored: this is a way of looking at the journal, and erasing a memory is the
- * journal's own delete.
- */
-
 export type MemoryKind = "session" | "case" | "note";
 
 export interface Memory {
-  /** Unique across kinds: `session:<id>` or `note:<id>`. */
   key: string;
   kind: MemoryKind;
-  /** The journal's own id for it, to read it back or delete it. */
   id: string;
   title: string;
-  /** When it was first made, in milliseconds. */
   at: number;
-  /** How many structures it touched (sessions) or the one it is on (notes). */
   structures: number;
-  /** A line to show before it is opened. */
   preview: string;
 }
 
-const PREVIEW = 140;
+const PREVIEW_MAX_LEN = 140;
 
-function trimmed(text: string, length = PREVIEW): string {
-  const flat = text.replace(/\s+/g, " ").trim();
-  return flat.length > length ? `${flat.slice(0, length - 1)}…` : flat;
+function generateExcerpt(content: string, cap = PREVIEW_MAX_LEN): string {
+  const normalized = content.replace(/\s+/g, " ").trim();
+  if (normalized.length <= cap) {
+    return normalized;
+  }
+  return `${normalized.slice(0, cap - 1)}…`;
 }
 
-/** Oldest first: the path runs from the first thing studied to the last. */
-export function memoriesFrom(sessions: readonly SessionSummary[], notes: readonly StudyNote[]): Memory[] {
-  const out: Memory[] = [];
-  for (const session of sessions) {
-    out.push({
-      key: `session:${session.id}`,
-      kind: session.kind === "case" ? "case" : "session",
-      id: session.id,
-      title: session.title,
-      at: session.created_at,
-      structures: session.structure_count,
-      preview:
-        session.kind === "case" && session.score !== null
-          ? `Case visit · scored ${session.score}`
-          : `${session.message_count} messages · ${session.structure_count} structures`,
+/**
+ * Transforms study sessions and clinical notes into a chronologically ordered memory stream.
+ */
+export function memoriesFrom(
+  sessions: readonly SessionSummary[],
+  notes: readonly StudyNote[],
+): Memory[] {
+  const collection: Memory[] = [];
+
+  for (const sess of sessions) {
+    const isClinicalCase = sess.kind === "case";
+    let summaryText: string;
+
+    if (isClinicalCase && sess.score !== null) {
+      summaryText = `Case visit · scored ${sess.score}`;
+    } else {
+      summaryText = `${sess.message_count} messages · ${sess.structure_count} structures`;
+    }
+
+    collection.push({
+      key: `session:${sess.id}`,
+      kind: isClinicalCase ? "case" : "session",
+      id: sess.id,
+      title: sess.title,
+      at: sess.created_at,
+      structures: sess.structure_count,
+      preview: summaryText,
     });
   }
-  for (const note of notes) {
-    out.push({
-      key: `note:${note.id}`,
+
+  for (const entry of notes) {
+    collection.push({
+      key: `note:${entry.id}`,
       kind: "note",
-      id: String(note.id),
-      title: note.organ_label ? `Note on ${note.organ_label}` : "Note",
-      at: note.created_at,
-      structures: note.organ_id ? 1 : 0,
-      preview: trimmed(note.body),
+      id: String(entry.id),
+      title: entry.organ_label ? `Note on ${entry.organ_label}` : "Note",
+      at: entry.created_at,
+      structures: entry.organ_id ? 1 : 0,
+      preview: generateExcerpt(entry.body),
     });
   }
-  return out.sort((a, b) => a.at - b.at || a.key.localeCompare(b.key));
-}
 
-/** How many of each kind, for the counters. */
-export function tally(memories: readonly Memory[]): Record<MemoryKind, number> {
-  const counts: Record<MemoryKind, number> = { session: 0, case: 0, note: 0 };
-  for (const memory of memories) counts[memory.kind] += 1;
-  return counts;
+  return collection.sort((m1, m2) => m1.at - m2.at || m1.key.localeCompare(m2.key));
 }
 
 /**
- * Memories per month, oldest first, for the timeline's bars. A month with
- * nothing in it between the first and the last is still there, as zero, so the
- * gaps in someone's studying are visible rather than closed up.
+ * Aggregates frequency count by memory classification kind.
  */
-export function byMonth(memories: readonly Memory[]): { month: string; count: number }[] {
-  if (memories.length === 0) return [];
-  const key = (ms: number) => {
-    const d = new Date(ms);
-    return d.getFullYear() * 12 + d.getMonth();
+export function tally(records: readonly Memory[]): Record<MemoryKind, number> {
+  const summary: Record<MemoryKind, number> = { session: 0, case: 0, note: 0 };
+  for (const item of records) {
+    summary[item.kind] += 1;
+  }
+  return summary;
+}
+
+/**
+ * Produces an unbroken month-by-month distribution array between the oldest and newest memory.
+ */
+export function byMonth(records: readonly Memory[]): { month: string; count: number }[] {
+  if (records.length === 0) {
+    return [];
+  }
+
+  const computeMonthKey = (epochMs: number) => {
+    const dateObj = new Date(epochMs);
+    return dateObj.getFullYear() * 12 + dateObj.getMonth();
   };
-  const first = key(memories[0]!.at);
-  const last = key(memories[memories.length - 1]!.at);
-  const counts = new Map<number, number>();
-  for (const memory of memories) counts.set(key(memory.at), (counts.get(key(memory.at)) ?? 0) + 1);
-  const out: { month: string; count: number }[] = [];
-  for (let m = first; m <= last; m++) {
-    const label = new Date(Math.floor(m / 12), m % 12, 1).toLocaleDateString("en-GB", { month: "short", year: "2-digit" });
-    out.push({ month: label, count: counts.get(m) ?? 0 });
+
+  const startBucket = computeMonthKey(records[0]!.at);
+  const endBucket = computeMonthKey(records[records.length - 1]!.at);
+
+  const bucketCounts = new Map<number, number>();
+  for (const item of records) {
+    const bId = computeMonthKey(item.at);
+    bucketCounts.set(bId, (bucketCounts.get(bId) ?? 0) + 1);
   }
-  return out;
+
+  const timeline: { month: string; count: number }[] = [];
+  for (let idx = startBucket; idx <= endBucket; idx++) {
+    const epochDate = new Date(Math.floor(idx / 12), idx % 12, 1);
+    const labelStr = epochDate.toLocaleDateString("en-GB", { month: "short", year: "2-digit" });
+    timeline.push({
+      month: labelStr,
+      count: bucketCounts.get(idx) ?? 0,
+    });
+  }
+
+  return timeline;
 }
 
 /**
- * Where each memory sits on the cortex.
- *
- * The memories follow one path: a spiral that starts low at the back of the
- * brain and winds up and forward, two turns in all, so the order in which
- * things were studied can be read off the shape. Each step of the spiral is
- * pinned to the cortex point that lies most nearly in its direction.
- *
- * `surface` is a flat xyz list of candidate points in the brain's own space,
- * centred on the origin. Returns an index into it for each memory.
+ * Projects a sequence of memory indices onto closest coordinate points of a cerebral cortex mesh.
  */
-export function placeOnCortex(count: number, surface: ArrayLike<number>): number[] {
-  const points = Math.floor(surface.length / 3);
-  if (count === 0 || points === 0) return [];
-  const lengths = new Float32Array(points);
-  for (let p = 0; p < points; p++) {
-    lengths[p] = Math.hypot(surface[p * 3]!, surface[p * 3 + 1]!, surface[p * 3 + 2]!) || 1;
+export function placeOnCortex(count: number, surfaceCoordinates: ArrayLike<number>): number[] {
+  const vertexCount = Math.floor(surfaceCoordinates.length / 3);
+  if (count <= 0 || vertexCount <= 0) {
+    return [];
   }
-  const used = new Set<number>();
-  const out: number[] = [];
-  for (let i = 0; i < count; i++) {
-    const t = count === 1 ? 0.5 : i / (count - 1);
-    const height = -0.25 + t * 0.95;
-    const around = Math.PI + t * Math.PI * 4;
-    const ring = Math.sqrt(Math.max(0, 1 - height * height));
-    const dx = Math.sin(around) * ring;
-    const dy = height;
-    const dz = Math.cos(around) * ring;
-    let best = -1;
-    let bestScore = -Infinity;
-    for (let p = 0; p < points; p++) {
-      const score =
-        (surface[p * 3]! * dx + surface[p * 3 + 1]! * dy + surface[p * 3 + 2]! * dz) / lengths[p]! -
-        // Nudge two memories apart when they would share a point.
-        (used.has(p) ? 0.05 : 0);
-      if (score > bestScore) {
-        bestScore = score;
-        best = p;
+
+  const radii = new Float32Array(vertexCount);
+  for (let v = 0; v < vertexCount; v++) {
+    const vx = surfaceCoordinates[v * 3]!;
+    const vy = surfaceCoordinates[v * 3 + 1]!;
+    const vz = surfaceCoordinates[v * 3 + 2]!;
+    radii[v] = Math.hypot(vx, vy, vz) || 1;
+  }
+
+  const mappedIndices = new Set<number>();
+  const mapping: number[] = [];
+
+  for (let step = 0; step < count; step++) {
+    const progress = count === 1 ? 0.5 : step / (count - 1);
+    const elevation = -0.25 + progress * 0.95;
+    const azimuth = Math.PI + progress * Math.PI * 4;
+    const planarRadius = Math.sqrt(Math.max(0, 1 - elevation * elevation));
+
+    const targetDirX = Math.sin(azimuth) * planarRadius;
+    const targetDirY = elevation;
+    const targetDirZ = Math.cos(azimuth) * planarRadius;
+
+    let optimalVertex = -1;
+    let highestScore = -Infinity;
+
+    for (let v = 0; v < vertexCount; v++) {
+      const px = surfaceCoordinates[v * 3]!;
+      const py = surfaceCoordinates[v * 3 + 1]!;
+      const pz = surfaceCoordinates[v * 3 + 2]!;
+
+      const alignment = (px * targetDirX + py * targetDirY + pz * targetDirZ) / radii[v]!;
+      const penalty = mappedIndices.has(v) ? 0.05 : 0;
+      const finalScore = alignment - penalty;
+
+      if (finalScore > highestScore) {
+        highestScore = finalScore;
+        optimalVertex = v;
       }
     }
-    used.add(best);
-    out.push(best);
+
+    mappedIndices.add(optimalVertex);
+    mapping.push(optimalVertex);
   }
-  return out;
+
+  return mapping;
 }
 
 /**
- * The memory beside `current` in the order they were made, for the arrow keys.
- *
- * With nothing open, left starts from the newest and right from the oldest —
- * each from the end it points away from. At either end it stays put rather than
- * wrapping: jumping from the last memory back to the first reads as a mistake.
+ * Navigates linearly forwards or backwards across active memory keys without cyclic wrapping.
  */
-export function stepMemory(keys: readonly string[], current: string | null, direction: -1 | 1): string | null {
-  if (keys.length === 0) return null;
-  const at = current === null ? -1 : keys.indexOf(current);
-  if (at === -1) return direction === -1 ? keys[keys.length - 1]! : keys[0]!;
-  return keys[Math.min(keys.length - 1, Math.max(0, at + direction))]!;
+export function stepMemory(
+  orderedKeys: readonly string[],
+  activeKey: string | null,
+  offset: -1 | 1,
+): string | null {
+  if (orderedKeys.length === 0) {
+    return null;
+  }
+
+  const currentIndex = activeKey === null ? -1 : orderedKeys.indexOf(activeKey);
+  if (currentIndex === -1) {
+    return offset === -1 ? orderedKeys[orderedKeys.length - 1]! : orderedKeys[0]!;
+  }
+
+  const nextIndex = Math.min(orderedKeys.length - 1, Math.max(0, currentIndex + offset));
+  return orderedKeys[nextIndex]!;
 }

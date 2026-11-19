@@ -1,16 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { readLocal, writeLocal } from "@/lib/localStore";
 
-/**
- * Widths of the two side panels, persisted across sessions.
- *
- * Stored in `localStorage` rather than the Tauri store: this is pure window
- * furniture, it must survive a reload with no async round-trip, and reading it
- * synchronously on first render avoids the panels visibly snapping from the
- * default to the saved size.
- */
-
-const STORAGE_KEY = "hoomaan.layout.v1";
+const PERSISTENCE_STORAGE_KEY = "hoomaan.layout.v1";
 
 export const TREE_LIMITS = { min: 200, max: 560, default: 280 } as const;
 export const CHAT_LIMITS = { min: 300, max: 720, default: 380 } as const;
@@ -22,98 +13,107 @@ export interface LayoutState {
   chatCollapsed: boolean;
 }
 
-const DEFAULTS: LayoutState = {
+const DEFAULT_WORKSPACE_LAYOUT: LayoutState = {
   treeWidth: TREE_LIMITS.default,
   chatWidth: CHAT_LIMITS.default,
   treeCollapsed: false,
   chatCollapsed: false,
 };
 
-export const clamp = (value: number, min: number, max: number) =>
-  Math.min(Math.max(value, min), max);
+/** Clamps a numeric dimension strictly within provided min and max thresholds. */
+export const clamp = (val: number, minimum: number, maximum: number) =>
+  Math.min(Math.max(val, minimum), maximum);
 
-/**
- * A new width, or a function of the current one — the same shape as `setState`.
- *
- * The functional form is what makes repeated keyboard steps work: several
- * arrow presses in one frame all read the same rendered `width` prop, so
- * absolute updates would collapse into a single step.
- */
 export type WidthUpdate = number | ((current: number) => number);
 
-const resolve = (update: WidthUpdate, current: number) =>
+const evaluateWidthUpdate = (update: WidthUpdate, current: number) =>
   typeof update === "function" ? update(current) : update;
 
-function load(): LayoutState {
+function retrieveSavedLayout(): LayoutState {
   try {
-    const raw = readLocal(STORAGE_KEY);
-    if (!raw) return DEFAULTS;
-    const parsed = JSON.parse(raw) as Partial<LayoutState>;
+    const rawData = readLocal(PERSISTENCE_STORAGE_KEY);
+    if (!rawData) return DEFAULT_WORKSPACE_LAYOUT;
+
+    const parsedJson = JSON.parse(rawData) as Partial<LayoutState>;
     return {
-      // Clamped on read, not just on write: a saved width from an older build
-      // with different limits would otherwise restore a panel wider than the
-      // window and leave no viewport at all.
       treeWidth: clamp(
-        Number(parsed.treeWidth) || DEFAULTS.treeWidth,
+        Number(parsedJson.treeWidth) || DEFAULT_WORKSPACE_LAYOUT.treeWidth,
         TREE_LIMITS.min,
         TREE_LIMITS.max,
       ),
       chatWidth: clamp(
-        Number(parsed.chatWidth) || DEFAULTS.chatWidth,
+        Number(parsedJson.chatWidth) || DEFAULT_WORKSPACE_LAYOUT.chatWidth,
         CHAT_LIMITS.min,
         CHAT_LIMITS.max,
       ),
-      treeCollapsed: Boolean(parsed.treeCollapsed),
-      chatCollapsed: Boolean(parsed.chatCollapsed),
+      treeCollapsed: Boolean(parsedJson.treeCollapsed),
+      chatCollapsed: Boolean(parsedJson.chatCollapsed),
     };
   } catch {
-    return DEFAULTS;
+    return DEFAULT_WORKSPACE_LAYOUT;
   }
 }
 
+/**
+ * Custom hook tracking pane width dimensions, collapse state, and debounced localStorage synchronization.
+ */
 export function useLayout() {
-  const [layout, setLayout] = useState<LayoutState>(load);
-  const saveTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const [layoutState, setLayoutState] = useState<LayoutState>(retrieveSavedLayout);
+  const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
-  // Debounced: a drag fires dozens of updates a second and every one would
-  // otherwise be a synchronous localStorage write on the main thread.
   useEffect(() => {
-    clearTimeout(saveTimer.current);
-    saveTimer.current = setTimeout(() => {
+    clearTimeout(debounceTimerRef.current);
+    debounceTimerRef.current = setTimeout(() => {
       try {
-        writeLocal(STORAGE_KEY, JSON.stringify(layout));
+        writeLocal(PERSISTENCE_STORAGE_KEY, JSON.stringify(layoutState));
       } catch {
-        // A full or disabled store is not worth interrupting the session for.
+        // Suppress storage quota or security access exceptions
       }
     }, 250);
-    return () => clearTimeout(saveTimer.current);
-  }, [layout]);
 
-  const setTreeWidth = useCallback((width: WidthUpdate) => {
-    setLayout((state) => ({
-      ...state,
-      treeWidth: clamp(resolve(width, state.treeWidth), TREE_LIMITS.min, TREE_LIMITS.max),
+    return () => clearTimeout(debounceTimerRef.current);
+  }, [layoutState]);
+
+  const updateTreeWidth = useCallback((newWidth: WidthUpdate) => {
+    setLayoutState((prev) => ({
+      ...prev,
+      treeWidth: clamp(
+        evaluateWidthUpdate(newWidth, prev.treeWidth),
+        TREE_LIMITS.min,
+        TREE_LIMITS.max,
+      ),
     }));
   }, []);
 
-  const setChatWidth = useCallback((width: WidthUpdate) => {
-    setLayout((state) => ({
-      ...state,
-      chatWidth: clamp(resolve(width, state.chatWidth), CHAT_LIMITS.min, CHAT_LIMITS.max),
+  const updateChatWidth = useCallback((newWidth: WidthUpdate) => {
+    setLayoutState((prev) => ({
+      ...prev,
+      chatWidth: clamp(
+        evaluateWidthUpdate(newWidth, prev.chatWidth),
+        CHAT_LIMITS.min,
+        CHAT_LIMITS.max,
+      ),
     }));
   }, []);
 
-  const toggleTree = useCallback(
-    () => setLayout((state) => ({ ...state, treeCollapsed: !state.treeCollapsed })),
+  const toggleTreePane = useCallback(
+    () => setLayoutState((prev) => ({ ...prev, treeCollapsed: !prev.treeCollapsed })),
     [],
   );
 
-  const toggleChat = useCallback(
-    () => setLayout((state) => ({ ...state, chatCollapsed: !state.chatCollapsed })),
+  const toggleChatPane = useCallback(
+    () => setLayoutState((prev) => ({ ...prev, chatCollapsed: !prev.chatCollapsed })),
     [],
   );
 
-  const reset = useCallback(() => setLayout(DEFAULTS), []);
+  const resetLayout = useCallback(() => setLayoutState(DEFAULT_WORKSPACE_LAYOUT), []);
 
-  return { layout, setTreeWidth, setChatWidth, toggleTree, toggleChat, reset };
+  return {
+    layout: layoutState,
+    setTreeWidth: updateTreeWidth,
+    setChatWidth: updateChatWidth,
+    toggleTree: toggleTreePane,
+    toggleChat: toggleChatPane,
+    reset: resetLayout,
+  };
 }

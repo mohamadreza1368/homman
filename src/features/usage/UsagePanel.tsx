@@ -6,75 +6,102 @@ import { useUsageStore } from "@/stores/usageStore";
 import { byModel, summarise, totals, type Grain } from "./aggregate";
 import { formatTokens } from "./tokens";
 
-const GRAINS: { id: Grain; label: string; labelFa: string; window: string; windowFa: string }[] = [
+interface GranularityOption {
+  id: Grain;
+  label: string;
+  labelFa: string;
+  window: string;
+  windowFa: string;
+}
+
+const GRANULARITY_OPTIONS: GranularityOption[] = [
   { id: "day", label: "Daily", labelFa: "روزانه", window: "last 14 days", windowFa: "۱۴ روز گذشته" },
   { id: "week", label: "Weekly", labelFa: "هفتگی", window: "last 12 weeks", windowFa: "۱۲ هفته گذشته" },
   { id: "month", label: "Monthly", labelFa: "ماهانه", window: "last 12 months", windowFa: "۱۲ ماه گذشته" },
 ];
 
+/**
+ * Visual consumption breakdown panel reporting model token usage, timeline charts, and aggregated cost statistics.
+ */
 export function UsagePanel() {
-  const fa = useInterfaceLanguage((s) => s.language === "fa");
-  const buckets = useUsageStore((s) => s.buckets);
-  const grain = useUsageStore((s) => s.grain);
-  const loaded = useUsageStore((s) => s.loaded);
-  const error = useUsageStore((s) => s.error);
-  const refresh = useUsageStore((s) => s.refresh);
-  const setGrain = useUsageStore((s) => s.setGrain);
-  const dismissError = useUsageStore((s) => s.dismissError);
+  const isPersian = useInterfaceLanguage((state) => state.language === "fa");
+  const storedBuckets = useUsageStore((state) => state.buckets);
+  const selectedGrain = useUsageStore((state) => state.grain);
+  const isLoaded = useUsageStore((state) => state.loaded);
+  const currentError = useUsageStore((state) => state.error);
+  const reloadUsage = useUsageStore((state) => state.refresh);
+  const updateGrain = useUsageStore((state) => state.setGrain);
+  const clearError = useUsageStore((state) => state.dismissError);
 
   useEffect(() => {
-    void refresh();
-  }, [refresh]);
+    void reloadUsage();
+  }, [reloadUsage]);
 
-  const periods = useMemo(() => summarise(buckets, grain), [buckets, grain]);
-  const models = useMemo(() => byModel(buckets), [buckets]);
-  const sum = useMemo(() => totals(buckets), [buckets]);
-  const activeGrain = GRAINS.find((entry) => entry.id === grain);
-  const windowLabel = (fa ? activeGrain?.windowFa : activeGrain?.window) ?? "";
+  const timelinePeriods = useMemo(
+    () => summarise(storedBuckets, selectedGrain),
+    [storedBuckets, selectedGrain],
+  );
+  const modelBreakdown = useMemo(() => byModel(storedBuckets), [storedBuckets]);
+  const aggregateTotals = useMemo(() => totals(storedBuckets), [storedBuckets]);
+
+  const activeOption = GRANULARITY_OPTIONS.find((opt) => opt.id === selectedGrain);
+  const timeWindowDescription = (isPersian ? activeOption?.windowFa : activeOption?.window) ?? "";
 
   return (
-    <div dir={fa ? "rtl" : "ltr"} className="flex h-full min-h-0 flex-col text-xs">
+    <div dir={isPersian ? "rtl" : "ltr"} className="flex h-full min-h-0 flex-col text-xs">
       <div className="flex shrink-0 items-center gap-1 border-b border-slate-800 px-3 py-2">
-        {GRAINS.map((entry) => (
-          <button
-            key={entry.id}
-            type="button"
-            onClick={() => void setGrain(entry.id)}
-            aria-pressed={grain === entry.id}
-            title={fa ? `${entry.labelFa} — ${entry.windowFa}` : `Group by ${entry.label.toLowerCase().replace("ly", "")} — ${entry.window}`}
-            className={`rounded border px-2 py-1 text-[11px] transition ${
-              grain === entry.id
-                ? "border-sky-500 bg-sky-500/10 text-sky-300"
-                : "border-slate-700 text-slate-400 hover:border-slate-600"
-            }`}
-          >
-            {fa ? entry.labelFa : entry.label}
-          </button>
-        ))}
+        {GRANULARITY_OPTIONS.map((option) => {
+          const isActive = selectedGrain === option.id;
+          return (
+            <button
+              key={option.id}
+              type="button"
+              onClick={() => void updateGrain(option.id)}
+              aria-pressed={isActive}
+              title={
+                isPersian
+                  ? `${option.labelFa} — ${option.windowFa}`
+                  : `Group by ${option.label.toLowerCase().replace("ly", "")} — ${option.window}`
+              }
+              className={`rounded border px-2 py-1 text-[11px] transition ${
+                isActive
+                  ? "border-sky-500 bg-sky-500/10 text-sky-300"
+                  : "border-slate-700 text-slate-400 hover:border-slate-600"
+              }`}
+            >
+              {isPersian ? option.labelFa : option.label}
+            </button>
+          );
+        })}
       </div>
 
-      {error && (
+      {currentError && (
         <div className="mx-3 mt-2 flex items-start gap-2 rounded border border-rose-800/60 bg-rose-900/20 px-2 py-1 text-[10px] text-rose-300">
-          <span className="flex-1">{error}</span>
-          <button type="button" onClick={dismissError} className="text-rose-400">
+          <span className="flex-1">{currentError}</span>
+          <button type="button" onClick={clearError} className="text-rose-400">
             ×
           </button>
         </div>
       )}
 
       <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-3 py-3">
-        <Total sum={sum} window={windowLabel} loaded={loaded} fa={fa} />
+        <UsageSummaryHeader
+          sum={aggregateTotals}
+          window={timeWindowDescription}
+          loaded={isLoaded}
+          fa={isPersian}
+        />
 
-        {periods.length > 0 && (
-          <Section title={fa ? `در بازهٔ ${windowLabel}` : `Over the ${windowLabel}`}>
-            <Timeline periods={periods} fa={fa} />
-          </Section>
+        {timelinePeriods.length > 0 && (
+          <MetricSection title={isPersian ? `در بازهٔ ${timeWindowDescription}` : `Over the ${timeWindowDescription}`}>
+            <PeriodTimeline periods={timelinePeriods} fa={isPersian} />
+          </MetricSection>
         )}
 
-        {models.length > 0 && (
-          <Section title={fa ? "بر اساس مدل" : "By model"}>
+        {modelBreakdown.length > 0 && (
+          <MetricSection title={isPersian ? "بر اساس مدل" : "By model"}>
             <div className="space-y-1.5">
-              {models.map((row) => (
+              {modelBreakdown.map((row) => (
                 <div key={`${row.provider}/${row.model}`}>
                   <div className="flex items-baseline gap-2">
                     <span dir="ltr" className="min-w-0 flex-1 truncate text-[11px] text-slate-300">
@@ -87,28 +114,28 @@ export function UsagePanel() {
                       {Math.round(row.share * 100)}%
                     </span>
                   </div>
-                  <Bar fraction={row.share} />
+                  <ShareProgressBar fraction={row.share} />
                   <p className="mt-0.5 text-[10px] text-slate-600">
-                    {fa
+                    {isPersian
                       ? `${row.turns} پاسخ · ${formatTokens(row.input)} ورودی، ${formatTokens(row.output)} خروجی`
                       : `${row.provider} · ${row.turns} ${row.turns === 1 ? "answer" : "answers"} · ${formatTokens(row.input)} sent, ${formatTokens(row.output)} received`}
                   </p>
                 </div>
               ))}
             </div>
-          </Section>
+          </MetricSection>
         )}
 
-        {loaded && buckets.length === 0 && (
+        {isLoaded && storedBuckets.length === 0 && (
           <p className="pt-4 text-center text-[11px] leading-relaxed text-slate-600">
-            {fa
+            {isPersian
               ? "هنوز مصرفی ثبت نشده است. از اولین پاسخ دستیار به بعد، آمار توکن‌ها اینجا نمایش داده می‌شود."
               : "Nothing yet. Every answer the assistant gives is counted here, from the next one on."}
           </p>
         )}
 
         <p className="border-t border-slate-800/70 pt-3 text-[10px] leading-relaxed text-slate-600">
-          {fa
+          {isPersian
             ? "اعداد بر اساس گزارش سرویس API شما محاسبه شده و فقط روی دستگاه خودتان نگهداری می‌شوند."
             : "Counts are what your provider reported for each answer, stored on this machine only. No prices: your provider's dashboard is the authority on the bill."}
         </p>
@@ -117,7 +144,7 @@ export function UsagePanel() {
   );
 }
 
-function Total({
+function UsageSummaryHeader({
   sum,
   window,
   loaded,
@@ -128,7 +155,9 @@ function Total({
   loaded: boolean;
   fa: boolean;
 }) {
-  if (!loaded) return <p className="text-[11px] text-slate-500">{fa ? "در حال خواندن…" : "Reading…"}</p>;
+  if (!loaded) {
+    return <p className="text-[11px] text-slate-500">{fa ? "در حال خواندن…" : "Reading…"}</p>;
+  }
 
   return (
     <div className="rounded border border-slate-800 bg-slate-900/40 px-3 py-2">
@@ -155,7 +184,7 @@ function Total({
   );
 }
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
+function MetricSection({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div>
       <p className="mb-1.5 text-[10px] uppercase tracking-wider text-slate-500">{title}</p>
@@ -164,14 +193,14 @@ function Section({ title, children }: { title: string; children: React.ReactNode
   );
 }
 
-function Timeline({
+function PeriodTimeline({
   periods,
   fa,
 }: {
   periods: { key: string; label: string; total: number; turns: number }[];
   fa: boolean;
 }) {
-  const peak = Math.max(...periods.map((period) => period.total), 1);
+  const peakTokens = Math.max(...periods.map((item) => item.total), 1);
 
   return (
     <div className="space-y-1">
@@ -181,7 +210,7 @@ function Timeline({
             {period.label}
           </span>
           <div className="min-w-0 flex-1">
-            <Bar fraction={period.total / peak} />
+            <ShareProgressBar fraction={period.total / peakTokens} />
           </div>
           <span
             className="w-12 shrink-0 text-right tabular-nums text-[10px] text-slate-400"
@@ -199,12 +228,13 @@ function Timeline({
   );
 }
 
-function Bar({ fraction }: { fraction: number }) {
+function ShareProgressBar({ fraction }: { fraction: number }) {
+  const clampFraction = Math.max(fraction * 100, fraction > 0 ? 2 : 0);
   return (
     <div className="mt-0.5 h-1 overflow-hidden rounded-full bg-slate-800">
       <div
         className="h-full rounded-full bg-sky-500/70"
-        style={{ width: `${Math.max(fraction * 100, fraction > 0 ? 2 : 0)}%` }}
+        style={{ width: `${clampFraction}%` }}
       />
     </div>
   );

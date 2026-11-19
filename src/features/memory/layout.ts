@@ -7,74 +7,98 @@ export interface Box {
   bottom: number;
 }
 
-/**
- * How much of each edge the panels take, so the hologram can use the rest.
- *
- * Each visible panel is read by where it sits: one standing along the left or
- * right takes that side, one lying across the top or bottom takes that edge.
- * The largest claim on each edge wins. This is what lets the same screen work
- * on a laptop and on a wall display — nothing is laid out for a size, the
- * brain simply goes where there is room.
- */
-export function freeMargins(panels: readonly Box[], width: number, height: number, gap = 16): FocusMargins {
-  const margins: FocusMargins = { left: 0, right: 0, top: 0, bottom: 0 };
-  for (const panel of panels) {
-    const w = panel.right - panel.left;
-    const h = panel.bottom - panel.top;
-    if (w <= 0 || h <= 0) continue;
-    const lying = w > width * 0.55;
-    if (lying) {
-      const middle = (panel.top + panel.bottom) / 2;
-      if (middle > height / 2) margins.bottom = Math.max(margins.bottom, height - panel.top + gap);
-      else margins.top = Math.max(margins.top, panel.bottom + gap);
-    } else {
-      const middle = (panel.left + panel.right) / 2;
-      if (middle < width / 2) margins.left = Math.max(margins.left, panel.right + gap);
-      else margins.right = Math.max(margins.right, width - panel.left + gap);
-    }
-  }
-  // Never leave the brain less than a third of either dimension.
-  const shrink = (a: number, b: number, total: number) => {
-    const room = total - a - b;
-    const least = total / 3;
-    if (room >= least) return [a, b] as const;
-    const scale = (total - least) / Math.max(1, a + b);
-    return [a * scale, b * scale] as const;
-  };
-  [margins.left, margins.right] = shrink(margins.left, margins.right, width);
-  [margins.top, margins.bottom] = shrink(margins.top, margins.bottom, height);
-  return margins;
-}
-
-/** Gap between the pointed memory and the start of its label, in pixels. */
 export const CALLOUT_REACH = 44;
 
 export interface CalloutPlacement {
   side: "right" | "left";
-  /** Widest the label may be before it would run into something. */
   maxWidth: number;
 }
 
 /**
- * Which side of a memory its label goes, and how wide it may be.
- *
- * `from` and `to` are the clear stretch of screen between whatever stands on
- * the left and whatever stands on the right. The label goes right when it fits
- * there, otherwise to whichever side has more room, and is cut to that room —
- * a long title is shortened with an ellipsis rather than laid over the reader.
+ * Calculates unobscured viewport margins around active HUD surfaces, reserving
+ * center staging area for 3D holographic rendering.
  */
-export function calloutPlacement(x: number, natural: number, from: number, to: number, margin = 12): CalloutPlacement {
-  const right = to - margin - (x + CALLOUT_REACH);
-  const left = x - CALLOUT_REACH - (from + margin);
-  const side = right >= natural || right >= left ? "right" : "left";
-  return { side, maxWidth: Math.max(0, Math.floor(side === "right" ? right : left)) };
+export function freeMargins(
+  panels: readonly Box[],
+  viewportWidth: number,
+  viewportHeight: number,
+  padding = 16,
+): FocusMargins {
+  const result: FocusMargins = { left: 0, right: 0, top: 0, bottom: 0 };
+
+  for (const box of panels) {
+    const spanX = box.right - box.left;
+    const spanY = box.bottom - box.top;
+    if (spanX <= 0 || spanY <= 0) continue;
+
+    // Panels covering more than 55% of width are treated as horizontal ribbons
+    const isHorizontal = spanX > viewportWidth * 0.55;
+    if (isHorizontal) {
+      const midY = (box.top + box.bottom) * 0.5;
+      if (midY > viewportHeight * 0.5) {
+        result.bottom = Math.max(result.bottom, viewportHeight - box.top + padding);
+      } else {
+        result.top = Math.max(result.top, box.bottom + padding);
+      }
+    } else {
+      const midX = (box.left + box.right) * 0.5;
+      if (midX < viewportWidth * 0.5) {
+        result.left = Math.max(result.left, box.right + padding);
+      } else {
+        result.right = Math.max(result.right, viewportWidth - box.left + padding);
+      }
+    }
+  }
+
+  // Constrain margins so that at least one third of viewport is always retained
+  const limitAxis = (m1: number, m2: number, totalSpan: number): readonly [number, number] => {
+    const minReserve = totalSpan / 3;
+    const available = totalSpan - m1 - m2;
+    if (available >= minReserve) {
+      return [m1, m2];
+    }
+    const ratio = (totalSpan - minReserve) / Math.max(1, m1 + m2);
+    return [m1 * ratio, m2 * ratio];
+  };
+
+  const [clampedLeft, clampedRight] = limitAxis(result.left, result.right, viewportWidth);
+  const [clampedTop, clampedBottom] = limitAxis(result.top, result.bottom, viewportHeight);
+
+  result.left = clampedLeft;
+  result.right = clampedRight;
+  result.top = clampedTop;
+  result.bottom = clampedBottom;
+
+  return result;
 }
 
 /**
- * How many studied names fit folded under the figure: the column's height, one
- * name per 110 px, never fewer than three nor more than six. The rest are one
- * click away, so a short screen keeps the figure clear.
+ * Determines optimal lateral positioning and maximum allowable width for a memory tag.
  */
-export function studiedRowsFor(columnHeight: number): number {
-  return Math.min(6, Math.max(3, Math.floor(columnHeight / 110)));
+export function calloutPlacement(
+  targetX: number,
+  preferredWidth: number,
+  minX: number,
+  maxX: number,
+  borderGap = 12,
+): CalloutPlacement {
+  const rightSpace = maxX - borderGap - (targetX + CALLOUT_REACH);
+  const leftSpace = targetX - CALLOUT_REACH - (minX + borderGap);
+
+  const shouldPlaceRight = rightSpace >= preferredWidth || rightSpace >= leftSpace;
+  const chosenSide: "right" | "left" = shouldPlaceRight ? "right" : "left";
+  const usableBound = shouldPlaceRight ? rightSpace : leftSpace;
+
+  return {
+    side: chosenSide,
+    maxWidth: Math.max(0, Math.floor(usableBound)),
+  };
+}
+
+/**
+ * Calculates visible organ row count allowed in the side pane based on vertical space.
+ */
+export function studiedRowsFor(paneHeight: number): number {
+  const calculated = Math.floor(paneHeight / 110);
+  return Math.min(6, Math.max(3, calculated));
 }

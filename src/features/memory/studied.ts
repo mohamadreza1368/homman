@@ -1,7 +1,6 @@
 import { collectOrganRefs } from "@/features/chat/organRefs";
 import type { ManifestOrgan } from "@/lib/schemas";
 
-/** One structure a memory was about, and where in the atlas to find its mesh. */
 export interface StudiedOrgan {
   id: string;
   name: string;
@@ -9,54 +8,69 @@ export interface StudiedOrgan {
   file: string;
 }
 
-/**
- * The file the figure itself is drawn from. A surface region studied is
- * already on screen as part of the body, so it is not drawn a second time.
- */
 export const FIGURE_FILE = "regional_male.glb";
 
-/**
- * Most structures lit at once. A long session can touch dozens, and forty
- * organs glowing together say nothing about any one of them.
- */
 export const STUDIED_LIMIT = 16;
 
 /**
- * Every structure a memory was about, in the order it came up.
- *
- * The journal files only what was *selected* in the viewer when a question was
- * asked, which for most conversations is nothing. The answers themselves pin
- * each structure they discuss as `[[organ_id]]`, so those are read too: a
- * conversation about the heart lights the heart even if nothing was selected.
+ * Extracts all anatomical identifiers associated with a study session, combining
+ * explicitly selected nodes with references tagged as [[organ_id]] in dialogue text.
  */
-export function studiedIds(selected: readonly string[], texts: readonly string[], isKnown: (id: string) => boolean): string[] {
-  const ids = [...selected];
-  for (const text of texts) for (const ref of collectOrganRefs(text, isKnown)) ids.push(ref.organId);
-  return ids;
+export function studiedIds(
+  selectedIds: readonly string[],
+  dialogueTexts: readonly string[],
+  isRecognized: (identifier: string) => boolean,
+): string[] {
+  const result: string[] = [...selectedIds];
+
+  for (const message of dialogueTexts) {
+    const references = collectOrganRefs(message, isRecognized);
+    for (const ref of references) {
+      result.push(ref.organId);
+    }
+  }
+
+  return result;
 }
 
 /**
- * The structures a memory was about, as the figure can show them.
- *
- * In the order they were studied, each once. Anything the male atlas does not
- * hold — the female body's structures, or an id from an older manifest — is
- * skipped rather than guessed at: the figure is the male body.
+ * Resolves anatomical IDs to their 3D scene mesh files and node targets for hologram illumination.
+ * Excludes duplicates, unrecognized structures, and base whole-body avatar geometry.
  */
 export function studiedOrgans(
-  ids: readonly string[],
-  organs: readonly ManifestOrgan[],
-  limit = STUDIED_LIMIT,
+  organIdentifiers: readonly string[],
+  manifestCatalog: readonly ManifestOrgan[],
+  capacity = STUDIED_LIMIT,
 ): StudiedOrgan[] {
-  const byId = new Map(organs.map((organ) => [organ.organ_id, organ]));
-  const out: StudiedOrgan[] = [];
-  const seen = new Set<string>();
-  for (const id of ids) {
-    if (out.length >= limit) break;
-    if (seen.has(id)) continue;
-    seen.add(id);
-    const organ = byId.get(id);
-    if (!organ || organ.mesh_file === FIGURE_FILE) continue;
-    out.push({ id, name: organ.name_en, node: organ.node, file: organ.mesh_file });
+  const catalogMap = new Map<string, ManifestOrgan>();
+  for (const organ of manifestCatalog) {
+    catalogMap.set(organ.organ_id, organ);
   }
-  return out;
+
+  const resolved: StudiedOrgan[] = [];
+  const processed = new Set<string>();
+
+  for (const identifier of organIdentifiers) {
+    if (resolved.length >= capacity) {
+      break;
+    }
+    if (processed.has(identifier)) {
+      continue;
+    }
+    processed.add(identifier);
+
+    const organRecord = catalogMap.get(identifier);
+    if (!organRecord || organRecord.mesh_file === FIGURE_FILE) {
+      continue;
+    }
+
+    resolved.push({
+      id: identifier,
+      name: organRecord.name_en,
+      node: organRecord.node,
+      file: organRecord.mesh_file,
+    });
+  }
+
+  return resolved;
 }

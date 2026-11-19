@@ -1,42 +1,16 @@
 /**
- * How much the hologram asks of the machine, and how that is decided.
+ * Adaptive rendering quality management for MemoryLab 3D viewport.
  *
- * The look is the same at every level — the brain, the lines, the glow, the
- * figure, the thread. What changes is what nobody reads as design: how many
- * pixels are drawn, the resolution the glow is computed at, and how many of the
- * drifting particles are shown. A laptop on integrated graphics gets the same
- * lab, drawn lighter; a machine rendering in software gets the lightest.
- *
- * Two decisions, kept apart so each can be tested:
- * - where to start, from what the graphics adapter says it is;
- * - when to step down (or back up), from the time frames actually take.
+ * Dynamically scales pixel density, bloom pass downsampling and particle density
+ * based on GPU device profiling and moving median frame latencies.
  */
 
 export interface Level {
-  /**
-   * Share of the screen's own pixel density to draw at.
-   *
-   * A share rather than a number of pixels: a fixed 0.75 is three quarters of
-   * the pixels on one screen and three fifths on a screen scaled to 125%, so
-   * the same level stretched by different amounts on different machines and
-   * the picture coarsened unevenly.
-   */
   scale: number;
-  /** The glow's resolution, as a share of the screen's. */
   bloom: number;
-  /** Share of the drifting particles drawn. */
   particles: number;
 }
 
-/** Lightest first. Index 3 is the full lab. */
-/**
- * Resolution is the last thing given up, and never by much.
- *
- * Everything drawn small is stretched back over the screen, so a cut there
- * softens the whole picture — the film grain most visibly, since it is drawn
- * a pixel at a time. The glow's resolution and the particle count cost real
- * time and are nearly invisible, so they go first and further.
- */
 export const LEVELS: readonly Level[] = [
   { scale: 0.8, bloom: 0.3, particles: 0.3 },
   { scale: 0.85, bloom: 0.45, particles: 0.55 },
@@ -44,79 +18,123 @@ export const LEVELS: readonly Level[] = [
   { scale: 1, bloom: 1, particles: 1 },
 ];
 
-/** Device pixels per CSS pixel at a level, never below half nor above this. */
-export function pixelRatioFor(level: Level, devicePixelRatio: number): number {
-  return Math.min(1.75, Math.max(0.5, (devicePixelRatio || 1) * level.scale));
-}
 export const FULL = LEVELS.length - 1;
+
+export function pixelRatioFor(profile: Level, dpr: number): number {
+  const effectiveDpr = dpr || 1;
+  const scaled = effectiveDpr * profile.scale;
+  return Math.min(1.75, Math.max(0.5, scaled));
+}
 
 export type Adapter = "software" | "integrated" | "dedicated" | "unknown";
 
-/** What kind of graphics this is, from the renderer string WebGL reports. */
-export function classifyAdapter(renderer: string | null): Adapter {
-  if (!renderer) return "unknown";
-  if (/swiftshader|basic render|llvmpipe|softpipe|software|warp/i.test(renderer)) return "software";
-  if (/nvidia|geforce|quadro|rtx|gtx|radeon\s*(rx|pro)|arc\s*a\d|\bamd\b.*\brx\b/i.test(renderer)) return "dedicated";
-  if (/intel|uhd|iris|hd graphics|radeon\(tm\) graphics|radeon graphics|vega|adreno|mali|apple/i.test(renderer)) return "integrated";
+/**
+ * Categorizes graphics hardware category by inspecting WebGL renderer description.
+ */
+export function classifyAdapter(rendererDesc: string | null): Adapter {
+  if (!rendererDesc) {
+    return "unknown";
+  }
+
+  const desc = rendererDesc.toLowerCase();
+
+  if (/swiftshader|basic render|llvmpipe|softpipe|software|warp/.test(desc)) {
+    return "software";
+  }
+
+  if (
+    /nvidia|geforce|quadro|rtx|gtx|radeon\s*(rx|pro)|arc\s*a\d|\bamd\b.*\brx\b/.test(
+      desc,
+    )
+  ) {
+    return "dedicated";
+  }
+
+  if (
+    /intel|uhd|iris|hd graphics|radeon\(tm\) graphics|radeon graphics|vega|adreno|mali|apple/.test(
+      desc,
+    )
+  ) {
+    return "integrated";
+  }
+
   return "unknown";
 }
 
-/** Where to begin: generous where the hardware is known to cope, careful where it is not. */
-export function startingLevel(adapter: Adapter): number {
-  if (adapter === "software") return 0;
-  if (adapter === "integrated") return 2;
-  return FULL;
+/**
+ * Selects safe initial graphics preset according to detected GPU classification.
+ */
+export function startingLevel(adapterType: Adapter): number {
+  switch (adapterType) {
+    case "software":
+      return 0;
+    case "integrated":
+      return FULL - 1;
+    case "dedicated":
+    case "unknown":
+    default:
+      return FULL;
+  }
 }
 
-/** Frames per judgement: about two seconds at 60 Hz. */
-const WINDOW = 120;
-/** A gap this long is a load or a hidden window, not the hologram being slow. */
-const IGNORE_MS = 250;
-/** Slower than this (under 40 fps) for a whole window steps down. */
-const SLOW_MS = 25;
-/** Back up only after this many windows at display rate: some twenty seconds. */
-const STEADY_WINDOWS = 10;
-const STEADY_MS = 18;
+const SAMPLE_WINDOW_SIZE = 120;
+const DISCARD_OUTLIER_MS = 250;
+const DOWNGRADE_THRESHOLD_MS = 25;
+const UPGRADE_STABILITY_COUNT = 10;
+const SMOOTH_FRAME_MAX_MS = 18;
 
 /**
- * Watches frame times and says when to change level.
- *
- * Steps down quickly — two slow seconds are already a bad experience — and back
- * up slowly, never above where it started: a frame at display rate cannot say
- * how much room is left, so climbing past the starting level would only find
- * the limit by stuttering into it.
+ * Monitors frame rendering times to scale visual fidelity up or down smoothly.
  */
 export class FrameGovernor {
-  private samples: number[] = [];
-  private steady = 0;
+  private buffer: number[] = [];
+  private consecutiveSteadyWindows = 0;
   level: number;
 
   constructor(
-    private readonly ceiling: number,
-    start = ceiling,
+    private readonly maxAllowedLevel: number,
+    initialTier = maxAllowedLevel,
   ) {
-    this.level = Math.min(start, ceiling);
+    this.level = Math.min(initialTier, maxAllowedLevel);
   }
 
-  /** One frame's duration. Returns the new level when it changes, otherwise null. */
-  sample(ms: number): number | null {
-    if (!(ms > 0) || ms > IGNORE_MS) return null;
-    this.samples.push(ms);
-    if (this.samples.length < WINDOW) return null;
-    const sorted = [...this.samples].sort((a, b) => a - b);
-    const median = sorted[sorted.length >> 1]!;
-    this.samples = [];
-    if (median > SLOW_MS && this.level > 0) {
-      this.steady = 0;
+  sample(frameDurationMs: number): number | null {
+    if (!(frameDurationMs > 0) || frameDurationMs > DISCARD_OUTLIER_MS) {
+      return null;
+    }
+
+    this.buffer.push(frameDurationMs);
+    if (this.buffer.length < SAMPLE_WINDOW_SIZE) {
+      return null;
+    }
+
+    const sortedDurations = [...this.buffer].sort((d1, d2) => d1 - d2);
+    const medianDuration = sortedDurations[sortedDurations.length >> 1]!;
+    this.buffer = [];
+
+    // Downgrade quality if latency violates threshold
+    if (medianDuration > DOWNGRADE_THRESHOLD_MS && this.level > 0) {
+      this.consecutiveSteadyWindows = 0;
       this.level -= 1;
       return this.level;
     }
-    this.steady = median <= STEADY_MS ? this.steady + 1 : 0;
-    if (this.steady >= STEADY_WINDOWS && this.level < this.ceiling) {
-      this.steady = 0;
+
+    // Upgrade quality if consistently operating below smooth threshold
+    if (medianDuration <= SMOOTH_FRAME_MAX_MS) {
+      this.consecutiveSteadyWindows += 1;
+    } else {
+      this.consecutiveSteadyWindows = 0;
+    }
+
+    if (
+      this.consecutiveSteadyWindows >= UPGRADE_STABILITY_COUNT &&
+      this.level < this.maxAllowedLevel
+    ) {
+      this.consecutiveSteadyWindows = 0;
       this.level += 1;
       return this.level;
     }
+
     return null;
   }
 }
