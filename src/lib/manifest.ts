@@ -5,71 +5,63 @@ import {
   type ManifestOrgan,
 } from "./schemas";
 
-/**
- * The anatomy manifest and its meshes live in `public/`, so they ship inside
- * the web bundle and are fetched as ordinary same-origin URLs — no Tauri asset
- * protocol, no filesystem permission. At ~300 KB for a whole system that is a
- * better trade than granting the webview read access to disk.
- */
-const MESH_BASE = "/anatomy/";
+/** Base path for public anatomical asset meshes. */
+const MESH_BASE_PATH = "/anatomy/";
 
-/**
- * One manifest per body, and they are genuinely separate documents.
- *
- * Not a `sex` column in one file, for two reasons that both matter. The
- * licences differ — the male atlas is CC BY-SA 4.0 through Z-Anatomy, the
- * female CC BY 4.0 through the HRA — and a manifest carries the derived label
- * data, so merging them would force one licence onto both. And the bodies are
- * two different people: nothing in one is positioned to sit inside the other,
- * so there is no view in which both are on screen at once.
- */
-const MANIFEST_URL: Record<GenderModel, string> = {
+/** URL references for gender-specific anatomical manifests. */
+const MANIFEST_URLS: Record<GenderModel, string> = {
   male: "/anatomy/manifest.json",
   female: "/anatomy/manifest_female.json",
 };
 
+/**
+ * Loads and validates the anatomical manifest for the specified body model.
+ */
 export async function loadManifest(
   gender: GenderModel,
   signal?: AbortSignal,
 ): Promise<AnatomyManifest> {
-  const response = await fetch(MANIFEST_URL[gender], signal ? { signal } : {});
+  const targetUrl = MANIFEST_URLS[gender];
+  const response = await fetch(targetUrl, signal ? { signal } : {});
   if (!response.ok) {
     throw new Error(`Could not load the anatomy manifest (HTTP ${response.status}).`);
   }
 
-  const parsed = AnatomyManifestSchema.safeParse(await response.json());
-  if (!parsed.success) {
-    // A malformed manifest means the asset pipeline and the app disagree.
-    // Failing here beats rendering a partially-labelled body.
-    throw new Error(`The anatomy manifest is malformed: ${parsed.error.message}`);
+  const raw = await response.json();
+  const validation = AnatomyManifestSchema.safeParse(raw);
+  if (!validation.success) {
+    throw new Error(`The anatomy manifest is malformed: ${validation.error.message}`);
   }
-  return parsed.data;
+
+  return validation.data;
 }
 
+/** Resolves the public asset URL for a specific mesh file. */
 export function meshUrl(file: string): string {
-  return MESH_BASE + file;
+  return `${MESH_BASE_PATH}${file}`;
 }
 
 /**
- * Mesh files the given systems need, in stable order.
- *
- * Derived from the organs, not the system list: Z-Anatomy's own collections are
- * flat, so one system's structures can arrive from several exports and no
- * single file "belongs" to a system.
+ * Returns a sorted, deduplicated array of mesh file paths required
+ * to render the specified anatomical systems.
  */
 export function meshFilesForSystems(
   manifest: AnatomyManifest,
   systems: ReadonlySet<string>,
 ): string[] {
-  return [
-    ...new Set(
-      manifest.organs
-        .filter((organ) => systems.has(organ.system))
-        .map((organ) => organ.mesh_file),
-    ),
-  ].sort();
+  const collected = new Set<string>();
+  for (const organ of manifest.organs) {
+    if (systems.has(organ.system)) {
+      collected.add(organ.mesh_file);
+    }
+  }
+  return Array.from(collected).sort();
 }
 
-export function organsInFile(manifest: AnatomyManifest, file: string): ManifestOrgan[] {
+/** Filters and returns all organs defined within a specific mesh file. */
+export function organsInFile(
+  manifest: AnatomyManifest,
+  file: string,
+): ManifestOrgan[] {
   return manifest.organs.filter((organ) => organ.mesh_file === file);
 }

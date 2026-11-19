@@ -1,40 +1,34 @@
 import { useCallback, useState } from "react";
 import { readLocal, writeLocal } from "@/lib/localStore";
 
-/**
- * Whether this is the first time this machine has opened HOOMAAN.
- *
- * Kept in `localStorage` for the same reason the panel widths are: it must be
- * readable synchronously on the very first render. An async round-trip would
- * either flash the guide open for someone who has already dismissed it, or
- * flash the empty viewport at someone about to see it for the first time.
- *
- * A store that is full, disabled, or wiped fails toward *showing* the guide.
- * Reading it again is a mild annoyance; never seeing it is a student who does
- * not know the app has a right-click menu.
- */
+const FIRST_RUN_GUIDE_STORAGE_KEY = "hoomaan.guide.v1";
 
-const STORAGE_KEY = "hoomaan.guide.v1";
-
-function hasSeenGuide(): boolean {
+function checkHasSeenGuide(): boolean {
   try {
-    return readLocal(STORAGE_KEY) === "seen";
+    return readLocal(FIRST_RUN_GUIDE_STORAGE_KEY) === "seen";
   } catch {
     return false;
   }
 }
 
+/**
+ * Tracks initial application launch status synchronously to show the tutorial
+ * guide overlay without UI layout flashing or async round-trip latency.
+ */
 export function useFirstRun() {
-  const [seen, setSeen] = useState(hasSeenGuide);
+  const [acknowledged, setAcknowledged] = useState(checkHasSeenGuide);
 
   const markSeen = useCallback(() => {
-    setSeen(true);
+    setAcknowledged(true);
     try {
-      writeLocal(STORAGE_KEY, "seen");
+      writeLocal(FIRST_RUN_GUIDE_STORAGE_KEY, "seen");
     } catch {
-      // Not worth interrupting a session over. The cost is one extra guide.
+      // Gracefully disregard storage quotas
     }
   }, []);
 
-  return { firstRun: !seen, markSeen };
+  return {
+    firstRun: !acknowledged,
+    markSeen,
+  };
 }

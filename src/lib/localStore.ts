@@ -1,174 +1,139 @@
-/**
- * Every use of `localStorage`, through one door that cannot fail silently.
- *
- * # Why this exists
- *
- * Six modules kept the reader's settings here — the assistant's provider and
- * model, which systems are on and how translucent, the panel widths, whether
- * the guide has been seen — and every one of them wrapped its access in a
- * `try`/`catch` that swallowed the error and carried on with defaults. That is
- * the right *behaviour*: losing a preference must not take the session down.
- * It was the wrong *silence*. When the store became unavailable on a real
- * machine the application behaved exactly as though the reader had never
- * chosen anything, said nothing about it, and offered no way to tell the
- * difference between "you have not set this yet" and "I cannot remember
- * anything you set".
- *
- * So the swallowing stays and the silence goes. The first failure is kept, and
- * the interface says so once, quietly, where the settings live.
- *
- * # Why the failure is remembered rather than thrown
- *
- * Because it is not recoverable and not the reader's fault. A browser that
- * refuses storage refuses it for the whole session; asking every call site to
- * handle that would spread the same `try` across the code again. One record,
- * read by one notice, is the whole design.
- */
-
 import { logEvent } from "./appLog";
 
-type Listener = () => void;
+type StorageListener = () => void;
 
-let failure: string | null = null;
-const listeners = new Set<Listener>();
+let activeFailure: string | null = null;
+const listeners = new Set<StorageListener>();
 
-/** What went wrong the first time, or `null` while storage is working. */
+/**
+ * Returns the initial storage failure description encountered during this session,
+ * or null if localStorage operations remain healthy.
+ */
 export function storageFailure(): string | null {
-  return failure;
-}
-
-/** Subscribe to the moment storage is first found to be unavailable. */
-export function onStorageFailure(listener: Listener): () => void {
-  listeners.add(listener);
-  return () => listeners.delete(listener);
-}
-
-function note(error: unknown): void {
-  // Only the first. Once storage is refused every later call fails the same
-  // way, and a notice that kept rewriting itself would say no more than this.
-  if (failure !== null) return;
-  failure =
-    error instanceof Error ? `${error.name}: ${error.message}` : String(error);
-  console.error("[storage] localStorage is unavailable:", error);
-  // And to the file, which is the only one of the three that survives the
-  // window closing — the whole reason this failure went undiagnosed.
-  logEvent("error", "storage", failure);
-  for (const listener of listeners) listener();
+  return activeFailure;
 }
 
 /**
- * Read a key, or `null` if it is absent — or if storage cannot be reached.
- *
- * The two are deliberately the same answer to the caller. A missing preference
- * and an unreadable one both mean "use the default", and the difference is
- * reported once by the notice rather than handled a sixth time here.
+ * Subscribes to storage failure events. Returns an unsubscribe function.
+ */
+export function onStorageFailure(listener: StorageListener): () => void {
+  listeners.add(listener);
+  return () => {
+    listeners.delete(listener);
+  };
+}
+
+function recordFailure(error: unknown): void {
+  if (activeFailure !== null) return;
+  activeFailure =
+    error instanceof Error ? `${error.name}: ${error.message}` : String(error);
+  console.error("[storage] localStorage failure encountered:", error);
+  logEvent("error", "storage", activeFailure);
+  for (const listener of listeners) {
+    try {
+      listener();
+    } catch (listenerError) {
+      console.error("[storage] listener threw:", listenerError);
+    }
+  }
+}
+
+/**
+ * Reads a string value from localStorage by key.
+ * Transparently migrates any legacy prefixes and gracefully captures failures.
  */
 export function readLocal(key: string): string | null {
   try {
-    const val = localStorage.getItem(key); if (val !== null) return val; if (key.startsWith("hoomaan.")) { const legacy = localStorage.getItem(key.replace(/^hoomaan\./, "anatria3d.")); if (legacy !== null) { try { localStorage.setItem(key, legacy); localStorage.removeItem(key.replace(/^hoomaan\./, "anatria3d.")); } catch {} return legacy; } } return null;
+    const value = localStorage.getItem(key);
+    if (value !== null) return value;
+
+    if (key.startsWith("hoomaan.")) {
+      const legacyKey = key.replace(/^hoomaan\./, "anatria3d.");
+      const legacyValue = localStorage.getItem(legacyKey);
+      if (legacyValue !== null) {
+        try {
+          localStorage.setItem(key, legacyValue);
+          localStorage.removeItem(legacyKey);
+        } catch {
+          // Non-blocking migration failure
+        }
+        return legacyValue;
+      }
+    }
+    return null;
   } catch (error) {
-    note(error);
+    recordFailure(error);
     return null;
   }
 }
 
-/** Write a key. Returns whether it actually landed. */
+/**
+ * Writes a string value into localStorage. Returns true on success, false on error.
+ */
 export function writeLocal(key: string, value: string): boolean {
   try {
     localStorage.setItem(key, value);
     return true;
   } catch (error) {
-    note(error);
+    recordFailure(error);
     return false;
   }
 }
 
-/** Forget a key. Silent when storage is unavailable — it is already forgotten. */
+/**
+ * Removes a key from localStorage. Failures are captured silently.
+ */
 export function removeLocal(key: string): void {
   try {
     localStorage.removeItem(key);
   } catch (error) {
-    note(error);
+    recordFailure(error);
   }
 }
 
-/** A value written on every launch, read back on the next one. */
-const STAMP = "hoomaan.storage.stamp";
+const STORAGE_STAMP_KEY = "hoomaan.storage.stamp";
+const PROBE_TEST_KEY = "hoomaan.storage.probe";
 
 /**
- * Prove the store accepts a write at all.
- *
- * A read alone is not proof: an empty store and a refused one both come back
- * `null`. Writing a value and taking it away again separates them, and costs
- * one key on one launch.
+ * Verifies that the client runtime permits write/remove storage cycles.
  */
 export function checkStorage(): void {
-  const key = "hoomaan.storage.probe";
-  if (!writeLocal(key, "1")) return;
-  removeLocal(key);
+  if (!writeLocal(PROBE_TEST_KEY, "1")) return;
+  removeLocal(PROBE_TEST_KEY);
 }
 
-/**
- * Prove the store survives the application closing, which is the harder half.
- *
- * # Why the write probe above is not enough
- *
- * It was not. On a real machine the browser engine failed to open its own
- * database, fell back to an in-memory store, and said nothing: every write
- * succeeded, every read within the session returned what had just been
- * written, and none of it reached the disk. The probe passed, the notice stayed
- * quiet, and the application looked exactly like one that had never been
- * configured. The only thing that can tell that store from a working one is
- * whether anything survives a restart — which cannot be measured inside a
- * single run.
- *
- * # Why the journal is the reference
- *
- * A missing stamp means one of two things, and they are opposite: this is a
- * first launch, or nothing is being kept. Nothing inside `localStorage` can
- * distinguish them, because in both cases it is empty. The journal can: it
- * lives on disk under the application's own directory, written by Rust rather
- * than by the browser engine, so a reader with sessions or notes behind them is
- * demonstrably not on their first launch. History without a stamp is the
- * signature of a store that forgets.
- *
- * Deliberately conservative. It reports only when the journal proves the reader
- * has been here before, so a genuine first run — or a reader who has never
- * asked a question or written a note — is never told anything is wrong.
- */
-export function confirmStoragePersists(hasHistory: boolean): void {
-  const previous = readLocal(STAMP);
-  // A missing stamp is not evidence on its own, and the first build to write
-  // one proved it: every reader upgrading into this feature has no stamp by
-  // definition, and every one of them was told their machine forgets. What
-  // settles it is whether *anything else* the application stored is still
-  // here. On a working store after an upgrade the settings are all present and
-  // only the stamp is new; on a store that forgets there is nothing at all.
-  if (previous === null && hasHistory && !anythingStored()) {
-    note(
-      new Error(
-        "nothing kept by earlier launches survived — the browser engine is " +
-          "storing settings in memory only",
-      ),
-    );
-  }
-  writeLocal(STAMP, String(Date.now()));
-}
-
-/** Whether any setting this application wrote is still in the store. */
-function anythingStored(): boolean {
+function hasStoredPreferences(): boolean {
   try {
-    for (let index = 0; index < localStorage.length; index += 1) {
-      const key = localStorage.key(index);
-      if (key !== null && key !== STAMP && (key.startsWith("hoomaan.") || key.startsWith("anatria3d."))) {
+    const len = localStorage.length;
+    for (let i = 0; i < len; i += 1) {
+      const k = localStorage.key(i);
+      if (
+        k !== null &&
+        k !== STORAGE_STAMP_KEY &&
+        (k.startsWith("hoomaan.") || k.startsWith("anatria3d."))
+      ) {
         return true;
       }
     }
     return false;
   } catch (error) {
-    // Unreadable is its own answer, and `note` has already been told by
-    // whichever read failed first.
-    note(error);
+    recordFailure(error);
     return false;
   }
+}
+
+/**
+ * Confirms whether localStorage persists data across application sessions.
+ * Alerts only when existing journal history confirms prior usage but no settings survived.
+ */
+export function confirmStoragePersists(hasHistory: boolean): void {
+  const existingStamp = readLocal(STORAGE_STAMP_KEY);
+  if (existingStamp === null && hasHistory && !hasStoredPreferences()) {
+    recordFailure(
+      new Error(
+        "Previous settings were not retained — web storage appears ephemeral or memory-only.",
+      ),
+    );
+  }
+  writeLocal(STORAGE_STAMP_KEY, String(Date.now()));
 }
