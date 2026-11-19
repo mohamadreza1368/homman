@@ -1,14 +1,7 @@
-"""Reading and searching the atlas, in one place.
+"""Atlas search and anatomical tree traversal utilities.
 
-Two callers need the same answer from the same names. `find_structures` in
-`scene_tools` searches what the viewport currently has loaded; the MCP atlas
-server searches the whole manifest with no viewport at all. Same rule, two
-corpora — so the rule lives here and neither owns a copy of it.
-
-**Standard library only, deliberately.** The MCP server runs in its own
-virtualenv without `pydantic-ai` (see `tools/hoomaan_mcp/README.md` for why),
-and this module is the seam between the two environments. A dependency added
-here would have to be satisfied twice.
+Shared across the real-time scene tools and the standalone MCP atlas service.
+Standard-library only to ensure isolation across runtime environments.
 """
 
 from __future__ import annotations
@@ -18,25 +11,16 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal, Protocol
 
-#: Results returned by one search. Enough to disambiguate, small enough that a
-#: vague query does not dump the atlas back into the caller's context window.
+# Maximum records yielded per query execution
 MAX_RESULTS = 25
 
-#: One character matches most of the body and teaches nobody anything.
+# Minimum character length required to initiate anatomical indexing
 MIN_QUERY_LENGTH = 2
 
-#: What an entry is, read from the identifier's suffix.
-#:
-#: **This is what the source data marks, not an anatomical finding.** Z-Anatomy
-#: names a muscle's attachment meshes `.ol`/`.or` and `.el`/`.er` beside the
-#: belly's `.l`/`.r`, and the asset pipeline documents the convention — see the
-#: comment at `tools/asset-pipeline/build-manifest.mjs`. Reporting it is
-#: repeating what the upstream dataset asserts; a caller that turns it into
-#: "the origin of this muscle is here" has gone one step further than the
-#: evidence, and the tool descriptions say so.
+# Anatomical classification derived from mesh naming conventions
 Part = Literal["structure", "origin_marking", "insertion_marking"]
 
-_PART_BY_SUFFIX: dict[str, Part] = {
+_SUFFIX_PART_MAP: dict[str, Part] = {
     "ol": "origin_marking",
     "or": "origin_marking",
     "el": "insertion_marking",
@@ -45,11 +29,7 @@ _PART_BY_SUFFIX: dict[str, Part] = {
 
 
 class Named(Protocol):
-    """The three fields a search reads.
-
-    Structural, not inherited: `OrganMeta` on the engine side and `Structure`
-    below both satisfy it without knowing about each other.
-    """
+    """Structural protocol defining fields required for anatomical lookups."""
 
     organ_id: str
     ta2_latin: str
@@ -57,69 +37,44 @@ class Named(Protocol):
 
 
 def search(structures: list, query: str) -> list:
-    """Every structure whose id, Latin or English name contains the query.
-
-    Ordered shortest English name first, so an exact-ish term outranks the long
-    compound names that merely contain it — searching "atrium" should not bury
-    the atrium under every structure named after one.
-
-    Returns all matches. Capping is the caller's decision, because the caller
-    is the one that knows what it will do with the remainder.
+    """Retrieve structures matching organ_id, Latin, or English nomenclature.
+    
+    Results are ranked with shorter English names first for precision.
     """
-    needle = query.strip().lower()
-    if len(needle) < MIN_QUERY_LENGTH:
+    token = query.strip().lower()
+    if len(token) < MIN_QUERY_LENGTH:
         return []
 
-    found = [
-        structure
-        for structure in structures
-        if needle in structure.ta2_latin.lower()
-        or needle in structure.name_en.lower()
-        or needle in structure.organ_id
+    matches = [
+        item
+        for item in structures
+        if token in item.ta2_latin.lower()
+        or token in item.name_en.lower()
+        or token in item.organ_id
     ]
-    found.sort(key=lambda structure: len(structure.name_en))
-    return found
+    matches.sort(key=lambda item: len(item.name_en))
+    return matches
 
 
 def part_of(organ_id: str) -> Part:
-    """Whether an identifier names a structure or a muscle's attachment mesh.
-
-    The default is `"structure"` rather than `"belly"`: most of the atlas is
-    not muscle, and calling the left atrium a belly borrows anatomical
-    vocabulary for a filing distinction it does not belong to.
-
-    Suffix-driven, because that is the only place the distinction is recorded:
-    `sartorius_muscle_ol` and `sartorius_muscle_l` carry the same English name
-    and the same TA2 term, and nothing else separates them. Without this a
-    caller sees three identical-looking entries per side and cannot tell which
-    to offer a reader — which is exactly what happened the first time a model
-    was pointed at this data.
-    """
-    return _PART_BY_SUFFIX.get(organ_id.rsplit("_", 1)[-1], "structure")
+    """Determine whether an organ identifier represents a belly or attachment marking."""
+    tag = organ_id.rsplit("_", 1)[-1]
+    return _SUFFIX_PART_MAP.get(tag, "structure")
 
 
 def belly_id(organ_id: str) -> str | None:
-    """The muscle an attachment marking belongs to, by identifier.
-
-    `sartorius_muscle_ol` → `sartorius_muscle_l`. Returns `None` for anything
-    that is not a marking. **The muscle may not exist** — 59 markings in the
-    male atlas have no belly under the derived id, the diaphragm and erector
-    spinae among them — so the caller checks before trusting it.
-    """
-    suffix = organ_id.rsplit("_", 1)[-1]
-    if suffix not in _PART_BY_SUFFIX:
+    """Derive parent muscle belly identifier from an attachment marking."""
+    tag = organ_id.rsplit("_", 1)[-1]
+    if tag not in _SUFFIX_PART_MAP:
         return None
-    return f"{organ_id[: -len(suffix) - 1]}_{suffix[-1]}"
+    stem = organ_id[: -len(tag) - 1]
+    side = tag[-1]
+    return f"{stem}_{side}"
 
 
 @dataclass(frozen=True)
 class Structure:
-    """One entry of the shipped manifest.
-
-    Carries more than `OrganMeta` does — the hierarchy trail and the mesh it
-    lives in — because a reader browsing the atlas without the application open
-    has nothing else to orient by.
-    """
+    """Represents an anatomical entity defined within the manifest."""
 
     organ_id: str
     ta2_latin: str
@@ -134,26 +89,13 @@ class Structure:
         return part_of(self.organ_id)
 
     def describe(self) -> str:
-        """Compact form: `organ_id — Latin (English)`.
-
-        Deliberately identical to `OrganMeta.describe`. The two are read by the
-        same models, and a structure that looks different depending on which
-        door it came through invites the reader to think they are different
-        structures.
-        """
+        """Formatted summary matching the standard OrganMeta convention."""
         return f"{self.organ_id} — {self.ta2_latin} ({self.name_en})"
 
 
 @dataclass(frozen=True)
 class Atlas:
-    """A loaded manifest: what is in it, and where it came from.
-
-    `license`, `credit` and `attribution` are carried rather than dropped
-    because this data leaves the application now. Anatomical data handed to a
-    third party without saying where it came from is precisely the failure this
-    project should not commit — and the two atlases do **not** share a licence,
-    so the field cannot be a constant.
-    """
+    """Encapsulates parsed anatomical manifest metadata and structures."""
 
     version: int
     gender_model: str
@@ -164,49 +106,32 @@ class Atlas:
     systems: dict[str, int] = field(default_factory=dict)
 
     def by_id(self, organ_id: str) -> Structure | None:
-        return self._index.get(organ_id)
+        return self._lookup.get(organ_id)
 
     def markings_for(self, organ_id: str) -> list[Structure]:
-        """The attachment meshes the source data files against a muscle.
-
-        Empty for anything that is not a muscle belly, and **routinely
-        incomplete** where it is: 197 muscles in the male atlas carry only one
-        of the two markings. An empty result is therefore not evidence that a
-        muscle has no attachments, only that this dataset records none.
-
-        The markings live under their own heading, `Muscular insertions`, which
-        is where Z-Anatomy keeps them — never among the muscles, so isolating
-        the muscles does not hand back a cloud of attachment areas.
-        """
-        return self._markings.get(organ_id, [])
+        """Fetch associated attachment markings for a muscle belly."""
+        return self._attachments.get(organ_id, [])
 
     def __post_init__(self) -> None:
         object.__setattr__(
-            self, "_index", {structure.organ_id: structure for structure in self.structures}
+            self, "_lookup", {item.organ_id: item for item in self.structures}
         )
 
-        markings: dict[str, list[Structure]] = {}
-        for structure in self.structures:
-            owner = belly_id(structure.organ_id)
-            if owner is not None:
-                markings.setdefault(owner, []).append(structure)
-        for group in markings.values():
-            group.sort(key=lambda structure: structure.organ_id)
-        object.__setattr__(self, "_markings", markings)
+        attachment_records: dict[str, list[Structure]] = {}
+        for item in self.structures:
+            parent = belly_id(item.organ_id)
+            if parent is not None:
+                attachment_records.setdefault(parent, []).append(item)
+        for cluster in attachment_records.values():
+            cluster.sort(key=lambda s: s.organ_id)
+        object.__setattr__(self, "_attachments", attachment_records)
 
 
 def load_atlas(manifest_path: Path) -> Atlas:
-    """Read one manifest from disk.
+    """Load and parse an anatomical atlas manifest file from disk."""
+    payload = json.loads(manifest_path.read_text(encoding="utf-8"))
 
-    Missing optional fields are tolerated — `path` is absent for structures that
-    sit at the root of their system, and older manifests predate some of the
-    credit fields. A malformed *required* field is not tolerated: it would
-    surface later as a structure the reader cannot reach, which is worse than a
-    refusal at load.
-    """
-    raw = json.loads(manifest_path.read_text(encoding="utf-8"))
-
-    structures = [
+    parsed_structures = [
         Structure(
             organ_id=entry["organ_id"],
             ta2_latin=entry["ta2_latin"],
@@ -216,93 +141,65 @@ def load_atlas(manifest_path: Path) -> Atlas:
             mesh_file=entry.get("mesh_file", ""),
             node=entry.get("node", ""),
         )
-        for entry in raw["organs"]
+        for entry in payload["organs"]
     ]
 
     return Atlas(
-        version=raw.get("version", 0),
-        gender_model=raw.get("gender_model", "unknown"),
-        license=raw.get("license", ""),
-        credit=raw.get("credit", ""),
-        attribution=raw.get("attribution", ""),
-        structures=structures,
-        systems={entry["system"]: entry["organ_count"] for entry in raw.get("systems", [])},
+        version=payload.get("version", 0),
+        gender_model=payload.get("gender_model", "unknown"),
+        license=payload.get("license", ""),
+        credit=payload.get("credit", ""),
+        attribution=payload.get("attribution", ""),
+        structures=parsed_structures,
+        systems={s["system"]: s["organ_count"] for s in payload.get("systems", [])},
     )
 
 
 def systems_map(structures: list[Structure]) -> dict[str, tuple[list[str], int]]:
-    """Per system: the root headings its structures live under, and how many
-    are filed nowhere.
-
-    `atlas_info` already reports the per-system counts, so a tool that returned
-    only those would be a wrapper around a field the caller has. This is the
-    part a reader actually wants next — where in the tree to look, and how much
-    of the system is not in the tree at all.
-    """
-    found: dict[str, tuple[dict[str, None], list[int]]] = {}
-    for structure in structures:
-        headings, unfiled = found.setdefault(structure.system, ({}, [0]))
-        if structure.path:
-            headings[structure.path[0]] = None
+    """Index primary section headings and count unassigned items per anatomical system."""
+    catalog: dict[str, tuple[dict[str, None], list[int]]] = {}
+    for item in structures:
+        headers, loose_counter = catalog.setdefault(item.system, ({}, [0]))
+        if item.path:
+            headers[item.path[0]] = None
         else:
-            unfiled[0] += 1
-    return {system: (list(headings), unfiled[0]) for system, (headings, unfiled) in found.items()}
+            loose_counter[0] += 1
+    return {
+        sys_key: (list(headers.keys()), loose_counter[0])
+        for sys_key, (headers, loose_counter) in catalog.items()
+    }
 
 
 def heading_names(structures: list[Structure]) -> set[str]:
-    """Every heading name anywhere in the hierarchy, at any depth.
-
-    `isolate_group` takes a name rather than an identifier, because most groups
-    have none: 109 of the male atlas's 110 groups are headings over many meshes
-    and not meshes themselves. Checking such a command therefore needs the set
-    of names, which is what this is.
-
-    Deliberately *not* the same rule as the viewer's own `groupNames`, which
-    lists only names covering more than one structure — a group of one is not
-    worth offering a reader. That answers "what should be advertised"; this
-    answers "would this command do nothing", and a name covering exactly one
-    structure still isolates it. Being stricter here would reject commands that
-    work.
-    """
-    return {node for structure in structures for node in structure.path}
+    """Gather all distinct hierarchy branch names across all depth tiers."""
+    return {branch for item in structures for branch in item.path}
 
 
 def headings_at(structures: list[Structure], prefix: tuple[str, ...]) -> list[str]:
-    """The heading names directly below a point, in manifest order."""
+    """Retrieve child branches located immediately underneath a path prefix."""
     depth = len(prefix)
-    seen: dict[str, None] = {}
-    for structure in structures:
-        if structure.path[:depth] == prefix and len(structure.path) > depth:
-            seen[structure.path[depth]] = None
-    return list(seen)
+    branches: dict[str, None] = {}
+    for item in structures:
+        if item.path[:depth] == prefix and len(item.path) > depth:
+            branches[item.path[depth]] = None
+    return list(branches.keys())
 
 
 def children_of(
     structures: list[Structure], prefix: tuple[str, ...]
 ) -> tuple[list[str], list[Structure]]:
-    """What sits directly under a point in the hierarchy.
-
-    Returns the next level of headings and the structures that stop exactly
-    here, separately — a reader browsing needs to know which of the two they are
-    looking at, and a flat list of both cannot say.
-
-    An empty prefix asks for the roots. Paging is the caller's job at any level:
-    `Muscular insertions` alone holds 451. The root once held 910 loose meshes
-    because the export dropped the name of the collection they sat in; that is
-    fixed at the source, and `systems_map` reports `unfiled` so a recurrence is
-    visible rather than silent.
-    """
+    """Enumerate branch headers and leaf structures residing at a given prefix."""
     depth = len(prefix)
-    headings: dict[str, None] = {}
-    leaves: list[Structure] = []
+    sub_headers: dict[str, None] = {}
+    leaf_nodes: list[Structure] = []
 
-    for structure in structures:
-        if structure.path[:depth] != prefix:
+    for item in structures:
+        if item.path[:depth] != prefix:
             continue
-        if len(structure.path) == depth:
-            leaves.append(structure)
+        if len(item.path) == depth:
+            leaf_nodes.append(item)
         else:
-            headings[structure.path[depth]] = None
+            sub_headers[item.path[depth]] = None
 
-    leaves.sort(key=lambda structure: structure.name_en)
-    return list(headings), leaves
+    leaf_nodes.sort(key=lambda elem: elem.name_en)
+    return list(sub_headers.keys()), leaf_nodes

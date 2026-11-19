@@ -1,10 +1,7 @@
-"""The anatomy agent: streams an explanation while driving the viewport.
+"""Agent runner: synchronizes conversational tutoring with dynamic 3D viewport actions.
 
-The interleaving is the point. Scene commands are written to stdout by the tool
-itself, the moment the model calls it — not collected and flushed at the end —
-so the camera has already moved by the time the sentence about that structure
-reaches the reader. Asking "how does the heart pump blood?" produces a guided
-tour, not a wall of text followed by a jump.
+Commands are emitted in real time as tool executions occur, allowing the 3D scene
+to orient and highlight structures contemporaneously with the generated narrative.
 """
 
 from __future__ import annotations
@@ -13,11 +10,6 @@ import sys
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
 
-# `AgentRunResultEvent` is re-exported at the package root but actually lives in
-# `pydantic_ai.run`; it is not a member of `pydantic_ai.messages`. Importing it
-# from there resolves under a normal interpreter through a module `__getattr__`
-# and then fails in the PyInstaller bundle, whose static analysis cannot follow
-# that indirection. Import from where things really are.
 from pydantic_ai import Agent, AgentRunResultEvent
 from pydantic_ai.messages import (
     FunctionToolCallEvent,
@@ -42,9 +34,8 @@ from hoomaan_engine.protocol import (
 from hoomaan_engine.providers import build_model, resolve_model_name
 from hoomaan_engine.scene_tools import SceneContext, register_scene_tools
 
-#: Tool retries per turn. Two is enough for the model to recover from a wrong
-#: organ_id; more just burns tokens re-reading the same inventory.
-TOOL_RETRIES = 2
+# Allow up to two retries if the model passes a non-existent organ ID
+MAX_TOOL_RETRIES = 2
 
 
 @dataclass
@@ -60,7 +51,6 @@ class ToolStarted:
 @dataclass
 class Completed:
     usage: TokenUsage | None
-    #: The model id the turn actually ran on, defaults resolved.
     model: str
 
 
@@ -68,39 +58,43 @@ AgentEvent = TextChunk | ToolStarted | Completed
 
 
 def build_agent(request: AgentRequest, scene: SceneContext) -> Agent[SceneContext, str]:
-    model = build_model(request.provider, request.api_key, request.model)
-    agent: Agent[SceneContext, str] = Agent(
-        model,
-        deps_type=SceneContext,
-        instructions=build_instructions(
-            profile=request.profile,
-            language=request.language,
-            organs=list(scene.organs.values()),
-            selection=request.selection,
-            mode=request.mode,
-            patient=request.case,
-            gender=request.gender_model,
-            groups=request.available_groups,
-            scanner=request.scanner,
-            heart=request.heart,
-            breathing=request.breathing,
-        ),
-        retries=TOOL_RETRIES,
+    """Instantiate a Pydantic AI agent configured with context, tools, and prompts."""
+    model_instance = build_model(request.provider, request.api_key, request.model)
+    system_instructions = build_instructions(
+        profile=request.profile,
+        language=request.language,
+        organs=list(scene.organs.values()),
+        selection=request.selection,
+        mode=request.mode,
+        patient=request.case,
+        gender=request.gender_model,
+        groups=request.available_groups,
+        scanner=request.scanner,
+        heart=request.heart,
+        breathing=request.breathing,
     )
+    
+    agent: Agent[SceneContext, str] = Agent(
+        model_instance,
+        deps_type=SceneContext,
+        instructions=system_instructions,
+        retries=MAX_TOOL_RETRIES,
+    )
+    
     register_scene_tools(agent)
-    # Registered per mode, not per turn: a tutoring turn cannot write a grade
-    # into the journal because the tool that would do it does not exist there.
     if request.mode == "case":
         register_case_tools(agent)
+        
     return agent
 
 
 def build_scene_context(request: AgentRequest, emit, emit_verdict=None) -> SceneContext:
-    systems: set[AnatomicalSystem] = {organ.system for organ in request.available_organs}
+    """Build the shared SceneContext dependency injected into all tool invocations."""
+    discovered_systems: set[AnatomicalSystem] = {o.system for o in request.available_organs}
     return SceneContext(
-        organs={organ.organ_id: organ for organ in request.available_organs},
+        organs={o.organ_id: o for o in request.available_organs},
         groups=set(request.available_groups),
-        systems=systems,
+        systems=discovered_systems,
         profile=request.profile,
         language=request.language,
         emit=emit,
@@ -108,112 +102,78 @@ def build_scene_context(request: AgentRequest, emit, emit_verdict=None) -> Scene
     )
 
 
-def build_history(turns: list[TranscriptTurn]) -> list[ModelMessage]:
-    """Replay prior turns as alternating request/response messages.
-
-    Only the prose is carried over, not the tool calls from earlier turns. The
-    viewport has moved on since then, and replaying stale scene commands as
-    context would invite the model to reason about a scene that no longer
-    matches what the user is looking at.
-    """
-    messages: list[ModelMessage] = []
-    for turn in turns:
-        if not turn.content.strip():
+def build_history(history_turns: list[TranscriptTurn]) -> list[ModelMessage]:
+    """Convert conversational turns into Pydantic AI message structures."""
+    reconstructed: list[ModelMessage] = []
+    for turn in history_turns:
+        body = turn.content.strip()
+        if not body:
             continue
         if turn.role == "user":
-            messages.append(ModelRequest(parts=[UserPromptPart(content=turn.content)]))
+            reconstructed.append(ModelRequest(parts=[UserPromptPart(content=body)]))
         else:
-            messages.append(ModelResponse(parts=[TextPart(content=turn.content)]))
-    return messages
+            reconstructed.append(ModelResponse(parts=[TextPart(content=body)]))
+    return reconstructed
 
 
 async def run_agent(
     request: AgentRequest, scene: SceneContext
 ) -> AsyncIterator[AgentEvent]:
-    """Stream one turn, yielding text as it arrives and tool starts as they fire."""
-    agent = build_agent(request, scene)
-    history = build_history(request.history)
-    model_name = resolve_model_name(request.provider, request.model)
+    """Stream model output chunks, tool activations, and execution completion."""
+    agent_inst = build_agent(request, scene)
+    dialogue_history = build_history(request.history)
+    resolved_model_name = resolve_model_name(request.provider, request.model)
 
-    async with agent.run_stream_events(
-        request.query, deps=scene, message_history=history
-    ) as events:
-        async for event in events:
-            # A text part can arrive whole or in deltas depending on provider;
-            # both paths have to be handled or some models stream nothing.
-            if isinstance(event, PartStartEvent) and isinstance(event.part, TextPart):
-                if event.part.content:
-                    yield TextChunk(event.part.content)
+    async with agent_inst.run_stream_events(
+        request.query, deps=scene, message_history=dialogue_history
+    ) as stream_handle:
+        async for stream_ev in stream_handle:
+            if isinstance(stream_ev, PartStartEvent) and isinstance(stream_ev.part, TextPart):
+                if stream_ev.part.content:
+                    yield TextChunk(stream_ev.part.content)
 
-            elif isinstance(event, PartDeltaEvent) and isinstance(
-                event.delta, TextPartDelta
+            elif isinstance(stream_ev, PartDeltaEvent) and isinstance(
+                stream_ev.delta, TextPartDelta
             ):
-                if event.delta.content_delta:
-                    yield TextChunk(event.delta.content_delta)
+                if stream_ev.delta.content_delta:
+                    yield TextChunk(stream_ev.delta.content_delta)
 
-            elif isinstance(event, FunctionToolCallEvent):
-                # Surfaced so the chat panel can show "focusing left ventricle…".
-                # The scene command itself was already written to stdout by the
-                # tool body; this is only for the progress indicator.
-                yield ToolStarted(event.part.tool_name)
+            elif isinstance(stream_ev, FunctionToolCallEvent):
+                yield ToolStarted(stream_ev.part.tool_name)
 
-            elif isinstance(event, AgentRunResultEvent):
-                yield Completed(_usage_of(event), model_name)
+            elif isinstance(stream_ev, AgentRunResultEvent):
+                yield Completed(extract_token_usage(stream_ev), resolved_model_name)
 
 
-def _usage_of(event: AgentRunResultEvent) -> TokenUsage | None:
-    """Token accounting; a missing count must not fail the turn.
-
-    # Why there is no `except Exception` here any more
-
-    There was, and it hid a bug for the whole life of the feature. `usage` on
-    an `AgentRunResult` is an **attribute**, not a method; the code called it,
-    every single turn raised `TypeError: 'RunUsage' object is not callable`,
-    and the blanket catch reported that as "the provider did not tell us what
-    this cost". A total failure wearing the costume of a legitimately empty
-    result — and nothing upstream could tell the difference, because the two
-    are the same value.
-
-    So every branch below is explicit and none of them can raise. A shape this
-    function genuinely does not recognise says so on stderr instead of
-    returning `None` with a shrug, because that is the difference between a
-    provider that reports nothing and a library that moved its API again.
-    """
-    usage = getattr(event.result, "usage", None)
-    # Tolerated because pydantic-ai exposed this as a method before 2.x, and a
-    # turn is not the place to find out which one is installed.
-    if callable(usage):
-        usage = usage()
-    if usage is None:
+def extract_token_usage(event: AgentRunResultEvent) -> TokenUsage | None:
+    """Safely extract token consumption metrics across varied SDK versions."""
+    raw_usage = getattr(event.result, "usage", None)
+    if callable(raw_usage):
+        raw_usage = raw_usage()
+    if raw_usage is None:
         return None
 
-    input_tokens = _count(getattr(usage, "input_tokens", None))
-    output_tokens = _count(getattr(usage, "output_tokens", None))
-    if input_tokens is None or output_tokens is None:
+    in_count = _parse_token_num(getattr(raw_usage, "input_tokens", None))
+    out_count = _parse_token_num(getattr(raw_usage, "output_tokens", None))
+    if in_count is None or out_count is None:
         print(
-            f"[engine] {type(usage).__name__} carries no readable token counts; "
-            "this turn will be reported as uncosted",
+            f"[hoomaan_engine] {type(raw_usage).__name__} lacks valid token counts; reporting as uncosted",
             file=sys.stderr,
             flush=True,
         )
         return None
 
-    # Absent on older pydantic-ai and on providers that report no cache, and
-    # zero is the honest reading of both: nothing is known to have been served
-    # from a cache. Clamped to the input total because it is a subset of it by
-    # the library's own definition, and a figure larger than its parent would
-    # make the notice claim a turn cost less than nothing.
-    cached = _count(getattr(usage, "cache_read_tokens", None)) or 0
-
+    cached_count = _parse_token_num(getattr(raw_usage, "cache_read_tokens", None)) or 0
     return TokenUsage(
-        input_tokens=input_tokens,
-        output_tokens=output_tokens,
-        cache_read_tokens=min(cached, input_tokens),
+        input_tokens=in_count,
+        output_tokens=out_count,
+        cache_read_tokens=min(cached_count, in_count),
     )
 
 
-def _count(value: object) -> int | None:
-    """A non-negative token count, or `None` for anything that is not one."""
-    if isinstance(value, bool) or not isinstance(value, (int, float)):
+def _parse_token_num(raw_val: object) -> int | None:
+    """Validate and coerce non-negative integer token values."""
+    if isinstance(raw_val, bool) or not isinstance(raw_val, (int, float)):
         return None
-    return int(value) if value >= 0 else None
+    as_int = int(raw_val)
+    return as_int if as_int >= 0 else None

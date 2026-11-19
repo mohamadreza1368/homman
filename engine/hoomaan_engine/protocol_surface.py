@@ -1,19 +1,8 @@
-"""Emit a normalised description of the IPC protocol as JSON.
+"""Inspection tool producing a normalized JSON export of the Hoomaan IPC schema.
 
-Run as `python -m hoomaan_engine.protocol_surface`. The TypeScript contract test
-(`tests/protocol-contract.test.ts`) computes the same structure from the Zod
-schemas and asserts the two match, so a field added on one side and forgotten
-on the other fails a test instead of failing in production.
-
-Comparing full JSON Schema documents from two different generators produces
-endless false diffs ($ref styles, metadata, ordering). What actually matters
-for drift is narrower and is what this emits: which fields exist, whether each
-is required, and what the enum value sets are.
-
-Two fields are excluded from the comparison because they legitimately exist on
-only one side:
-  - `api_key`, injected by Rust from the OS keyring; the frontend never sees it.
-  - `kind`, the request discriminator, also added by Rust.
+Executed as `python -m hoomaan_engine.protocol_surface`.
+Synchronized with `tests/protocol-contract.test.ts` to verify bidirectional parity
+between TypeScript Zod definitions and Python Pydantic structures.
 """
 
 from __future__ import annotations
@@ -26,39 +15,34 @@ from pydantic import BaseModel
 
 from hoomaan_engine import protocol as p
 
-EXCLUDED_FIELDS = {"api_key", "kind"}
+# Fields synthesized or injected at the transport/OS level, omitted from parity checks
+UNTRACKED_SYSTEM_FIELDS = frozenset({"api_key", "kind"})
 
 
-def fields_of(model: type[BaseModel]) -> dict[str, str]:
-    return {
-        name: ("optional" if not field.is_required() else "required")
-        for name, field in model.model_fields.items()
-        if name not in EXCLUDED_FIELDS
-    }
+def extract_model_schema(model_cls: type[BaseModel]) -> dict[str, str]:
+    """Extract required vs optional properties from a Pydantic model."""
+    descriptors: dict[str, str] = {}
+    for prop_name, prop_meta in model_cls.model_fields.items():
+        if prop_name in UNTRACKED_SYSTEM_FIELDS:
+            continue
+        descriptors[prop_name] = "required" if prop_meta.is_required() else "optional"
+    return descriptors
 
 
-def variants_of(union: Any, discriminator: str) -> dict[str, dict[str, str]]:
-    """Map a discriminated union to {discriminator value: field surface}.
-
-    The discriminator is normalised to "required" on both sides. Here it
-    carries a default so events can be constructed as `ReadyEvent()`, which
-    makes Pydantic report it as optional; Zod's `z.literal()` reports it as
-    required. Neither is wrong — on the wire the field is always present — so
-    comparing the raw optionality would just be noise. It stays in the surface
-    so a rename or removal is still caught.
-    """
-    out: dict[str, dict[str, str]] = {}
-    # Annotated[A | B, Field(discriminator=...)] -> unwrap to the union itself.
-    members = get_args(get_args(union)[0])
-    for member in members:
-        default = member.model_fields[discriminator].default
-        surface = fields_of(member)
-        surface[discriminator] = "required"
-        out[str(default)] = surface
-    return out
+def extract_discriminated_union(union_type: Any, tag_field: str) -> dict[str, dict[str, str]]:
+    """Map union variants to their schema, keyed by discriminator value."""
+    schema_map: dict[str, dict[str, str]] = {}
+    underlying_union = get_args(union_type)[0]
+    for variant in get_args(underlying_union):
+        tag_val = variant.model_fields[tag_field].default
+        fields = extract_model_schema(variant)
+        fields[tag_field] = "required"
+        schema_map[str(tag_val)] = fields
+    return schema_map
 
 
 def build_surface() -> dict[str, Any]:
+    """Assemble complete enum, model, and union surface for contract validation."""
     return {
         "enums": {
             "Language": sorted(get_args(p.Language)),
@@ -73,34 +57,33 @@ def build_surface() -> dict[str, Any]:
             "EngineErrorCode": sorted(get_args(p.EngineErrorCode)),
         },
         "models": {
-            "OrganMeta": fields_of(p.OrganMeta),
-            "OrganContext": fields_of(p.OrganContext),
-            "TokenUsage": fields_of(p.TokenUsage),
-            "TranscriptTurn": fields_of(p.TranscriptTurn),
-            "AgentRequest": fields_of(p.AgentRequest),
-            # Nested inside AgentRequest, so joined explicitly: the outer field
-            # agreeing on both sides says nothing about the shape it carries.
-            "VirtualPatient": fields_of(p.VirtualPatient),
-            "CaseComplaint": fields_of(p.CaseComplaint),
-            "CaseVisitSummary": fields_of(p.CaseVisitSummary),
-            "CaseRecordUpdate": fields_of(p.CaseRecordUpdate),
-            "ScannerContext": fields_of(p.ScannerContext),
-            "HeartContext": fields_of(p.HeartContext),
-            "BreathContext": fields_of(p.BreathContext),
-            "LocalChatRequest": fields_of(p.LocalChatRequest),
-            "LocalModelsRequest": fields_of(p.LocalModelsRequest),
-            "LocalModelInfo": fields_of(p.LocalModelInfo),
+            "OrganMeta": extract_model_schema(p.OrganMeta),
+            "OrganContext": extract_model_schema(p.OrganContext),
+            "TokenUsage": extract_model_schema(p.TokenUsage),
+            "TranscriptTurn": extract_model_schema(p.TranscriptTurn),
+            "AgentRequest": extract_model_schema(p.AgentRequest),
+            "VirtualPatient": extract_model_schema(p.VirtualPatient),
+            "CaseComplaint": extract_model_schema(p.CaseComplaint),
+            "CaseVisitSummary": extract_model_schema(p.CaseVisitSummary),
+            "CaseRecordUpdate": extract_model_schema(p.CaseRecordUpdate),
+            "ScannerContext": extract_model_schema(p.ScannerContext),
+            "HeartContext": extract_model_schema(p.HeartContext),
+            "BreathContext": extract_model_schema(p.BreathContext),
+            "LocalChatRequest": extract_model_schema(p.LocalChatRequest),
+            "LocalModelsRequest": extract_model_schema(p.LocalModelsRequest),
+            "LocalModelInfo": extract_model_schema(p.LocalModelInfo),
         },
         "unions": {
-            "SceneCommand": variants_of(p.SceneCommand, "action"),
-            "EngineEvent": variants_of(p.EngineEvent, "type"),
+            "SceneCommand": extract_discriminated_union(p.SceneCommand, "action"),
+            "EngineEvent": extract_discriminated_union(p.EngineEvent, "type"),
         },
         "protocol_version": p.PROTOCOL_VERSION,
     }
 
 
 def main() -> int:
-    json.dump(build_surface(), sys.stdout, indent=2, sort_keys=True)
+    surface_data = build_surface()
+    json.dump(surface_data, sys.stdout, indent=2, sort_keys=True)
     sys.stdout.write("\n")
     return 0
 

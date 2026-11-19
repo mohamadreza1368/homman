@@ -1,11 +1,5 @@
 mod app_log;
 mod commands;
-// The control bridge. `control_bridge` is the only one of these the rest of the
-// application names; the others are its parts and reach the app through it.
-//
-// It is off unless the reader turns it on. What it admits goes onto the
-// engine's own event channel, so an external program's scene command and the
-// assistant's take the same path and are checked by the same schema.
 #[cfg(windows)]
 mod control_acl;
 mod control_bridge;
@@ -28,13 +22,11 @@ use control_bridge::ControlBridge;
 use sidecar::EngineHandle;
 use study_db::StudyDb;
 
-/// Filename of the study journal inside the app data directory.
-const STUDY_DB: &str = "study.db";
+const STUDY_DB_FILENAME: &str = "study.db";
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    // First of all, while the process has one thread: the webview's browser
-    // arguments are fixed when the window is created, before any setup runs.
+    // Early configuration of hardware acceleration switches prior to WebView initialization.
     display::apply_before_window();
 
     tauri::Builder::default()
@@ -42,8 +34,6 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .manage(EngineHandle::default())
-        // Managed, not started. Constructing it opens nothing: there is no
-        // pipe until `start_bridge` is called from the settings panel.
         .manage(ControlBridge::default())
         .invoke_handler(tauri::generate_handler![
             commands::save_api_key,
@@ -96,45 +86,32 @@ pub fn run() {
             commands::set_stable_display,
         ])
         .setup(|app| {
-            // Before anything else is visible for long enough to be read: a
-            // window hanging off the bottom of the screen takes the view
-            // controls, the viewpoint bar and the four-view switch with it, and
-            // says nothing about having done so.
-            if let Some(window) = app.get_webview_window("main") {
-                window_fit::fit_to_work_area(&window);
+            if let Some(main_win) = app.get_webview_window("main") {
+                window_fit::fit_to_work_area(&main_win);
             }
 
-            let data_dir = app
+            let app_data_path = app
                 .path()
                 .app_data_dir()
                 .unwrap_or_else(|_| std::path::PathBuf::from("."));
 
-            // First, so that everything after it can be recorded — including
-            // the journal failing to open, which is the one thing that used to
-            // vanish without trace.
-            let log = AppLog::open(&data_dir.join(app_log::LOG_FILE));
-            log.append(
+            let logger = AppLog::open(&app_data_path.join(app_log::LOG_FILE));
+            logger.append(
                 "info",
                 "app",
                 &format!("started, version {}", app.package_info().version),
             );
-            app.manage(log);
+            app.manage(logger);
 
-            // The journal is opened before anything else can ask for it, and
-            // opening it cannot fail — an unusable database degrades to "saving
-            // is broken", never to "the atlas will not start".
-            let study_path = data_dir.join(STUDY_DB);
-            app.manage(StudyDb::open(&study_path));
+            let db_path = app_data_path.join(STUDY_DB_FILENAME);
+            app.manage(StudyDb::open(&db_path));
             app.state::<AppLog>()
                 .append("info", "journal", "opened");
 
-            // A failed engine start must not take the window down with it: the
-            // 3D viewer, the anatomy tree and the i18n layer are all useful
-            // without AI. The frontend learns about it through the error event.
-            if let Err(err) = sidecar::spawn(app.handle()) {
-                eprintln!("[engine] {err}");
+            if let Err(spawn_err) = sidecar::spawn(app.handle()) {
+                eprintln!("[engine] {spawn_err}");
                 app.state::<AppLog>()
-                    .append("error", "engine", &format!("failed to start: {err}"));
+                    .append("error", "engine", &format!("failed to start: {spawn_err}"));
                 let _ = tauri::Emitter::emit(
                     app.handle(),
                     sidecar::ENGINE_EVENT,
@@ -142,7 +119,7 @@ pub fn run() {
                         "type": "error",
                         "request_id": serde_json::Value::Null,
                         "code": "internal_error",
-                        "message": err.to_string(),
+                        "message": spawn_err.to_string(),
                     }),
                 );
             }
@@ -151,18 +128,12 @@ pub fn run() {
         .on_window_event(|window, event| {
             if matches!(event, WindowEvent::Destroyed) {
                 window.app_handle().state::<EngineHandle>().shutdown();
-                // The pipe would go with the process anyway. Closed here so
-                // that "the window is gone" and "nothing is listening" are the
-                // same moment rather than nearly the same one.
                 window.app_handle().state::<ControlBridge>().stop();
             }
         })
         .build(tauri::generate_context!())
         .expect("error while building HOOMAAN")
         .run(|app, event| {
-            // Belt and braces: `Destroyed` covers the normal close, this covers
-            // the paths that skip it. Leaving a Python process behind after the
-            // window is gone is the classic Tauri-sidecar failure mode.
             if matches!(event, RunEvent::Exit) {
                 app.state::<EngineHandle>().shutdown();
                 app.state::<ControlBridge>().stop();

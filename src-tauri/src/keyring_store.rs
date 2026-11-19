@@ -1,17 +1,12 @@
-//! API key storage in the operating system's credential store.
+//! Secure credential store interface for managing third-party AI provider API keys.
 //!
-//! The security property this module exists to enforce: **the frontend can
-//! write a key and ask whether one exists, but can never read one back.**
-//! There is deliberately no `get` command exposed to the webview — the only
-//! reader is [`read`], which is crate-private and used solely to inject the key
-//! into the sidecar's stdin. A compromised or injected script in the webview
-//! therefore has nothing to exfiltrate.
+//! Enforces unidirectional security: the user interface can write or purge API keys,
+//! or verify their presence, but secret keys are never echoed back to the web view.
 
 use serde::{Deserialize, Serialize};
 
-/// Service name under which credentials are filed. Shows up as the entry name
-/// in Windows Credential Manager / macOS Keychain, so it is user-facing.
-const SERVICE: &str = "HOOMAAN";
+/// System keyring service name identifying HOOMAAN credentials.
+const KEYRING_SERVICE: &str = "HOOMAAN";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -22,8 +17,8 @@ pub enum Provider {
 }
 
 impl Provider {
-    /// Account name within the service entry.
-    fn account(self) -> &'static str {
+    /// Maps provider variant to credential store account identifier.
+    fn account_id(self) -> &'static str {
         match self {
             Provider::Anthropic => "anthropic",
             Provider::Openai => "openai",
@@ -48,40 +43,41 @@ impl serde::Serialize for KeyringError {
     }
 }
 
-fn entry(provider: Provider) -> Result<keyring::Entry, KeyringError> {
-    keyring::Entry::new(SERVICE, provider.account())
-        .map_err(|e| KeyringError::Backend(e.to_string()))
+fn create_entry(provider: Provider) -> Result<keyring::Entry, KeyringError> {
+    keyring::Entry::new(KEYRING_SERVICE, provider.account_id())
+        .map_err(|err| KeyringError::Backend(err.to_string()))
 }
 
+/// Saves an API key for the specified provider into the platform credential vault.
 pub fn store(provider: Provider, api_key: &str) -> Result<(), KeyringError> {
-    let trimmed = api_key.trim();
-    if trimmed.is_empty() {
+    let clean_key = api_key.trim();
+    if clean_key.is_empty() {
         return Err(KeyringError::Empty);
     }
-    entry(provider)?
-        .set_password(trimmed)
-        .map_err(|e| KeyringError::Backend(e.to_string()))
+    create_entry(provider)?
+        .set_password(clean_key)
+        .map_err(|err| KeyringError::Backend(err.to_string()))
 }
 
-/// Crate-private on purpose — see the module docs. Never expose as a command.
+/// Reads the provider key from the keyring for internal sidecar consumption only.
 pub(crate) fn read(provider: Provider) -> Result<String, KeyringError> {
-    match entry(provider)?.get_password() {
-        Ok(secret) => Ok(secret),
+    match create_entry(provider)?.get_password() {
+        Ok(token) => Ok(token),
         Err(keyring::Error::NoEntry) => Err(KeyringError::NotFound),
-        Err(e) => Err(KeyringError::Backend(e.to_string())),
+        Err(err) => Err(KeyringError::Backend(err.to_string())),
     }
 }
 
+/// Checks whether an API key has been recorded for the specified provider.
 pub fn exists(provider: Provider) -> bool {
     read(provider).is_ok()
 }
 
+/// Deletes any stored API key for the provider. If absent, succeeds idempotently.
 pub fn delete(provider: Provider) -> Result<(), KeyringError> {
-    match entry(provider)?.delete_credential() {
+    match create_entry(provider)?.delete_credential() {
         Ok(()) => Ok(()),
-        // Deleting an absent key is a no-op, not an error — the caller's
-        // desired end state (no key stored) already holds.
         Err(keyring::Error::NoEntry) => Ok(()),
-        Err(e) => Err(KeyringError::Backend(e.to_string())),
+        Err(err) => Err(KeyringError::Backend(err.to_string())),
     }
 }

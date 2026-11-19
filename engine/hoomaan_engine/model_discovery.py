@@ -1,18 +1,7 @@
-"""Ask each provider which models a given key can actually use.
+"""Provider model catalog enumeration and credential verification.
 
-This is also how a key gets validated. Rather than a separate "test connection"
-path that could drift from the real one, the call that populates the picker is
-the call that proves the credential works: a bad key fails here exactly as it
-would fail on the first question.
-
-Listing is filtered to models that can hold a tool-using conversation. Every
-provider's catalogue also contains embedding, speech and image models, and
-offering one of those in a chat picker produces a confusing failure at the first
-message instead of a clear absence at setup.
-
-What counts as usable lives in `model_capability`, not here: the same judgement
-decides which endpoint drives a model, and having it in two files is how the two
-answers drift apart.
+Queries model lists from AI providers, filters out specialized or non-chat models,
+and validates API key credentials live against upstream endpoints.
 """
 
 from __future__ import annotations
@@ -25,108 +14,85 @@ from hoomaan_engine.providers import DEFAULT_MODELS, ProviderError
 
 
 def _finish(provider: AiProvider, models: list[ModelInfo]) -> list[ModelInfo]:
-    """Sort newest-looking first and mark the engine's default.
+    """Sorts discovered models descending by identifier and marks verified defaults."""
+    default_target = DEFAULT_MODELS[provider]
 
-    # Nothing is recommended unless it is known to work
+    deduped: dict[str, ModelInfo] = {}
+    for entry in models:
+        deduped.setdefault(entry.id, entry)
 
-    The default is the only id in this file that anyone has actually driven the
-    scene tools with. When it is absent — retired by the provider, or outside
-    this key's access — the catalogue comes back with **nothing marked**, and
-    the picker says so.
-
-    It used to promote the first entry instead, which sounds harmless and is
-    not: the sort is by id, descending. On an OpenAI key today that puts
-    `gpt-5.6-terra` above `gpt-5.2` — a model that cannot be served function
-    tools on the endpoint this engine uses. So the fallback for "the safe model
-    is missing" was to silently recommend a broken one, and the reader would
-    have read the failure as ours.
-
-    An unknown id is not a recommendation. It is a guess wearing one.
-    """
-    default = DEFAULT_MODELS[provider]
-
-    unique: dict[str, ModelInfo] = {}
-    for model in models:
-        unique.setdefault(model.id, model)
-
-    ordered = sorted(unique.values(), key=lambda m: m.id, reverse=True)
-    for model in ordered:
-        model.recommended = model.id == default
-    return ordered
+    sorted_list = sorted(deduped.values(), key=lambda m: m.id, reverse=True)
+    for entry in sorted_list:
+        entry.recommended = entry.id == default_target
+    return sorted_list
 
 
 def _list_google(api_key: str) -> list[ModelInfo]:
     from google import genai
 
-    client = genai.Client(api_key=api_key)
-    models: list[ModelInfo] = []
-    for model in client.models.list():
-        actions = getattr(model, "supported_actions", None) or []
-        # Google's catalogue mixes generation, embedding and tuning endpoints;
-        # only the ones supporting generateContent can answer a question.
-        if actions and "generateContent" not in actions:
+    genai_client = genai.Client(api_key=api_key)
+    discovered: list[ModelInfo] = []
+    for model_meta in genai_client.models.list():
+        supported_ops = getattr(model_meta, "supported_actions", None) or []
+        if supported_ops and "generateContent" not in supported_ops:
             continue
-        raw_id = (model.name or "").removeprefix("models/")
-        if not raw_id or not is_offered("google", raw_id):
+        cleaned_id = (model_meta.name or "").removeprefix("models/")
+        if not cleaned_id or not is_offered("google", cleaned_id):
             continue
-        models.append(
+        discovered.append(
             ModelInfo(
-                id=raw_id,
-                label=getattr(model, "display_name", None) or raw_id,
-                description=getattr(model, "description", None),
+                id=cleaned_id,
+                label=getattr(model_meta, "display_name", None) or cleaned_id,
+                description=getattr(model_meta, "description", None),
             )
         )
-    return models
+    return discovered
 
 
 def _list_anthropic(api_key: str) -> list[ModelInfo]:
     import anthropic
 
-    client = anthropic.Anthropic(api_key=api_key)
-    models: list[ModelInfo] = []
-    for model in client.models.list(limit=100):
-        if not is_offered("anthropic", model.id):
+    anthropic_client = anthropic.Anthropic(api_key=api_key)
+    discovered: list[ModelInfo] = []
+    for model_record in anthropic_client.models.list(limit=100):
+        if not is_offered("anthropic", model_record.id):
             continue
-        models.append(
-            ModelInfo(id=model.id, label=getattr(model, "display_name", None) or model.id)
+        discovered.append(
+            ModelInfo(
+                id=model_record.id,
+                label=getattr(model_record, "display_name", None) or model_record.id,
+            )
         )
-    return models
+    return discovered
 
 
 def _list_openai(api_key: str) -> list[ModelInfo]:
     import openai
 
-    client = openai.OpenAI(api_key=api_key)
-    models: list[ModelInfo] = []
-    for model in client.models.list():
-        model_id = model.id
-        # OpenAI returns the whole account catalogue, including fine-tunes and
-        # non-chat endpoints. Keep the generative families.
-        if not model_id.startswith(("gpt-", "o1", "o3", "o4", "chatgpt-")):
+    openai_client = openai.OpenAI(api_key=api_key)
+    discovered: list[ModelInfo] = []
+    for model_item in openai_client.models.list():
+        m_id = model_item.id
+        if not m_id.startswith(("gpt-", "o1", "o3", "o4", "chatgpt-")):
             continue
-        if not is_offered("openai", model_id):
+        if not is_offered("openai", m_id):
             continue
-        models.append(ModelInfo(id=model_id, label=model_id))
-    return models
+        discovered.append(ModelInfo(id=m_id, label=m_id))
+    return discovered
 
 
 async def list_models(provider: AiProvider, api_key: str) -> list[ModelInfo]:
-    """Fetch the usable models for a key.
-
-    The provider SDKs expose synchronous list endpoints, so the call runs on a
-    worker thread — blocking the event loop here would stall any answer that is
-    streaming at the same time.
-    """
-    listers = {
+    """Fetches eligible conversational models for the given provider credentials."""
+    registry = {
         "google": _list_google,
         "anthropic": _list_anthropic,
         "openai": _list_openai,
     }
     try:
-        models = await asyncio.to_thread(listers[provider], api_key)
-    except ImportError as exc:  # pragma: no cover - packaging failure
+        results = await asyncio.to_thread(registry[provider], api_key)
+    except ImportError as err:
         raise ProviderError(
-            f"The {provider} integration is missing from this build: {exc}"
-        ) from exc
+            f"The {provider} integration is missing from this build: {err}"
+        ) from err
 
-    return _finish(provider, models)
+    return _finish(provider, results)

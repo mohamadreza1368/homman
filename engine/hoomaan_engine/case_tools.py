@@ -1,13 +1,8 @@
-"""The one tool a case drill has that a lesson does not: recording the grade.
+"""Clinical drill assessment and grading tool registration.
 
-Registered only when the request arrives in `case` mode, which is the point —
-a tutoring turn has no way to write a score into the student's journal even if
-the model decides it would like to.
-
-The score is separated from the prose deliberately. The evaluation itself
-streams as ordinary text and is worth reading once; the number is what the
-journal can average, sort and chart, and it cannot be recovered from a
-paragraph after the fact.
+Exposes the `record_case_verdict` tool solely during case drill sessions, allowing
+the AI tutor to file structured numerical evaluations and clinical reasoning feedback
+into the user's local study journal.
 """
 
 from __future__ import annotations
@@ -16,34 +11,25 @@ from pydantic_ai import Agent, ModelRetry, RunContext
 
 from hoomaan_engine.scene_tools import SceneContext
 
-#: Below this the "verdict" is an acknowledgement, not an evaluation. A student
-#: reviewing a drill three weeks later needs to see why they scored what they
-#: scored, and "Good answer." does not survive that gap.
 MIN_VERDICT_CHARS = 40
-
 MAX_VERDICT_CHARS = 4000
 
 
 def register_case_tools(agent: Agent[SceneContext, str]) -> None:
-    """Attach the grading tool. Case mode only."""
+    """Binds the case scoring tool to the provided Pydantic AI agent instance."""
 
     @agent.tool
     def record_case_verdict(
         ctx: RunContext[SceneContext], score: int, verdict: str
     ) -> str:
-        """Record the grade for the student's answer to a case drill.
+        """Record the numerical grade and diagnostic evaluation for a case scenario attempt.
 
-        Call this once, after you have finished evaluating the attempt — not
-        when you first present the scenario, and never before the student has
-        answered.
-
-        `score` runs 0 to 100 and follows the bands in your instructions.
-        `verdict` is a short written judgement the student will see again when
-        they revisit this case: what they got right, what they missed, and the
-        reasoning they should have reached.
+        Invoked once following clinical evaluation.
+        `score` spans 0 to 100 based on standard assessment rubrics.
+        `verdict` provides actionable feedback detailing accurate deductions and missed differentials.
         """
-        record = ctx.deps.emit_verdict
-        if record is None:
+        verdict_sink = ctx.deps.emit_verdict
+        if verdict_sink is None:
             raise ModelRetry(
                 "Grades can only be recorded during a case drill. "
                 "Answer the question directly instead."
@@ -55,12 +41,12 @@ def register_case_tools(agent: Agent[SceneContext, str]) -> None:
                 "Use the bands in your instructions."
             )
 
-        summary = " ".join(verdict.split())
-        if len(summary) < MIN_VERDICT_CHARS:
+        normalized_verdict = " ".join(verdict.split())
+        if len(normalized_verdict) < MIN_VERDICT_CHARS:
             raise ModelRetry(
                 "The verdict is too short to be useful later. Say what the "
                 "student got right, what they missed, and why it matters."
             )
 
-        record(score, summary[:MAX_VERDICT_CHARS])
+        verdict_sink(score, normalized_verdict[:MAX_VERDICT_CHARS])
         return f"Recorded {score}/100 in the study journal."
