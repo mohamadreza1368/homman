@@ -3,48 +3,11 @@ import { create } from "zustand";
 import { startBridge, stopBridge, bridgeStatus, type BridgeStatus } from "@/lib/ipc";
 
 /**
- * The control bridge, as the window sees it.
+ * Manages external IPC bridge lifecycle and external streaming prose for HOOMAAN.
  *
- * A store rather than state inside the settings panel because two places need
- * the same answer: the panel that operates the switch, and the header pill that
- * says the bridge is on. The pill is the point — a program driving this window
- * from outside must be visible from the window, not only from the panel the
- * reader has to open to find out.
- *
- * # Rust is the source of truth, always
- *
- * Nothing here is optimistic. Every mutation replaces the whole status with
- * what the bridge said about itself afterwards, and a failure leaves the
- * previous status untouched. A switch that draws itself as on because the
- * click succeeded, while the pipe never opened, is the failure this avoids —
- * and it is the failure that matters, because the reader would then believe
- * something is listening when nothing is.
- *
- * Nothing is persisted. The bridge is off at every launch by deliberate
- * design: a listening pipe that survives a restart is one the reader did not
- * ask for this time.
- */
-
-interface BridgeStore {
-  status: BridgeStatus | null;
-  /** Ephemeral external prose, never shared with the assistant or journal. */
-  prose: { id: string; text: string }[];
-  receiveProse: (id: string, text: string) => void;
-  /** What went wrong last, as the reader should read it. */
-  error: string | null;
-  /** A start or stop is in flight; the switch is disabled meanwhile. */
-  busy: boolean;
-  refresh: () => Promise<void>;
-  turnOn: () => Promise<void>;
-  turnOff: () => Promise<void>;
-}
-
-/**
- * The status before Rust has answered.
- *
- * `supported: false` so the panel draws its most cautious face for the one
- * frame before the first reply, rather than offering a switch and withdrawing
- * it on a platform that has no bridge.
+ * Direct communication between the desktop application and local clients over IPC pipes.
+ * Ephemeral external prose is isolated and kept strictly separate from the clinical assistant
+ * and persistent student journal.
  */
 export const UNKNOWN_BRIDGE: BridgeStatus = {
   supported: false,
@@ -55,41 +18,69 @@ export const UNKNOWN_BRIDGE: BridgeStatus = {
   server: null,
 };
 
-export const useBridgeStore = create<BridgeStore>()((set, get) => {
-  // A poll begun before a switch operation cannot overwrite its outcome.
-  let revision = 0;
-  const updateStatus = (status: BridgeStatus) => set({
-    status,
-    ...(!status.running ? { prose: [] } : {}),
-  });
+interface ExternalProseEntry {
+  id: string;
+  text: string;
+}
+
+interface BridgeState {
+  status: BridgeStatus | null;
+  prose: ExternalProseEntry[];
+  error: string | null;
+  busy: boolean;
+
+  receiveProse: (id: string, text: string) => void;
+  refresh: () => Promise<void>;
+  turnOn: () => Promise<void>;
+  turnOff: () => Promise<void>;
+}
+
+export const useBridgeStore = create<BridgeState>()((set, get) => {
+  let activeSequence = 0;
+
+  const commitStatus = (status: BridgeStatus) => {
+    set({
+      status,
+      ...(!status.running ? { prose: [] } : {}),
+    });
+  };
+
   return {
     status: null,
     prose: [],
-    receiveProse: (id, text) => {
-      if (!get().status?.running || get().busy) return;
-      set((state) => ({ prose: [...state.prose.slice(-19), { id, text }] }));
-    },
     error: null,
     busy: false,
 
+    receiveProse: (id: string, text: string) => {
+      const { status, busy } = get();
+      if (!status?.running || busy) return;
+      set((state) => ({
+        prose: [...state.prose.slice(-19), { id, text }],
+      }));
+    },
+
     refresh: async () => {
       if (get().busy) return;
-      const started = revision;
+      const sequence = activeSequence;
       try {
-        const status = await bridgeStatus();
-        if (started === revision) updateStatus(status);
+        const nextStatus = await bridgeStatus();
+        if (sequence === activeSequence) {
+          commitStatus(nextStatus);
+        }
       } catch (err) {
-        // A failed poll says nothing about whether the pipe is open.
-        if (started === revision) set({ error: String(err) });
+        if (sequence === activeSequence) {
+          set({ error: String(err) });
+        }
       }
     },
 
     turnOn: async () => {
       if (get().busy) return;
-      revision++;
+      activeSequence++;
       set({ busy: true, error: null });
       try {
-        updateStatus(await startBridge());
+        const result = await startBridge();
+        commitStatus(result);
       } catch (err) {
         set({ error: String(err) });
       } finally {
@@ -99,10 +90,11 @@ export const useBridgeStore = create<BridgeStore>()((set, get) => {
 
     turnOff: async () => {
       if (get().busy) return;
-      revision++;
+      activeSequence++;
       set({ busy: true, error: null });
       try {
-        updateStatus(await stopBridge());
+        const result = await stopBridge();
+        commitStatus(result);
       } catch (err) {
         set({ error: String(err) });
       } finally {

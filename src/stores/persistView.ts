@@ -2,43 +2,31 @@ import { useSceneStore } from "./sceneStore";
 import { writeStoredView } from "./viewPreferences";
 
 /**
- * Keep the stored view in step with the one on screen.
- *
- * Subscribed to the store rather than wired into each control: there are a
- * dozen ways to change what a system looks like — the tree, the x-ray button,
- * the assistant's own scene commands — and every one of them should be
- * remembered. Watching the result covers all of them, including the ones added
- * next month.
+ * Synchronizes active 3D viewport state with persistent local preferences in HOOMAAN.
+ * Debounces store subscriptions to avoid synchronous main-thread write thrashing during user interactions.
  */
-
-/**
- * The section slider fires continuously while it is dragged, and switching a
- * dozen systems is a dozen writes. `localStorage` is synchronous and on the
- * main thread, so it is worth coalescing.
- */
-const SETTLE_MS = 400;
+const DEBOUNCE_SETTLE_MS = 400;
 
 export function startViewPersistence(): () => void {
-  let timer: ReturnType<typeof setTimeout> | undefined;
+  let debounceHandle: ReturnType<typeof setTimeout> | undefined;
 
-  const unsubscribe = useSceneStore.subscribe((state, previous) => {
-    // Nothing is worth storing until an atlas has loaded. Without this the
-    // empty defaults present during startup would overwrite the very
-    // preferences that are about to be restored.
+  const unsubscribe = useSceneStore.subscribe((state, prev) => {
+    // Only persist after anatomical manifest has finished initialization
     if (!state.manifest) return;
 
-    const changed =
-      state.hiddenSystems !== previous.hiddenSystems ||
-      state.systemOpacity !== previous.systemOpacity ||
-      state.eyeTracking !== previous.eyeTracking ||
-      state.labelsVisible !== previous.labelsVisible ||
-      state.background !== previous.background ||
-      state.depthProbeVisible !== previous.depthProbeVisible ||
-      state.hideConnective !== previous.hideConnective;
-    if (!changed) return;
+    const hasViewChanged =
+      state.hiddenSystems !== prev.hiddenSystems ||
+      state.systemOpacity !== prev.systemOpacity ||
+      state.eyeTracking !== prev.eyeTracking ||
+      state.labelsVisible !== prev.labelsVisible ||
+      state.background !== prev.background ||
+      state.depthProbeVisible !== prev.depthProbeVisible ||
+      state.hideConnective !== prev.hideConnective;
 
-    clearTimeout(timer);
-    timer = setTimeout(() => {
+    if (!hasViewChanged) return;
+
+    clearTimeout(debounceHandle);
+    debounceHandle = setTimeout(() => {
       const current = useSceneStore.getState();
       writeStoredView({
         hiddenSystems: current.hiddenSystems,
@@ -49,11 +37,11 @@ export function startViewPersistence(): () => void {
         depthProbeVisible: current.depthProbeVisible,
         hideConnective: current.hideConnective,
       });
-    }, SETTLE_MS);
+    }, DEBOUNCE_SETTLE_MS);
   });
 
   return () => {
-    clearTimeout(timer);
+    clearTimeout(debounceHandle);
     unsubscribe();
   };
 }

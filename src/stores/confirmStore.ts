@@ -1,63 +1,50 @@
 import { create } from "zustand";
 
 /**
- * Asking before doing something that cannot be taken back.
+ * Confirmation dialog state management for irrevocable actions in HOOMAAN.
  *
- * # Why a promise and not a callback
- *
- * The call site reads as one line — `if (await askToConfirm(…)) remove()` —
- * which matters because the alternative is splitting every destructive action
- * into a handler that opens a dialog and a second handler that finishes the
- * job. That split is where the bugs live: the second half stops knowing what
- * the first half was about.
+ * Uses a promise-driven pattern (`if (await askToConfirm(...)) ...`) to keep
+ * calling code linear and prevent callback fragmentation.
  */
-
 export interface ConfirmRequest {
-  /** What is about to happen, as a question. */
   title: string;
-  /** What it costs, and whether anything survives it. */
   body: string;
-  /**
-   * The thing itself — the note's own words, the session's own title.
-   *
-   * This is what turns a confirmation from a reflex into a check. "Are you
-   * sure?" is answered yes by everybody; seeing the sentence you are about to
-   * lose is what catches the wrong ✕.
-   */
   subject?: string;
-  /** The verb on the button that does it. Never "OK". */
   confirmLabel: string;
 }
 
-interface Pending extends ConfirmRequest {
+interface PendingConfirmation extends ConfirmRequest {
   settle: (confirmed: boolean) => void;
 }
 
-interface ConfirmStore {
-  pending: Pending | null;
+interface ConfirmState {
+  pending: PendingConfirmation | null;
   answer: (confirmed: boolean) => void;
 }
 
-export const useConfirmStore = create<ConfirmStore>()((set, get) => ({
+export const useConfirmStore = create<ConfirmState>()((set, get) => ({
   pending: null,
-  answer: (confirmed) => {
-    const pending = get().pending;
-    if (!pending) return;
-    // Cleared before settling, so a caller that immediately asks something else
-    // is not overwritten by this one's own teardown.
+  answer: (confirmed: boolean) => {
+    const current = get().pending;
+    if (!current) return;
     set({ pending: null });
-    pending.settle(confirmed);
+    current.settle(confirmed);
   },
 }));
 
-/** Put the question on screen; resolves to what the reader chose. */
+/**
+ * Dispatches an interactive confirmation prompt.
+ * Resolves to `true` if accepted by user, `false` if dismissed.
+ * If a previous request is still pending, it is safely rejected before opening the new one.
+ */
 export function askToConfirm(request: ConfirmRequest): Promise<boolean> {
-  return new Promise((resolve) => {
-    const open = useConfirmStore.getState().pending;
-    // A second question arriving while one is open would strand the first
-    // promise for ever, and the action behind it would hang. Decline it:
-    // "no" is the only safe reading of a destructive question nobody answered.
-    if (open) open.settle(false);
-    useConfirmStore.setState({ pending: { ...request, settle: resolve } });
+  return new Promise<boolean>((resolve) => {
+    const active = useConfirmStore.getState().pending;
+    if (active) {
+      active.settle(false);
+    }
+    useConfirmStore.setState({
+      pending: { ...request, settle: resolve },
+    });
   });
 }
