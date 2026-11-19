@@ -1,7 +1,3 @@
-/**
- * Hoomaan 3D Viewer - Viewport Composite Image Exporter & Attribution
- */
-
 import { APP_VERSION_LABEL } from "@/lib/appVersion";
 import { saveViewImage } from "@/lib/studyDb";
 import type { AnatomyManifest } from "@/lib/schemas";
@@ -12,169 +8,193 @@ import { labelTargets } from "./LabelOverlay";
 import { getViewerHandle, projectToScreen } from "./viewerBridge";
 import { captureView } from "./captureView";
 
-const FOOTER_HEIGHT = 46;
+const BANNER_FOOTER_PX = 46;
 
 export const DISCLAIMER = `HOOMAAN ${APP_VERSION_LABEL} — educational use only. Not a medical device.`;
 
-function readableLicence(spdx: string): string {
-  return spdx.replace(/^CC-/, "CC ").replace(/-(\d)/, " $1").replace(/-/g, "-");
+function formatSpdxTag(licenseTag: string): string {
+  return licenseTag
+    .replace(/^CC-/, "CC ")
+    .replace(/-(\d)/, " $1")
+    .replace(/-/g, "-");
 }
 
-/** Formats required anatomical copyright attribution and license statement. */
 export function attributionLine(
-  manifest: Pick<AnatomyManifest, "credit" | "attribution" | "license"> | null,
+  manifestData: Pick<AnatomyManifest, "credit" | "attribution" | "license"> | null
 ): string {
-  if (!manifest) return "";
-  if (!manifest.credit) return `Anatomy: ${manifest.attribution}`;
-  return `Anatomy: ${manifest.credit} — ${readableLicence(manifest.license)}`;
+  if (!manifestData) return "";
+  const { credit, attribution, license } = manifestData;
+  if (!credit) {
+    return `Anatomy: ${attribution}`;
+  }
+  return `Anatomy: ${credit} — ${formatSpdxTag(license)}`;
 }
 
-/**
- * Captures currently active 3D view, overlays high-res anatomical callouts, and persists image.
- */
 export async function exportViewImage(): Promise<string | null> {
-  const handle = getViewerHandle();
-  if (!handle) throw new Error("The viewer is not ready yet.");
+  const viewerRef = getViewerHandle();
+  if (!viewerRef) {
+    throw new Error("The viewer is not ready yet.");
+  }
 
-  const { gl, centres } = handle;
-  const source = gl.domElement;
+  const { gl, centres } = viewerRef;
+  const domCanvas = gl.domElement;
+  const renderWidth = domCanvas.width;
+  const renderHeight = domCanvas.height;
 
-  const width = source.width;
-  const height = source.height;
-  const canvas = document.createElement("canvas");
-  canvas.width = width;
-  canvas.height = height + FOOTER_HEIGHT;
+  const targetCanvas = document.createElement("canvas");
+  targetCanvas.width = renderWidth;
+  targetCanvas.height = renderHeight + BANNER_FOOTER_PX;
 
-  const ctx = canvas.getContext("2d");
-  if (!ctx) throw new Error("Could not prepare the image.");
+  const ctx2d = targetCanvas.getContext("2d");
+  if (!ctx2d) {
+    throw new Error("Could not prepare the image.");
+  }
 
-  const theme = backgroundTheme(useSceneStore.getState().background);
-  ctx.fillStyle = theme.canvas;
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  const activeTheme = backgroundTheme(useSceneStore.getState().background);
+  ctx2d.fillStyle = activeTheme.canvas;
+  ctx2d.fillRect(0, 0, targetCanvas.width, targetCanvas.height);
 
-  captureView(handle, (camera) => {
-    ctx.drawImage(source, 0, 0);
-    drawLabels(ctx, width, height, centres, camera, theme);
+  captureView(viewerRef, (cam) => {
+    ctx2d.drawImage(domCanvas, 0, 0);
+    renderAnatomicalLabels(ctx2d, renderWidth, renderHeight, centres, cam, activeTheme);
   });
 
-  drawFooter(
-    ctx,
-    width,
-    height,
-    theme,
-    attributionLine(useSceneStore.getState().manifest),
+  renderFooterBanner(
+    ctx2d,
+    renderWidth,
+    renderHeight,
+    activeTheme,
+    attributionLine(useSceneStore.getState().manifest)
   );
 
-  const blob = await new Promise<Blob | null>((resolve) =>
-    canvas.toBlob(resolve, "image/png"),
+  const encodedBlob = await new Promise<Blob | null>((resolve) =>
+    targetCanvas.toBlob(resolve, "image/png")
   );
-  if (!blob) throw new Error("Could not encode the image.");
+  if (!encodedBlob) {
+    throw new Error("Could not encode the image.");
+  }
 
-  const bytes = new Uint8Array(await blob.arrayBuffer());
-  return saveViewImage(toBase64(bytes));
+  const byteBuffer = new Uint8Array(await encodedBlob.arrayBuffer());
+  return saveViewImage(toBase64String(byteBuffer));
 }
 
-function drawLabels(
+function renderAnatomicalLabels(
   ctx: CanvasRenderingContext2D,
-  width: number,
-  height: number,
+  viewW: number,
+  viewH: number,
   centres: Map<string, { x: number; y: number; z: number }>,
-  camera: Parameters<typeof projectToScreen>[1],
-  theme: BackgroundTheme,
+  cam: Parameters<typeof projectToScreen>[1],
+  theme: BackgroundTheme
 ): void {
-  const state = useSceneStore.getState();
-  const targets = labelTargets(
-    state.organs,
-    state.selectedOrganIds,
-    state.isolatedOrganIds,
-    state.labelsVisible,
+  const sceneState = useSceneStore.getState();
+  const targetStructures = labelTargets(
+    sceneState.organs,
+    sceneState.selectedOrganIds,
+    sceneState.isolatedOrganIds,
+    sceneState.labelsVisible
   );
-  if (targets.length === 0) return;
+  if (targetStructures.length === 0) return;
 
-  const scale = Math.max(width / 1000, 1);
-  const fontSize = Math.round(13 * scale);
-  const lineHeight = Math.round(22 * scale);
-  const margin = Math.round(14 * scale);
+  const displayScale = Math.max(viewW / 1000, 1);
+  const pxFontSize = Math.round(13 * displayScale);
+  const pxLineHeight = Math.round(22 * displayScale);
+  const pxMargin = Math.round(14 * displayScale);
 
-  const anchors: LabelAnchor[] = targets.map((target) => {
-    const centre = centres.get(target.id);
-    if (!centre) return { ...target, x: NaN, y: NaN };
-    const point = projectToScreen(centre as never, camera, width, height);
-    return { ...target, x: point.x, y: point.y, behind: point.behind };
+  const anchorCoordinates: LabelAnchor[] = [];
+  for (let i = 0; i < targetStructures.length; i++) {
+    const item = targetStructures[i]!;
+    const spatialCoord = centres.get(item.id);
+    if (!spatialCoord) {
+      anchorCoordinates.push({ ...item, x: NaN, y: NaN });
+      continue;
+    }
+    const screenCoord = projectToScreen(spatialCoord as never, cam, viewW, viewH);
+    anchorCoordinates.push({
+      ...item,
+      x: screenCoord.x,
+      y: screenCoord.y,
+      behind: screenCoord.behind,
+    });
+  }
+
+  ctx.font = `italic ${pxFontSize}px system-ui, "Segoe UI", sans-serif`;
+
+  const positionedItems = layoutLabels(anchorCoordinates, {
+    width: viewW,
+    height: viewH,
+    lineHeight: pxLineHeight,
+    margin: pxMargin,
+    padding: Math.round(18 * displayScale),
+    gap: Math.round(70 * displayScale),
+    measure: (txt) => ctx.measureText(txt).width + Math.round(18 * displayScale),
   });
 
-  ctx.font = `italic ${fontSize}px system-ui, "Segoe UI", sans-serif`;
-
-  const placed = layoutLabels(anchors, {
-    width,
-    height,
-    lineHeight,
-    margin,
-    padding: Math.round(18 * scale),
-    gap: Math.round(70 * scale),
-    measure: (text) => ctx.measureText(text).width + Math.round(18 * scale),
-  });
   ctx.textBaseline = "middle";
 
-  for (const label of placed) {
+  for (let idx = 0; idx < positionedItems.length; idx++) {
+    const anchor = positionedItems[idx]!;
     ctx.strokeStyle = theme.leader;
-    ctx.lineWidth = Math.max(scale, 1);
+    ctx.lineWidth = Math.max(displayScale, 1);
     ctx.beginPath();
-    ctx.moveTo(label.x, label.y);
-    ctx.lineTo(label.labelX, label.labelY);
+    ctx.moveTo(anchor.x, anchor.y);
+    ctx.lineTo(anchor.labelX, anchor.labelY);
     ctx.stroke();
 
-    ctx.textAlign = label.side === "left" ? "right" : "left";
-    const textWidth = ctx.measureText(label.text).width;
-    const boxX =
-      label.side === "left" ? label.labelX - textWidth - 4 * scale : label.labelX - 4 * scale;
+    ctx.textAlign = anchor.side === "left" ? "right" : "left";
+    const textMetricWidth = ctx.measureText(anchor.text).width;
+    const chipOriginX =
+      anchor.side === "left"
+        ? anchor.labelX - textMetricWidth - 4 * displayScale
+        : anchor.labelX - 4 * displayScale;
 
     ctx.fillStyle = theme.chip;
     ctx.fillRect(
-      boxX,
-      label.labelY - fontSize * 0.85,
-      textWidth + 8 * scale,
-      fontSize * 1.7,
+      chipOriginX,
+      anchor.labelY - pxFontSize * 0.85,
+      textMetricWidth + 8 * displayScale,
+      pxFontSize * 1.7
     );
     ctx.fillStyle = theme.ink;
-    ctx.fillText(label.text, label.labelX, label.labelY);
+    ctx.fillText(anchor.text, anchor.labelX, anchor.labelY);
   }
 }
 
-function drawFooter(
+function renderFooterBanner(
   ctx: CanvasRenderingContext2D,
-  width: number,
-  height: number,
+  viewW: number,
+  viewH: number,
   theme: BackgroundTheme,
-  attribution: string,
+  citation: string
 ): void {
-  const scale = Math.max(width / 1000, 1);
+  const displayScale = Math.max(viewW / 1000, 1);
   ctx.fillStyle = theme.canvas;
-  ctx.fillRect(0, height, width, FOOTER_HEIGHT);
+  ctx.fillRect(0, viewH, viewW, BANNER_FOOTER_PX);
+
   ctx.strokeStyle = "rgba(148, 163, 184, 0.25)";
   ctx.lineWidth = 1;
   ctx.beginPath();
-  ctx.moveTo(0, height + 0.5);
-  ctx.lineTo(width, height + 0.5);
+  ctx.moveTo(0, viewH + 0.5);
+  ctx.lineTo(viewW, viewH + 0.5);
   ctx.stroke();
 
   ctx.textBaseline = "middle";
   ctx.textAlign = "left";
-  ctx.font = `${Math.round(11 * scale)}px system-ui, "Segoe UI", sans-serif`;
+  ctx.font = `${Math.round(11 * displayScale)}px system-ui, "Segoe UI", sans-serif`;
   ctx.fillStyle = theme.footerInk;
-  ctx.fillText(DISCLAIMER, 12 * scale, height + FOOTER_HEIGHT * 0.36);
+  ctx.fillText(DISCLAIMER, 12 * displayScale, viewH + BANNER_FOOTER_PX * 0.36);
   ctx.fillStyle = theme.footerSubtle;
-  ctx.fillText(attribution, 12 * scale, height + FOOTER_HEIGHT * 0.72);
+  ctx.fillText(citation, 12 * displayScale, viewH + BANNER_FOOTER_PX * 0.72);
 }
 
-function toBase64(bytes: Uint8Array): string {
-  const CHUNK = 0x8000;
-  let binary = "";
-  for (let offset = 0; offset < bytes.length; offset += CHUNK) {
-    binary += String.fromCharCode(...bytes.subarray(offset, offset + CHUNK));
+function toBase64String(dataBuffer: Uint8Array): string {
+  const BLOCK_SIZE = 0x8000;
+  const stringChunks: string[] = [];
+  for (let cursor = 0; cursor < dataBuffer.length; cursor += BLOCK_SIZE) {
+    const slice = dataBuffer.subarray(cursor, cursor + BLOCK_SIZE);
+    stringChunks.push(String.fromCharCode(...slice));
   }
-  return btoa(binary);
+  return btoa(stringChunks.join(""));
 }
 
-export const encodeImageBytes = toBase64;
+export const encodeImageBytes = toBase64String;
 export const IMAGE_FOOTER = { DISCLAIMER };

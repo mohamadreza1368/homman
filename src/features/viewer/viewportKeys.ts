@@ -1,19 +1,16 @@
-/**
- * Hoomaan 3D Viewer - Viewport Keyboard Shortcut Guard
- */
+const TYPING_TAG_NAMES = new Set(["INPUT", "TEXTAREA", "SELECT"]);
 
-/** Returns true if event target is an active text input or editable element. */
-export function isTypingTarget(target: EventTarget | null): boolean {
-  if (!(target instanceof HTMLElement)) return false;
-  if (target.isContentEditable) return true;
-  return /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName);
+export function isTypingTarget(node: EventTarget | null): boolean {
+  if (!(node instanceof HTMLElement)) {
+    return false;
+  }
+  return Boolean(node.isContentEditable) || TYPING_TAG_NAMES.has(node.tagName.toUpperCase());
 }
 
-/**
- * Normalizes keyboard event key for viewport controls, rejecting inputs, modifiers, or shortcuts.
- */
-export function viewportKey(event: KeyboardEvent): string | null {
-  if (isTypingTarget(event.target)) return null;
-  if (event.metaKey || event.ctrlKey || event.altKey) return null;
-  return event.key.toLowerCase();
+export function viewportKey(evt: KeyboardEvent): string | null {
+  const isModifierActive = evt.metaKey || evt.ctrlKey || evt.altKey;
+  if (isModifierActive || isTypingTarget(evt.target)) {
+    return null;
+  }
+  return evt.key.toLowerCase();
 }

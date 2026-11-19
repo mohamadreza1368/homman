@@ -1,11 +1,7 @@
-/**
- * Hoomaan 3D Viewer - Eyeball Anatomy & Gaze Tracking
- */
-
 import * as THREE from "three";
 import type { ManifestOrgan } from "@/lib/schemas";
 
-const EYE_PARTS = [
+const INTRAOCULAR_COMPONENTS = new Set([
   "sclera",
   "cornea",
   "iris",
@@ -16,23 +12,27 @@ const EYE_PARTS = [
   "anterior_chamber_of_eyeball",
   "anterior_segment_of_eyeball",
   "posterior_segment_of_eyeball",
-] as const;
+]);
 
-const GLOBE = "sclera";
-const FRONT = "cornea";
+const SCLERA_KEY = "sclera";
+const CORNEA_KEY = "cornea";
 
 export type EyeSide = "l" | "r";
 
-/** Extracts eye sub-part and lateral side ('l' | 'r') from organ identifier. */
 export function eyePart(organId: string): { part: string; side: EyeSide } | null {
-  for (const part of EYE_PARTS) {
-    if (organId === `${part}_l`) return { part, side: "l" };
-    if (organId === `${part}_r`) return { part, side: "r" };
+  const lastUnderscore = organId.lastIndexOf("_");
+  if (lastUnderscore <= 0) return null;
+
+  const sideChar = organId.slice(lastUnderscore + 1);
+  if (sideChar !== "l" && sideChar !== "r") return null;
+
+  const anatomicalStem = organId.slice(0, lastUnderscore);
+  if (INTRAOCULAR_COMPONENTS.has(anatomicalStem)) {
+    return { part: anatomicalStem, side: sideChar };
   }
   return null;
 }
 
-/** Returns true if the given organ manifest entry is an intra-globe eye component. */
 export function isEyePart(organ: ManifestOrgan): boolean {
   return eyePart(organ.organ_id) !== null;
 }
@@ -44,58 +44,66 @@ export interface EyeGroup {
   organs: ManifestOrgan[];
 }
 
-/** Groups eye structures by side, determining globe pivot and resting forward direction. */
 export function buildEyeGroups(
   organs: ManifestOrgan[],
-  centres: Map<string, THREE.Vector3>,
+  centres: Map<string, THREE.Vector3>
 ): EyeGroup[] {
-  const sides = new Map<EyeSide, ManifestOrgan[]>();
+  const groupedBySide: Record<EyeSide, ManifestOrgan[]> = { l: [], r: [] };
 
   for (const organ of organs) {
-    const match = eyePart(organ.organ_id);
-    if (!match) continue;
-    const group = sides.get(match.side) ?? [];
-    group.push(organ);
-    sides.set(match.side, group);
+    const classification = eyePart(organ.organ_id);
+    if (classification) {
+      groupedBySide[classification.side].push(organ);
+    }
   }
 
-  const result: EyeGroup[] = [];
-  for (const [side, members] of sides) {
-    const centre = centres.get(`${GLOBE}_${side}`);
-    const front = centres.get(`${FRONT}_${side}`);
-    if (!centre || !front) continue;
+  const outputGroups: EyeGroup[] = [];
+  const sidesList: EyeSide[] = ["l", "r"];
 
-    const restForward = front.clone().sub(centre);
-    if (restForward.lengthSq() < 1e-12) continue;
+  for (const lateralSide of sidesList) {
+    const sideMembers = groupedBySide[lateralSide];
+    if (sideMembers.length === 0) continue;
 
-    result.push({
-      side,
-      centre: centre.clone(),
-      restForward: restForward.normalize(),
-      organs: members,
+    const scleraCentre = centres.get(`${SCLERA_KEY}_${lateralSide}`);
+    const corneaCentre = centres.get(`${CORNEA_KEY}_${lateralSide}`);
+    if (!scleraCentre || !corneaCentre) continue;
+
+    const naturalGazeVector = corneaCentre.clone().sub(scleraCentre);
+    if (naturalGazeVector.lengthSq() < 1e-12) continue;
+
+    outputGroups.push({
+      side: lateralSide,
+      centre: scleraCentre.clone(),
+      restForward: naturalGazeVector.normalize(),
+      organs: sideMembers,
     });
   }
 
-  return result.sort((a, b) => a.side.localeCompare(b.side));
+  return outputGroups.sort((first, second) => first.side.localeCompare(second.side));
 }
 
-/**
- * Clamps desired gaze vector to maximum anatomical angular rotation limit.
- */
 export function clampGaze(
-  rest: THREE.Vector3,
-  target: THREE.Vector3,
-  maxRadians: number,
+  restDirection: THREE.Vector3,
+  intendedTarget: THREE.Vector3,
+  maximumAngleRad: number
 ): THREE.Vector3 {
-  const desired = target.clone().normalize();
-  const angle = rest.angleTo(desired);
-  if (angle <= maxRadians) return desired;
+  const normalizedTarget = intendedTarget.clone().normalize();
+  const angularSeparation = restDirection.angleTo(normalizedTarget);
 
-  const axis = new THREE.Vector3().crossVectors(rest, desired);
-  if (axis.lengthSq() < 1e-12) {
-    axis.set(rest.y, -rest.x, 0);
-    if (axis.lengthSq() < 1e-12) axis.set(0, rest.z, -rest.y);
+  if (angularSeparation <= maximumAngleRad) {
+    return normalizedTarget;
   }
 
-  return rest.clone().applyAxisAngle(axis.normalize(), maxRadians).normalize();
+  const rotationAxis = new THREE.Vector3().crossVectors(restDirection, normalizedTarget);
+  if (rotationAxis.lengthSq() < 1e-12) {
+    rotationAxis.set(restDirection.y, -restDirection.x, 0);
+    if (rotationAxis.lengthSq() < 1e-12) {
+      rotationAxis.set(0, restDirection.z, -restDirection.y);
+    }
+  }
+
+  return restDirection
+    .clone()
+    .applyAxisAngle(rotationAxis.normalize(), maximumAngleRad)
+    .normalize();
 }

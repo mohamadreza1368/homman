@@ -1,7 +1,3 @@
-/**
- * Hoomaan 3D Viewer - Draggable Floating Panel Hook
- */
-
 import { useCallback, useEffect, useRef, useState } from "react";
 import { readLocal, removeLocal, writeLocal } from "@/lib/localStore";
 
@@ -10,163 +6,175 @@ export interface Point {
   y: number;
 }
 
-/** Clamps 2D coordinates ensuring panel remains entirely within container boundary. */
-export function clampToBounds(
-  point: Point,
-  panel: { width: number; height: number },
-  container: { width: number; height: number },
-): Point {
-  const maxX = Math.max(container.width - panel.width, 0);
-  const maxY = Math.max(container.height - panel.height, 0);
-  return {
-    x: Math.min(Math.max(point.x, 0), maxX),
-    y: Math.min(Math.max(point.y, 0), maxY),
-  };
+export interface Size2D {
+  width: number;
+  height: number;
 }
 
-function loadSavedPosition(key: string): Point | null {
+export function clampToBounds(
+  requestedPos: Point,
+  panelSize: Size2D,
+  containerSize: Size2D
+): Point {
+  const horizontalLimit = Math.max(0, containerSize.width - panelSize.width);
+  const verticalLimit = Math.max(0, containerSize.height - panelSize.height);
+
+  const boundedX = Math.min(horizontalLimit, Math.max(0, requestedPos.x));
+  const boundedY = Math.min(verticalLimit, Math.max(0, requestedPos.y));
+
+  return { x: boundedX, y: boundedY };
+}
+
+function restoreCoordinates(storageKey: string): Point | null {
   try {
-    const raw = readLocal(key);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw) as Partial<Point>;
-    const { x, y } = parsed;
-    return Number.isFinite(x) && Number.isFinite(y) ? { x: x!, y: y! } : null;
+    const rawPayload = readLocal(storageKey);
+    if (!rawPayload) return null;
+    const parsed = JSON.parse(rawPayload);
+    if (
+      parsed &&
+      typeof parsed.x === "number" &&
+      typeof parsed.y === "number" &&
+      Number.isFinite(parsed.x) &&
+      Number.isFinite(parsed.y)
+    ) {
+      return { x: parsed.x, y: parsed.y };
+    }
+    return null;
   } catch {
     return null;
   }
 }
 
-/** Hook synchronizing boolean toggle state with local storage. */
 export function useRememberedFlag(
   storageKey: string,
-  fallback: boolean,
-): [boolean, (value: boolean) => void] {
-  const [value, setValue] = useState<boolean>(() => {
+  defaultValue: boolean
+): [boolean, (flagValue: boolean) => void] {
+  const [flag, setFlag] = useState<boolean>(() => {
     try {
-      const raw = readLocal(storageKey);
-      return raw === null ? fallback : raw === "true";
+      const persisted = readLocal(storageKey);
+      return persisted === null ? defaultValue : persisted === "true";
     } catch {
-      return fallback;
+      return defaultValue;
     }
   });
 
-  const remember = useCallback(
-    (next: boolean) => {
-      setValue(next);
+  const update = useCallback(
+    (nextState: boolean) => {
+      setFlag(nextState);
       try {
-        writeLocal(storageKey, String(next));
+        writeLocal(storageKey, String(nextState));
       } catch {
-        // storage disabled or full
+        // quota exceeded or disabled
       }
     },
-    [storageKey],
+    [storageKey]
   );
 
-  return [value, remember];
+  return [flag, update];
 }
 
-/** Hook providing drag-and-drop mechanics and persistent positioning for floating panels. */
 export function useDraggablePanel(storageKey: string) {
-  const ref = useRef<HTMLDivElement | null>(null);
-  const [position, setPosition] = useState<Point | null>(() => loadSavedPosition(storageKey));
-  const grab = useRef<Point | null>(null);
+  const panelRef = useRef<HTMLDivElement | null>(null);
+  const [panelPos, setPanelPos] = useState<Point | null>(() => restoreCoordinates(storageKey));
+  const pointerOffsetRef = useRef<Point | null>(null);
 
-  const measure = useCallback(() => {
-    const node = ref.current;
-    const container = node?.offsetParent as HTMLElement | null;
-    if (!node || !container) return null;
-    return { node: node.getBoundingClientRect(), container: container.getBoundingClientRect() };
+  const getGeometry = useCallback(() => {
+    const el = panelRef.current;
+    const parentContainer = el?.offsetParent as HTMLElement | null;
+    if (!el || !parentContainer) return null;
+    return {
+      nodeRect: el.getBoundingClientRect(),
+      parentRect: parentContainer.getBoundingClientRect(),
+    };
   }, []);
 
   useEffect(() => {
-    if (!position) return;
-    const handleResize = () => {
-      const rects = measure();
-      if (!rects) return;
-      setPosition((curr) =>
-        curr ? clampToBounds(curr, rects.node, rects.container) : curr,
+    if (!panelPos) return;
+
+    const onWindowResize = () => {
+      const geom = getGeometry();
+      if (!geom) return;
+      setPanelPos((prev) =>
+        prev ? clampToBounds(prev, geom.nodeRect, geom.parentRect) : prev
       );
     };
-    window.addEventListener("resize", handleResize);
-    return () => window.removeEventListener("resize", handleResize);
-  }, [position, measure]);
+
+    window.addEventListener("resize", onWindowResize);
+    return () => window.removeEventListener("resize", onWindowResize);
+  }, [panelPos, getGeometry]);
 
   const onPointerDown = useCallback(
-    (event: React.PointerEvent<HTMLElement>) => {
-      if ((event.target as HTMLElement).closest("button, input, a")) return;
-      const rects = measure();
-      if (!rects) return;
+    (e: React.PointerEvent<HTMLElement>) => {
+      if ((e.target as HTMLElement).closest("button, input, a, select, textarea")) {
+        return;
+      }
+      const geom = getGeometry();
+      if (!geom) return;
 
-      grab.current = {
-        x: event.clientX - rects.node.left,
-        y: event.clientY - rects.node.top,
+      pointerOffsetRef.current = {
+        x: e.clientX - geom.nodeRect.left,
+        y: e.clientY - geom.nodeRect.top,
       };
 
-      setPosition(
-        clampToBounds(
-          {
-            x: rects.node.left - rects.container.left,
-            y: rects.node.top - rects.container.top,
-          },
-          rects.node,
-          rects.container,
-        ),
-      );
-      event.currentTarget.setPointerCapture(event.pointerId);
-      event.preventDefault();
+      const initialCoord: Point = {
+        x: geom.nodeRect.left - geom.parentRect.left,
+        y: geom.nodeRect.top - geom.parentRect.top,
+      };
+
+      setPanelPos(clampToBounds(initialCoord, geom.nodeRect, geom.parentRect));
+      e.currentTarget.setPointerCapture(e.pointerId);
+      e.preventDefault();
     },
-    [measure],
+    [getGeometry]
   );
 
   const onPointerMove = useCallback(
-    (event: React.PointerEvent<HTMLElement>) => {
-      const held = grab.current;
-      const rects = measure();
-      if (!held || !rects) return;
+    (e: React.PointerEvent<HTMLElement>) => {
+      const offset = pointerOffsetRef.current;
+      const geom = getGeometry();
+      if (!offset || !geom) return;
 
-      setPosition(
-        clampToBounds(
-          {
-            x: event.clientX - rects.container.left - held.x,
-            y: event.clientY - rects.container.top - held.y,
-          },
-          rects.node,
-          rects.container,
-        ),
-      );
+      const newPos: Point = {
+        x: e.clientX - geom.parentRect.left - offset.x,
+        y: e.clientY - geom.parentRect.top - offset.y,
+      };
+
+      setPanelPos(clampToBounds(newPos, geom.nodeRect, geom.parentRect));
     },
-    [measure],
+    [getGeometry]
   );
 
   const onPointerUp = useCallback(
-    (event: React.PointerEvent<HTMLElement>) => {
-      if (!grab.current) return;
-      grab.current = null;
-      event.currentTarget.releasePointerCapture(event.pointerId);
+    (e: React.PointerEvent<HTMLElement>) => {
+      if (!pointerOffsetRef.current) return;
+      pointerOffsetRef.current = null;
+      e.currentTarget.releasePointerCapture(e.pointerId);
 
-      try {
-        if (position) writeLocal(storageKey, JSON.stringify(position));
-      } catch {
-        // ignore write failure
+      if (panelPos) {
+        try {
+          writeLocal(storageKey, JSON.stringify(panelPos));
+        } catch {
+          // ignore storage write failure
+        }
       }
     },
-    [position, storageKey],
+    [panelPos, storageKey]
   );
 
   const reset = useCallback(() => {
-    grab.current = null;
-    setPosition(null);
+    pointerOffsetRef.current = null;
+    setPanelPos(null);
     try {
       removeLocal(storageKey);
     } catch {
-      // ignore remove failure
+      // ignore storage removal failure
     }
   }, [storageKey]);
 
   return {
-    ref,
-    position,
-    moved: position !== null,
+    ref: panelRef,
+    position: panelPos,
+    moved: panelPos !== null,
     reset,
     handleProps: { onPointerDown, onPointerMove, onPointerUp },
   };

@@ -9,6 +9,15 @@ import { beatChamber, BLOOD_HEX, type Chamber } from "./heartbeat";
 
 export type FlowKind = "artery" | "vein" | "pulmonary_artery" | "pulmonary_vein";
 
+const VESSEL_PATH_MAP: ReadonlyArray<[string, FlowKind]> = [
+  ["Pulmonary arteries", "pulmonary_artery"],
+  ["Pulmonary veins", "pulmonary_vein"],
+  ["Systemic arteries", "artery"],
+  ["Arteries of heart", "artery"],
+  ["Systemic veins", "vein"],
+  ["Cardiac veins", "vein"],
+];
+
 /** Resolves hemodynamic flow classification for vascular anatomical manifest entries. */
 export function vesselFlow(
   organ: Pick<ManifestOrgan, "system" | "path" | "ta2_latin">,
@@ -16,76 +25,94 @@ export function vesselFlow(
   if (organ.system !== "cardiovascular") return null;
   if (beatChamber(organ) !== null) return null;
 
-  const path = organ.path ?? [];
-  if (path.includes("Pulmonary arteries")) return "pulmonary_artery";
-  if (path.includes("Pulmonary veins")) return "pulmonary_vein";
-  if (path.includes("Systemic arteries") || path.includes("Arteries of heart")) return "artery";
-  if (path.includes("Systemic veins") || path.includes("Cardiac veins")) return "vein";
+  const organPath = organ.path;
+  if (!organPath || organPath.length === 0) return null;
+
+  for (const [tag, kind] of VESSEL_PATH_MAP) {
+    if (organPath.includes(tag)) {
+      return kind;
+    }
+  }
 
   return null;
 }
 
-export const FLOW_CHAMBER: Readonly<Record<FlowKind, Chamber>> = {
+export const FLOW_CHAMBER: Readonly<Record<FlowKind, Chamber>> = Object.freeze({
   artery: "left_ventricle",
   pulmonary_artery: "right_ventricle",
   vein: "right_atrium",
   pulmonary_vein: "left_atrium",
-};
+});
 
 export const PULSE_SLOTS = 8;
 export const EJECTION_DELAY_S = 0.06;
 
-export const FLOW_SHAPE = {
+export const FLOW_SHAPE = Object.freeze({
   arterySpeed: 0.8,
   pulmonarySpeed: 0.3,
   width: 0.07,
   reach: 1.2,
   venousWave: 0.14,
   venousSpeed: 0.12,
-} as const;
+});
 
-const PULSE_LIFETIME_S = 3;
-const OUTPUT_WINDOW_S = 3;
-const NORMAL_PULSES_IN_WINDOW = (72 / 60) * OUTPUT_WINDOW_S;
-const VENOUS_SETTLE_S = 1.5;
+const CONSTANTS = Object.freeze({
+  lifetime: 3.0,
+  window: 3.0,
+  normalPulsesInWindow: (72 / 60) * 3.0,
+  venousSettleRate: 1.5,
+});
 
-interface FlowPulse {
+interface EjectionWave {
   launch: number;
   strength: number;
 }
 
 /** Manages active ejection pulses and calculates dynamic venous blood return level. */
 export class PulseTrain {
-  private pulses: FlowPulse[] = [];
+  private activePulses: EjectionWave[] = [];
   venous = 0;
 
-  launch(at: number, strength: number): void {
-    if (!(strength > 0)) return;
-    this.pulses.push({ launch: at + EJECTION_DELAY_S, strength: Math.min(1, strength) });
-    if (this.pulses.length > PULSE_SLOTS) {
-      this.pulses.splice(0, this.pulses.length - PULSE_SLOTS);
+  launch(timestamp: number, forceMagnitude: number): void {
+    if (forceMagnitude <= 0) return;
+    const wave: EjectionWave = {
+      launch: timestamp + EJECTION_DELAY_S,
+      strength: Math.min(1, forceMagnitude),
+    };
+    this.activePulses.push(wave);
+    if (this.activePulses.length > PULSE_SLOTS) {
+      this.activePulses.splice(0, this.activePulses.length - PULSE_SLOTS);
     }
   }
 
-  advance(now: number, step: number, ages: Float32Array, strengths: Float32Array): void {
-    this.pulses = this.pulses.filter((p) => now - p.launch < PULSE_LIFETIME_S);
+  advance(currentTime: number, deltaSec: number, agesOut: Float32Array, strengthsOut: Float32Array): void {
+    this.activePulses = this.activePulses.filter((wave) => currentTime - wave.launch < CONSTANTS.lifetime);
 
-    const recentSum = this.pulses
-      .filter((p) => p.launch <= now && now - p.launch < OUTPUT_WINDOW_S)
-      .reduce((sum, p) => sum + p.strength, 0);
+    let recentSum = 0;
+    for (const w of this.activePulses) {
+      if (w.launch <= currentTime && currentTime - w.launch < CONSTANTS.window) {
+        recentSum += w.strength;
+      }
+    }
 
-    const target = Math.min(1, recentSum / NORMAL_PULSES_IN_WINDOW);
-    this.venous += (target - this.venous) * Math.min(1, step / VENOUS_SETTLE_S);
+    const targetFraction = Math.min(1, recentSum / CONSTANTS.normalPulsesInWindow);
+    const lerpFactor = Math.min(1, deltaSec / CONSTANTS.venousSettleRate);
+    this.venous += (targetFraction - this.venous) * lerpFactor;
 
-    for (let i = 0; i < PULSE_SLOTS; i++) {
-      const p = this.pulses[i];
-      ages[i] = p ? now - p.launch : -1;
-      strengths[i] = p ? p.strength : 0;
+    for (let slot = 0; slot < PULSE_SLOTS; slot++) {
+      const w = this.activePulses[slot];
+      if (w) {
+        agesOut[slot] = currentTime - w.launch;
+        strengthsOut[slot] = w.strength;
+      } else {
+        agesOut[slot] = -1;
+        strengthsOut[slot] = 0;
+      }
     }
   }
 
   reset(): void {
-    this.pulses = [];
+    this.activePulses = [];
     this.venous = 0;
   }
 }
@@ -98,46 +125,46 @@ export const FLOW_UNIFORMS = {
   uFlowSteady: { value: 0 },
 };
 
-export const FLOW_SOURCES: Readonly<Record<FlowKind, { value: THREE.Vector3 }>> = {
+export const FLOW_SOURCES: Readonly<Record<FlowKind, { value: THREE.Vector3 }>> = Object.freeze({
   artery: { value: new THREE.Vector3() },
   vein: { value: new THREE.Vector3() },
   pulmonary_artery: { value: new THREE.Vector3() },
   pulmonary_vein: { value: new THREE.Vector3() },
-};
+});
 
-const FLOW_COLOUR: Readonly<Record<FlowKind, string>> = {
+const FLOW_COLOUR: Readonly<Record<FlowKind, string>> = Object.freeze({
   artery: BLOOD_HEX.left,
   pulmonary_vein: BLOOD_HEX.left,
   vein: BLOOD_HEX.right,
   pulmonary_artery: BLOOD_HEX.right,
-};
+});
 
-const FLOW_GAIN: Readonly<Record<FlowKind, number>> = {
+const FLOW_GAIN: Readonly<Record<FlowKind, number>> = Object.freeze({
   artery: 0.4,
   pulmonary_artery: 0.22,
   vein: 0.5,
   pulmonary_vein: 0.35,
-};
+});
 
-const FLOW_MODE: Readonly<Record<FlowKind, number>> = {
+const FLOW_MODE: Readonly<Record<FlowKind, number>> = Object.freeze({
   artery: 0,
   pulmonary_artery: 0,
   vein: 1,
   pulmonary_vein: 1,
-};
+});
 
 type Shader = Parameters<THREE.Material["onBeforeCompile"]>[0];
 export const FLOW_PATH_ATTRIBUTE = "flowPath";
 
-const SEED: Readonly<Record<FlowKind, RegExp>> = {
+const SEED_PATTERNS: Readonly<Record<FlowKind, RegExp>> = Object.freeze({
   artery: /^Aorta ascendens\b/i,
   pulmonary_artery: /^Truncus pulmonalis\b/i,
   vein: /^Vena cava (superior|inferior)\b/i,
   pulmonary_vein: /^Vena pulmonalis\b/i,
-};
+});
 
 export function isFlowSeed(kind: FlowKind, organ: Pick<ManifestOrgan, "ta2_latin">): boolean {
-  return SEED[kind].test(organ.ta2_latin);
+  return SEED_PATTERNS[kind].test(organ.ta2_latin);
 }
 
 export interface FlowingMesh {
@@ -153,21 +180,22 @@ export function registerFlowing(organId: string, entry: FlowingMesh): () => void
   FLOWING.set(organId, entry);
   FLOWING_VERSION.value += 1;
   return () => {
-    if (FLOWING.get(organId) !== entry) return;
-    FLOWING.delete(organId);
-    FLOWING_VERSION.value += 1;
+    if (FLOWING.get(organId) === entry) {
+      FLOWING.delete(organId);
+      FLOWING_VERSION.value += 1;
+    }
   };
 }
 
 export const FLOW_PROBE = { pathMs: -1, vertices: 0 };
 
-export const FLOW_VERTEX = /* glsl */ `
+export const FLOW_VERTEX = `
 attribute float ${FLOW_PATH_ATTRIBUTE};
 varying vec3 vFlowWorld;
 varying float vFlowPath;
 `;
 
-export const FLOW_FRAGMENT = /* glsl */ `
+export const FLOW_FRAGMENT = `
 uniform float uPulseAge[${PULSE_SLOTS}];
 uniform float uPulseStrength[${PULSE_SLOTS}];
 uniform float uVenous;
@@ -199,60 +227,62 @@ float flowGlow() {
 `;
 
 function flowOnBeforeCompile(this: THREE.Material, shader: Shader): void {
-  const data = this.userData as {
+  const hostUserData = this.userData as {
     flowSource: { value: THREE.Vector3 };
     flowMode: number;
     flowSpeed: number;
     flowGain: number;
   };
+
   Object.assign(shader.uniforms, FLOW_UNIFORMS, {
-    uFlowSource: data.flowSource,
-    uFlowMode: { value: data.flowMode },
-    uFlowSpeed: { value: data.flowSpeed },
-    uFlowGain: { value: data.flowGain },
+    uFlowSource: hostUserData.flowSource,
+    uFlowMode: { value: hostUserData.flowMode },
+    uFlowSpeed: { value: hostUserData.flowSpeed },
+    uFlowGain: { value: hostUserData.flowGain },
   });
+
+  const vertexHook = `#include <common>\n${FLOW_VERTEX}`;
+  const vertexProjHook = `#include <project_vertex>\n  vFlowWorld = (modelMatrix * vec4(transformed, 1.0)).xyz;\n  vFlowPath = ${FLOW_PATH_ATTRIBUTE};`;
   shader.vertexShader = shader.vertexShader
-    .replace("#include <common>", `#include <common>\n${FLOW_VERTEX}`)
-    .replace(
-      "#include <project_vertex>",
-      `#include <project_vertex>\n  vFlowWorld = (modelMatrix * vec4(transformed, 1.0)).xyz;\n  vFlowPath = ${FLOW_PATH_ATTRIBUTE};`,
-    );
+    .replace("#include <common>", vertexHook)
+    .replace("#include <project_vertex>", vertexProjHook);
+
+  const fragmentHook = `#include <common>\n${FLOW_FRAGMENT}`;
+  const fragmentDiffuseHook = "vec4 diffuseColor = vec4( diffuse, opacity * flowGlow() );";
   shader.fragmentShader = shader.fragmentShader
-    .replace("#include <common>", `#include <common>\n${FLOW_FRAGMENT}`)
-    .replace(
-      "vec4 diffuseColor = vec4( diffuse, opacity );",
-      "vec4 diffuseColor = vec4( diffuse, opacity * flowGlow() );",
-    );
+    .replace("#include <common>", fragmentHook)
+    .replace("vec4 diffuseColor = vec4( diffuse, opacity );", fragmentDiffuseHook);
+
   injectBreath(shader, this);
 }
 
-const materials = new Map<FlowKind, THREE.MeshBasicMaterial>();
+const materialRegistry = new Map<FlowKind, THREE.MeshBasicMaterial>();
 
 /** Produces or retrieves cached shared flow overlay material for specified vessel kind. */
 export function flowMaterial(kind: FlowKind): THREE.MeshBasicMaterial {
-  let mat = materials.get(kind);
-  if (!mat) {
-    mat = new THREE.MeshBasicMaterial({
+  let existing = materialRegistry.get(kind);
+  if (!existing) {
+    existing = new THREE.MeshBasicMaterial({
       color: FLOW_COLOUR[kind],
       transparent: true,
       blending: THREE.AdditiveBlending,
       depthWrite: false,
       toneMapped: false,
     });
-    mat.userData = {
+    existing.userData = {
       flowSource: FLOW_SOURCES[kind],
       flowMode: FLOW_MODE[kind],
       flowGain: FLOW_GAIN[kind],
       flowSpeed: kind === "pulmonary_artery" ? FLOW_SHAPE.pulmonarySpeed : FLOW_SHAPE.arterySpeed,
       breathRole: kind.startsWith("pulmonary") ? BREATH_ROLE.lung : BREATH_ROLE.vessel,
     };
-    mat.onBeforeCompile = flowOnBeforeCompile;
-    materials.set(kind, mat);
+    existing.onBeforeCompile = flowOnBeforeCompile;
+    materialRegistry.set(kind, existing);
   }
-  return mat;
+  return existing;
 }
 
 /** Returns collection of all instantiated flow materials for viewport clipping updates. */
 export function flowMaterials(): Iterable<THREE.MeshBasicMaterial> {
-  return materials.values();
+  return materialRegistry.values();
 }

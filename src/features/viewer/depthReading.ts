@@ -1,25 +1,33 @@
-/**
- * Hoomaan 3D Viewer - Depth Reading Status & Labels
- */
-
 export type DepthReading = "live" | "pinned";
 
-/** Resolves active depth probe reading state based on pin flag. */
-export function depthReadingState(pinned: boolean): DepthReading {
-  return pinned ? "pinned" : "live";
+export function depthReadingState(isPinned: boolean): DepthReading {
+  return isPinned ? "pinned" : "live";
 }
 
+const DESCRIPTORS = {
+  live: {
+    title: "Under the cursor",
+    subtitle: "surface inwards",
+    dismiss: "Close this reading",
+  },
+  pinned: {
+    title: "Through what you clicked",
+    subtitle: "pinned — move freely",
+    dismiss: "Let go of this reading",
+  },
+} as const;
+
 export const HEADING: Record<DepthReading, string> = {
-  live: "Under the cursor",
-  pinned: "Through what you clicked",
+  live: DESCRIPTORS.live.title,
+  pinned: DESCRIPTORS.pinned.title,
 };
 
 export const SUBHEADING: Record<DepthReading, string> = {
-  live: "surface inwards",
-  pinned: "pinned — move freely",
+  live: DESCRIPTORS.live.subtitle,
+  pinned: DESCRIPTORS.pinned.subtitle,
 };
 
 export const DISMISS_HINT: Record<DepthReading, string> = {
-  live: "Close this reading",
-  pinned: "Let go of this reading",
+  live: DESCRIPTORS.live.dismiss,
+  pinned: DESCRIPTORS.pinned.dismiss,
 };

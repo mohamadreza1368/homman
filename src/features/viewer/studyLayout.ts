@@ -1,7 +1,3 @@
-/**
- * Hoomaan 3D Viewer - Multi-Viewport Split Study Layout
- */
-
 import type { AnatomicalView } from "./cameraViews";
 
 export const MAIN = "main" as const;
@@ -18,55 +14,54 @@ export interface PanelRect {
   height: number;
 }
 
-/** Computes WebGL fractional viewport rectangles for active study view panels. */
-export function panelLayout(active: readonly AuxiliaryView[]): PanelRect[] {
-  const [first, second, third] = active;
+export function panelLayout(activeViews: readonly AuxiliaryView[]): PanelRect[] {
+  const activeCount = activeViews.length;
 
-  if (first === undefined) {
-    return [{ id: MAIN, x: 0, y: 0, width: 1, height: 1 }];
+  switch (activeCount) {
+    case 0:
+      return [{ id: MAIN, x: 0, y: 0, width: 1, height: 1 }];
+
+    case 1:
+      return [
+        { id: MAIN, x: 0, y: 0, width: 0.5, height: 1 },
+        { id: activeViews[0]!, x: 0.5, y: 0, width: 0.5, height: 1 },
+      ];
+
+    case 2:
+      return [
+        { id: MAIN, x: 0, y: 0, width: 0.5, height: 1 },
+        { id: activeViews[0]!, x: 0.5, y: 0.5, width: 0.5, height: 0.5 },
+        { id: activeViews[1]!, x: 0.5, y: 0, width: 0.5, height: 0.5 },
+      ];
+
+    default:
+      return [
+        { id: MAIN, x: 0, y: 0.5, width: 0.5, height: 0.5 },
+        { id: activeViews[0]!, x: 0.5, y: 0.5, width: 0.5, height: 0.5 },
+        { id: activeViews[1]!, x: 0.5, y: 0, width: 0.5, height: 0.5 },
+        { id: activeViews[2]!, x: 0, y: 0, width: 0.5, height: 0.5 },
+      ];
   }
-
-  if (second === undefined) {
-    return [
-      { id: MAIN, x: 0, y: 0, width: 0.5, height: 1 },
-      { id: first, x: 0.5, y: 0, width: 0.5, height: 1 },
-    ];
-  }
-
-  if (third === undefined) {
-    return [
-      { id: MAIN, x: 0, y: 0, width: 0.5, height: 1 },
-      { id: first, x: 0.5, y: 0.5, width: 0.5, height: 0.5 },
-      { id: second, x: 0.5, y: 0, width: 0.5, height: 0.5 },
-    ];
-  }
-
-  return [
-    { id: MAIN, x: 0, y: 0.5, width: 0.5, height: 0.5 },
-    { id: first, x: 0.5, y: 0.5, width: 0.5, height: 0.5 },
-    { id: second, x: 0.5, y: 0, width: 0.5, height: 0.5 },
-    { id: third, x: 0.5, y: 0, width: 0.5, height: 0.5 },
-  ];
 }
 
-/** Extracts the primary interactive viewport rectangle. */
-export function mainRect(active: readonly AuxiliaryView[]): PanelRect {
-  const main = panelLayout(active).find((panel) => panel.id === MAIN);
-  if (!main) throw new Error("every layout has a main panel");
-  return main;
+export function mainRect(activeViews: readonly AuxiliaryView[]): PanelRect {
+  const primary = panelLayout(activeViews).find((p) => p.id === MAIN);
+  if (!primary) {
+    throw new Error("every layout has a main panel");
+  }
+  return primary;
 }
 
-/** Converts WebGL bottom-left coordinate panel rect into standard DOM top-left space. */
-export function domRect(rect: PanelRect): {
+export function domRect(glRect: PanelRect): {
   left: number;
   top: number;
   width: number;
   height: number;
 } {
   return {
-    left: rect.x,
-    top: 1 - (rect.y + rect.height),
-    width: rect.width,
-    height: rect.height,
+    left: glRect.x,
+    top: 1.0 - (glRect.y + glRect.height),
+    width: glRect.width,
+    height: glRect.height,
   };
 }

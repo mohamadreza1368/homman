@@ -1,74 +1,71 @@
-/**
- * Hoomaan 3D Viewer - Regional Vascular & Neural Supply Collector
- */
-
 import * as THREE from "three";
 import type { AnatomicalSystem } from "@/lib/schemas";
 
 export type SupplyKind = "vascular" | "neural";
 
-export const SUPPLY_SYSTEM: Record<SupplyKind, AnatomicalSystem> = {
+export const SUPPLY_SYSTEM: Record<SupplyKind, AnatomicalSystem> = Object.freeze({
   vascular: "cardiovascular",
   neural: "nervous",
-};
+});
 
-export const SUPPLY_LABEL: Record<SupplyKind, string> = {
+export const SUPPLY_LABEL: Record<SupplyKind, string> = Object.freeze({
   vascular: "vessels",
   neural: "nerves",
-};
+});
 
-/** Proportional expansion margin relative to set's bounding dimension. */
 export const REACH = 0.04;
 
-/** Computes bounding volume enclosing the active study set with reach margin. */
 export function studyEnvelope(
-  ids: Iterable<string>,
-  boxes: Map<string, THREE.Box3>,
+  targetOrganIds: Iterable<string>,
+  spatialBoundingBoxes: Map<string, THREE.Box3>
 ): THREE.Box3 | null {
-  const envelope = new THREE.Box3();
-  let measured = false;
+  const boundingVolume = new THREE.Box3();
+  let hasValidGeometry = false;
 
-  for (const id of ids) {
-    const box = boxes.get(id);
-    if (!box) continue;
-    envelope.union(box);
-    measured = true;
+  for (const organKey of targetOrganIds) {
+    const organBox = spatialBoundingBoxes.get(organKey);
+    if (organBox) {
+      boundingVolume.union(organBox);
+      hasValidGeometry = true;
+    }
   }
-  if (!measured) return null;
 
-  const size = envelope.getSize(new THREE.Vector3());
-  return envelope.expandByScalar(Math.max(size.x, size.y, size.z) * REACH);
+  if (!hasValidGeometry) return null;
+
+  const extents = new THREE.Vector3();
+  boundingVolume.getSize(extents);
+  const maxSpan = Math.max(extents.x, extents.y, extents.z);
+  return boundingVolume.expandByScalar(maxSpan * REACH);
 }
 
-/** Finds candidates from supply system that intersect the expanded study set volume. */
 export function collectSupply(
-  studyIds: string[],
-  candidateIds: Iterable<string>,
-  boxes: Map<string, THREE.Box3>,
+  activeStudyIds: string[],
+  supplyCandidateIds: Iterable<string>,
+  spatialBoundingBoxes: Map<string, THREE.Box3>
 ): string[] {
-  const envelope = studyEnvelope(studyIds, boxes);
+  const envelope = studyEnvelope(activeStudyIds, spatialBoundingBoxes);
   if (!envelope) return [];
 
-  const existing = new Set(studyIds);
-  const found: string[] = [];
+  const existingFilter = new Set<string>(activeStudyIds);
+  const matchedStructures: string[] = [];
 
-  for (const id of candidateIds) {
-    if (existing.has(id)) continue;
-    const box = boxes.get(id);
-    if (!box) continue;
-    if (box.intersectsBox(envelope)) found.push(id);
+  for (const candidate of supplyCandidateIds) {
+    if (existingFilter.has(candidate)) continue;
+    const itemBox = spatialBoundingBoxes.get(candidate);
+    if (itemBox && itemBox.intersectsBox(envelope)) {
+      matchedStructures.push(candidate);
+    }
   }
 
-  return found;
+  return matchedStructures;
 }
 
-/** Checks whether any candidate structures in the target system have measured geometry. */
 export function isSystemMeasured(
-  candidateIds: Iterable<string>,
-  boxes: Map<string, THREE.Box3>,
+  supplyCandidateIds: Iterable<string>,
+  spatialBoundingBoxes: Map<string, THREE.Box3>
 ): boolean {
-  for (const id of candidateIds) {
-    if (boxes.has(id)) return true;
+  for (const id of supplyCandidateIds) {
+    if (spatialBoundingBoxes.has(id)) return true;
   }
   return false;
 }

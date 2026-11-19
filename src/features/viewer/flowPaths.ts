@@ -1,7 +1,3 @@
-/**
- * Hoomaan 3D Viewer - Vascular Network Flow Path Distance Calculator
- */
-
 import type * as THREE from "three";
 import type { Vertices } from "./heartbeat";
 
@@ -14,176 +10,218 @@ export interface PathMesh {
   seed: boolean;
 }
 
-const SIDE = 2048;
-const HALF = SIDE / 2;
-const key = (x: number, y: number, z: number) =>
-  x + HALF + (y + HALF) * SIDE + (z + HALF) * SIDE * SIDE;
+const GRID_DIMENSION = 2048;
+const GRID_OFFSET = GRID_DIMENSION >> 1;
 
-class MinHeap {
-  private items: number[] = [];
-  constructor(private readonly dist: Float64Array) {}
+function encodeGridKey(ix: number, iy: number, iz: number): number {
+  return (
+    (ix + GRID_OFFSET) +
+    (iy + GRID_OFFSET) * GRID_DIMENSION +
+    (iz + GRID_OFFSET) * GRID_DIMENSION * GRID_DIMENSION
+  );
+}
 
-  get size(): number {
-    return this.items.length;
+class PriorityIndexQueue {
+  private readonly heapArray: number[] = [];
+
+  constructor(private readonly distanceTable: Float64Array) {}
+
+  public get length(): number {
+    return this.heapArray.length;
   }
 
-  push(item: number): void {
-    const items = this.items;
-    items.push(item);
-    let i = items.length - 1;
-    while (i > 0) {
-      const parent = (i - 1) >> 1;
-      if (this.dist[items[parent]!]! <= this.dist[item]!) break;
-      items[i] = items[parent]!;
-      i = parent;
-    }
-    items[i] = item;
-  }
+  public enqueue(index: number): void {
+    const list = this.heapArray;
+    list.push(index);
+    let curr = list.length - 1;
 
-  pop(): number {
-    const items = this.items;
-    const top = items[0]!;
-    const last = items.pop()!;
-    if (items.length > 0) {
-      let i = 0;
-      const n = items.length;
-      for (;;) {
-        const left = 2 * i + 1;
-        if (left >= n) break;
-        const right = left + 1;
-        const child =
-          right < n && this.dist[items[right]!]! < this.dist[items[left]!]! ? right : left;
-        if (this.dist[items[child]!]! >= this.dist[last]!) break;
-        items[i] = items[child]!;
-        i = child;
+    while (curr > 0) {
+      const parent = (curr - 1) >> 1;
+      if (this.distanceTable[list[parent]!]! <= this.distanceTable[index]!) {
+        break;
       }
-      items[i] = last;
+      list[curr] = list[parent]!;
+      curr = parent;
     }
-    return top;
+    list[curr] = index;
+  }
+
+  public dequeue(): number {
+    const list = this.heapArray;
+    const root = list[0]!;
+    const tail = list.pop()!;
+
+    if (list.length > 0) {
+      let curr = 0;
+      const count = list.length;
+
+      while (true) {
+        const left = (curr << 1) + 1;
+        if (left >= count) break;
+        const right = left + 1;
+        const bestChild =
+          right < count && this.distanceTable[list[right]!]! < this.distanceTable[list[left]!]!
+            ? right
+            : left;
+
+        if (this.distanceTable[list[bestChild]!]! >= this.distanceTable[tail]!) {
+          break;
+        }
+        list[curr] = list[bestChild]!;
+        curr = bestChild;
+      }
+      list[curr] = tail;
+    }
+
+    return root;
   }
 }
 
-/**
- * Computes shortest topological vascular distances from cardiac source origin.
- * Output distances are encoded as d + 1 (with 0 reserved for unreachable segments).
- */
 export function flowPaths(
-  meshes: readonly PathMesh[],
-  origin: THREE.Vector3,
+  targetMeshes: readonly PathMesh[],
+  focalOrigin: THREE.Vector3
 ): Float32Array[] {
-  const cellOf = new Map<number, number>();
-  const cx: number[] = [];
-  const cy: number[] = [];
-  const cz: number[] = [];
-  const count: number[] = [];
-  const coords: number[] = [];
-  const vertexCells: Int32Array[] = [];
-  const seeds = new Map<number, number>();
-  let nearest = -1;
-  let nearestDistance = Infinity;
+  const voxelKeyToCell = new Map<number, number>();
+  const accumX: number[] = [];
+  const accumY: number[] = [];
+  const accumZ: number[] = [];
+  const vertexDensity: number[] = [];
+  const voxelCoords: number[] = [];
+  const meshVertexCellMap: Int32Array[] = [];
+  const designatedSeeds = new Map<number, number>();
 
-  for (const mesh of meshes) {
-    const e = mesh.matrixWorld.elements;
-    const v = mesh.vertices;
-    const cells = new Int32Array(v.count);
-    let seedCell = -1;
-    let seedDistance = Infinity;
+  let closestGlobalCell = -1;
+  let closestGlobalDistSq = Infinity;
 
-    for (let i = 0; i < v.count; i++) {
-      const lx = v.getX(i);
-      const ly = v.getY(i);
-      const lz = v.getZ(i);
-      const x = e[0]! * lx + e[4]! * ly + e[8]! * lz + e[12]!;
-      const y = e[1]! * lx + e[5]! * ly + e[9]! * lz + e[13]!;
-      const z = e[2]! * lx + e[6]! * ly + e[10]! * lz + e[14]!;
+  for (let mIdx = 0; mIdx < targetMeshes.length; mIdx++) {
+    const mesh = targetMeshes[mIdx]!;
+    const mat = mesh.matrixWorld.elements;
+    const vSet = mesh.vertices;
+    const cellIndices = new Int32Array(vSet.count);
 
-      const gx = Math.floor(x / PATH_CELL);
-      const gy = Math.floor(y / PATH_CELL);
-      const gz = Math.floor(z / PATH_CELL);
-      const k = key(gx, gy, gz);
+    let meshSeedCell = -1;
+    let meshSeedDistSq = Infinity;
 
-      let cell = cellOf.get(k);
-      if (cell === undefined) {
-        cell = count.length;
-        cellOf.set(k, cell);
-        cx.push(0);
-        cy.push(0);
-        cz.push(0);
-        count.push(0);
-        coords.push(gx, gy, gz);
+    for (let vIdx = 0; vIdx < vSet.count; vIdx++) {
+      const lx = vSet.getX(vIdx);
+      const ly = vSet.getY(vIdx);
+      const lz = vSet.getZ(vIdx);
+
+      const wx = mat[0]! * lx + mat[4]! * ly + mat[8]! * lz + mat[12]!;
+      const wy = mat[1]! * lx + mat[5]! * ly + mat[9]! * lz + mat[13]!;
+      const wz = mat[2]! * lx + mat[6]! * ly + mat[10]! * lz + mat[14]!;
+
+      const gx = Math.floor(wx / PATH_CELL);
+      const gy = Math.floor(wy / PATH_CELL);
+      const gz = Math.floor(wz / PATH_CELL);
+      const cellKey = encodeGridKey(gx, gy, gz);
+
+      let cellId = voxelKeyToCell.get(cellKey);
+      if (cellId === undefined) {
+        cellId = vertexDensity.length;
+        voxelKeyToCell.set(cellKey, cellId);
+        accumX.push(0);
+        accumY.push(0);
+        accumZ.push(0);
+        vertexDensity.push(0);
+        voxelCoords.push(gx, gy, gz);
       }
 
-      cx[cell]! += x;
-      cy[cell]! += y;
-      cz[cell]! += z;
-      count[cell]! += 1;
-      cells[i] = cell;
+      accumX[cellId]! += wx;
+      accumY[cellId]! += wy;
+      accumZ[cellId]! += wz;
+      vertexDensity[cellId]! += 1;
+      cellIndices[vIdx] = cellId;
 
-      const dx = x - origin.x;
-      const dy = y - origin.y;
-      const dz = z - origin.z;
-      const d = dx * dx + dy * dy + dz * dz;
+      const deltaX = wx - focalOrigin.x;
+      const deltaY = wy - focalOrigin.y;
+      const deltaZ = wz - focalOrigin.z;
+      const distSq = deltaX * deltaX + deltaY * deltaY + deltaZ * deltaZ;
 
-      if (mesh.seed && d < seedDistance) {
-        seedDistance = d;
-        seedCell = cell;
+      if (mesh.seed && distSq < meshSeedDistSq) {
+        meshSeedDistSq = distSq;
+        meshSeedCell = cellId;
       }
-      if (d < nearestDistance) {
-        nearestDistance = d;
-        nearest = cell;
+
+      if (distSq < closestGlobalDistSq) {
+        closestGlobalDistSq = distSq;
+        closestGlobalCell = cellId;
       }
     }
 
-    vertexCells.push(cells);
-    if (seedCell >= 0) seeds.set(seedCell, Math.sqrt(seedDistance));
+    meshVertexCellMap.push(cellIndices);
+    if (meshSeedCell >= 0) {
+      designatedSeeds.set(meshSeedCell, Math.sqrt(meshSeedDistSq));
+    }
   }
 
-  const cells = count.length;
-  const dist = new Float64Array(cells).fill(Infinity);
-  if (cells === 0) return vertexCells.map((c) => new Float32Array(c.length));
-
-  for (let c = 0; c < cells; c++) {
-    cx[c]! /= count[c]!;
-    cy[c]! /= count[c]!;
-    cz[c]! /= count[c]!;
+  const totalCells = vertexDensity.length;
+  const distanceResults = new Float64Array(totalCells).fill(Infinity);
+  if (totalCells === 0) {
+    return meshVertexCellMap.map((arr) => new Float32Array(arr.length));
   }
-  if (seeds.size === 0 && nearest >= 0) seeds.set(nearest, Math.sqrt(nearestDistance));
 
-  const heap = new MinHeap(dist);
-  const settled = new Uint8Array(cells);
-  const between = (a: number, b: number) =>
-    Math.hypot(cx[a]! - cx[b]!, cy[a]! - cy[b]!, cz[a]! - cz[b]!);
+  for (let c = 0; c < totalCells; c++) {
+    const weight = vertexDensity[c]!;
+    accumX[c]! /= weight;
+    accumY[c]! /= weight;
+    accumZ[c]! /= weight;
+  }
 
-  const BUCKET = BRIDGE_REACH;
-  const buckets = new Map<number, number[]>();
-  const bucketKey = (c: number) =>
-    key(Math.floor(cx[c]! / BUCKET), Math.floor(cy[c]! / BUCKET), Math.floor(cz[c]! / BUCKET));
+  if (designatedSeeds.size === 0 && closestGlobalCell >= 0) {
+    designatedSeeds.set(closestGlobalCell, Math.sqrt(closestGlobalDistSq));
+  }
 
-  const run = () => {
-    while (heap.size > 0) {
-      const c = heap.pop();
-      if (settled[c]) continue;
-      settled[c] = 1;
+  const priorityQueue = new PriorityIndexQueue(distanceResults);
+  const visitedFlags = new Uint8Array(totalCells);
 
-      const b = bucketKey(c);
-      const list = buckets.get(b);
-      if (list) list.push(c);
-      else buckets.set(b, [c]);
+  const measureDistance = (c1: number, c2: number): number => {
+    return Math.hypot(
+      accumX[c1]! - accumX[c2]!,
+      accumY[c1]! - accumY[c2]!,
+      accumZ[c1]! - accumZ[c2]!
+    );
+  };
 
-      const gx = coords[c * 3]!;
-      const gy = coords[c * 3 + 1]!;
-      const gz = coords[c * 3 + 2]!;
+  const macroBlockSize = BRIDGE_REACH;
+  const spatialBuckets = new Map<number, number[]>();
+  const getBucketId = (cid: number): number => {
+    const bx = Math.floor(accumX[cid]! / macroBlockSize);
+    const by = Math.floor(accumY[cid]! / macroBlockSize);
+    const bz = Math.floor(accumZ[cid]! / macroBlockSize);
+    return encodeGridKey(bx, by, bz);
+  };
+
+  const propagateWavefront = () => {
+    while (priorityQueue.length > 0) {
+      const activeCell = priorityQueue.dequeue();
+      if (visitedFlags[activeCell]) continue;
+      visitedFlags[activeCell] = 1;
+
+      const bid = getBucketId(activeCell);
+      const bucketMembers = spatialBuckets.get(bid);
+      if (bucketMembers) {
+        bucketMembers.push(activeCell);
+      } else {
+        spatialBuckets.set(bid, [activeCell]);
+      }
+
+      const gx = voxelCoords[activeCell * 3]!;
+      const gy = voxelCoords[activeCell * 3 + 1]!;
+      const gz = voxelCoords[activeCell * 3 + 2]!;
 
       for (let ox = -1; ox <= 1; ox++) {
         for (let oy = -1; oy <= 1; oy++) {
           for (let oz = -1; oz <= 1; oz++) {
             if (ox === 0 && oy === 0 && oz === 0) continue;
-            const n = cellOf.get(key(gx + ox, gy + oy, gz + oz));
-            if (n === undefined || settled[n]) continue;
-            const d = dist[c]! + between(c, n);
-            if (d < dist[n]!) {
-              dist[n] = d;
-              heap.push(n);
+            const neighborKey = encodeGridKey(gx + ox, gy + oy, gz + oz);
+            const neighborCell = voxelKeyToCell.get(neighborKey);
+            if (neighborCell === undefined || visitedFlags[neighborCell]) continue;
+
+            const travelCost = distanceResults[activeCell]! + measureDistance(activeCell, neighborCell);
+            if (travelCost < distanceResults[neighborCell]!) {
+              distanceResults[neighborCell] = travelCost;
+              priorityQueue.enqueue(neighborCell);
             }
           }
         }
@@ -191,73 +229,94 @@ export function flowPaths(
     }
   };
 
-  for (const [cell, d] of seeds) {
-    if (d < dist[cell]!) {
-      dist[cell] = d;
-      heap.push(cell);
+  for (const [seedId, seedCost] of designatedSeeds) {
+    if (seedCost < distanceResults[seedId]!) {
+      distanceResults[seedId] = seedCost;
+      priorityQueue.enqueue(seedId);
     }
   }
-  run();
 
-  const unreached: number[] = [];
-  for (let c = 0; c < cells; c++) if (!settled[c]) unreached.push(c);
-  const fromOrigin = (c: number) =>
-    Math.hypot(cx[c]! - origin.x, cy[c]! - origin.y, cz[c]! - origin.z);
-  unreached.sort((a, b) => fromOrigin(a) - fromOrigin(b));
+  propagateWavefront();
 
-  for (const c of unreached) {
-    if (settled[c]) continue;
-    const bx = Math.floor(cx[c]! / BUCKET);
-    const by = Math.floor(cy[c]! / BUCKET);
-    const bz = Math.floor(cz[c]! / BUCKET);
-    let best = Infinity;
+  const disconnectedCells: number[] = [];
+  for (let c = 0; c < totalCells; c++) {
+    if (!visitedFlags[c]) {
+      disconnectedCells.push(c);
+    }
+  }
+
+  disconnectedCells.sort((a, b) => {
+    const d1 = Math.hypot(accumX[a]! - focalOrigin.x, accumY[a]! - focalOrigin.y, accumZ[a]! - focalOrigin.z);
+    const d2 = Math.hypot(accumX[b]! - focalOrigin.x, accumY[b]! - focalOrigin.y, accumZ[b]! - focalOrigin.z);
+    return d1 - d2;
+  });
+
+  for (const unvisited of disconnectedCells) {
+    if (visitedFlags[unvisited]) continue;
+
+    const bx = Math.floor(accumX[unvisited]! / macroBlockSize);
+    const by = Math.floor(accumY[unvisited]! / macroBlockSize);
+    const bz = Math.floor(accumZ[unvisited]! / macroBlockSize);
+    let shortestBridge = Infinity;
 
     for (let ox = -1; ox <= 1; ox++) {
       for (let oy = -1; oy <= 1; oy++) {
         for (let oz = -1; oz <= 1; oz++) {
-          for (const r of buckets.get(key(bx + ox, by + oy, bz + oz)) ?? []) {
-            const gap = between(c, r);
-            if (gap <= BRIDGE_REACH && dist[r]! + gap < best) {
-              best = dist[r]! + gap;
+          const adjBucket = spatialBuckets.get(encodeGridKey(bx + ox, by + oy, bz + oz));
+          if (!adjBucket) continue;
+
+          for (let bIdx = 0; bIdx < adjBucket.length; bIdx++) {
+            const reachable = adjBucket[bIdx]!;
+            const gap = measureDistance(unvisited, reachable);
+            if (gap <= BRIDGE_REACH) {
+              const candidateDist = distanceResults[reachable]! + gap;
+              if (candidateDist < shortestBridge) {
+                shortestBridge = candidateDist;
+              }
             }
           }
         }
       }
     }
 
-    if (best < Infinity) {
-      dist[c] = best;
-      heap.push(c);
-      run();
+    if (shortestBridge < Infinity) {
+      distanceResults[unvisited] = shortestBridge;
+      priorityQueue.enqueue(unvisited);
+      propagateWavefront();
       continue;
     }
 
-    const stack = [c];
-    settled[c] = 2;
-    while (stack.length > 0) {
-      const at = stack.pop()!;
-      const gx = coords[at * 3]!;
-      const gy = coords[at * 3 + 1]!;
-      const gz = coords[at * 3 + 2]!;
+    // Island flood fill marking as unreachable
+    const islandQueue = [unvisited];
+    visitedFlags[unvisited] = 2;
+
+    while (islandQueue.length > 0) {
+      const top = islandQueue.pop()!;
+      const gx = voxelCoords[top * 3]!;
+      const gy = voxelCoords[top * 3 + 1]!;
+      const gz = voxelCoords[top * 3 + 2]!;
+
       for (let ox = -1; ox <= 1; ox++) {
         for (let oy = -1; oy <= 1; oy++) {
           for (let oz = -1; oz <= 1; oz++) {
-            const n = cellOf.get(key(gx + ox, gy + oy, gz + oz));
-            if (n === undefined || settled[n]) continue;
-            settled[n] = 2;
-            stack.push(n);
+            const adjKey = encodeGridKey(gx + ox, gy + oy, gz + oz);
+            const adjCell = voxelKeyToCell.get(adjKey);
+            if (adjCell !== undefined && !visitedFlags[adjCell]) {
+              visitedFlags[adjCell] = 2;
+              islandQueue.push(adjCell);
+            }
           }
         }
       }
     }
   }
 
-  return vertexCells.map((vertexCell) => {
-    const out = new Float32Array(vertexCell.length);
-    for (let i = 0; i < vertexCell.length; i++) {
-      const d = dist[vertexCell[i]!]!;
-      out[i] = Number.isFinite(d) ? d + 1 : 0;
+  return meshVertexCellMap.map((vertexIndices) => {
+    const finalBuffer = new Float32Array(vertexIndices.length);
+    for (let i = 0; i < vertexIndices.length; i++) {
+      const dist = distanceResults[vertexIndices[i]!]!;
+      finalBuffer[i] = Number.isFinite(dist) ? dist + 1 : 0;
     }
-    return out;
+    return finalBuffer;
   });
 }

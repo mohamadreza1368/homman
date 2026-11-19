@@ -1,11 +1,7 @@
-/**
- * Hoomaan 3D Viewer - Anatomical Tissue Colour Palette, Opacity & Shading Models
- */
-
 import * as THREE from "three";
 import type { AnatomicalSystem } from "@/lib/schemas";
 
-export const SYSTEM_COLOURS: Record<AnatomicalSystem, string> = {
+export const SYSTEM_COLOURS: Record<AnatomicalSystem, string> = Object.freeze({
   skeletal: "#e2d8c3",
   articular: "#bfcbd1",
   muscular: "#9e3f45",
@@ -19,9 +15,9 @@ export const SYSTEM_COLOURS: Record<AnatomicalSystem, string> = {
   reproductive: "#bd8aa4",
   integumentary: "#dfb098",
   regional: "#b4aea6",
-};
+});
 
-export const SYSTEM_LABELS: Record<AnatomicalSystem, string> = {
+export const SYSTEM_LABELS: Record<AnatomicalSystem, string> = Object.freeze({
   skeletal: "Bone",
   articular: "Joint",
   muscular: "Muscle",
@@ -35,7 +31,7 @@ export const SYSTEM_LABELS: Record<AnatomicalSystem, string> = {
   reproductive: "Reproductive",
   integumentary: "Skin and breast",
   regional: "Surface & regional",
-};
+});
 
 export interface TissueFamily {
   id: string;
@@ -43,13 +39,13 @@ export interface TissueFamily {
   hex: string;
 }
 
-const VEIN_BLUE = "#4a6ea8";
-const ARTERY_RED = "#c0392f";
+const VENOUS_BLUE_TONE = "#4a6ea8";
+const ARTERIAL_RED_TONE = "#c0392f";
 
-const VENOUS = /\b(vena|venae|venous|vein|veins|sinus)\b/i;
-const ARTERIAL = /\b(arteria|arteriae|arterial|artery|arteries|aorta|truncus)\b/i;
+const VENOUS_PATTERN = /\b(vena|venae|venous|vein|veins|sinus)\b/i;
+const ARTERIAL_PATTERN = /\b(arteria|arteriae|arterial|artery|arteries|aorta|truncus)\b/i;
 
-interface TissueRule {
+interface ClassificationRule {
   readonly id: string;
   readonly label: string;
   readonly test: RegExp;
@@ -57,7 +53,7 @@ interface TissueRule {
   readonly systems?: readonly AnatomicalSystem[];
 }
 
-const RULES: readonly TissueRule[] = [
+const TISSUE_RULES: readonly ClassificationRule[] = Object.freeze([
   {
     id: "connective",
     label: "Tendon & fascia",
@@ -170,7 +166,7 @@ const RULES: readonly TissueRule[] = [
   },
   { id: "nail", label: "Nail", test: /\b(unguis|nail|nails)\b/i, colour: "#e8c9bb" },
   { id: "hair", label: "Hair", test: /\b(pilus|pili|hair|capillus)\b/i, colour: "#5b4636" },
-];
+]);
 
 export interface Tissue {
   organ_id: string;
@@ -179,19 +175,29 @@ export interface Tissue {
   system: AnatomicalSystem;
 }
 
-/** Determines functional tissue palette classification for specified organ. */
 export function tissueFamily(organ: Tissue): TissueFamily {
-  const name = `${organ.ta2_latin} ${organ.name_en}`;
+  const combinedName = `${organ.ta2_latin} ${organ.name_en}`;
 
   if (organ.system === "cardiovascular") {
-    if (VENOUS.test(name)) return { id: "vein", label: "Vein", hex: VEIN_BLUE };
-    if (ARTERIAL.test(name)) return { id: "artery", label: "Artery", hex: ARTERY_RED };
+    if (VENOUS_PATTERN.test(combinedName)) {
+      return { id: "vein", label: "Vein", hex: VENOUS_BLUE_TONE };
+    }
+    if (ARTERIAL_PATTERN.test(combinedName)) {
+      return { id: "artery", label: "Artery", hex: ARTERIAL_RED_TONE };
+    }
   }
 
-  for (const rule of RULES) {
-    if (rule.systems && !rule.systems.includes(organ.system)) continue;
-    if (rule.test.test(name)) {
-      return { id: rule.id, label: rule.label, hex: rule.colour };
+  for (let i = 0; i < TISSUE_RULES.length; i++) {
+    const candidateRule = TISSUE_RULES[i]!;
+    if (candidateRule.systems && !candidateRule.systems.includes(organ.system)) {
+      continue;
+    }
+    if (candidateRule.test.test(combinedName)) {
+      return {
+        id: candidateRule.id,
+        label: candidateRule.label,
+        hex: candidateRule.colour,
+      };
     }
   }
 
@@ -206,45 +212,49 @@ export function tissueHex(organ: Tissue): string {
   return tissueFamily(organ).hex;
 }
 
-const CONTINUOUS: ReadonlySet<AnatomicalSystem> = new Set(["regional", "integumentary"]);
+const UNVARYING_SYSTEMS: ReadonlySet<AnatomicalSystem> = new Set([
+  "regional",
+  "integumentary",
+]);
 
-function hash(text: string): number {
-  let value = 0x811c9dc5;
-  for (let index = 0; index < text.length; index += 1) {
-    value ^= text.charCodeAt(index);
-    value = Math.imul(value, 0x01000193);
+function computeFnv1a32(str: string): number {
+  let hashVal = 0x811c9dc5;
+  for (let i = 0; i < str.length; i++) {
+    hashVal ^= str.charCodeAt(i);
+    hashVal = Math.imul(hashVal, 0x01000193);
   }
-  return value >>> 0;
+  return hashVal >>> 0;
 }
 
-function spread(seed: number, shift: number): number {
-  return ((seed >>> shift) & 0xff) / 128 - 1;
+function normalizeHashByte(entropy: number, bitOffset: number): number {
+  return ((entropy >>> bitOffset) & 0xff) / 128 - 1;
 }
 
-const cache = new Map<string, THREE.Color>();
+const COLOR_CACHE = new Map<string, THREE.Color>();
 
-/** Generates deterministic subtle shade variation for adjacent structures of the same tissue. */
 export function tissueColour(organ: Tissue): THREE.Color {
-  const cached = cache.get(organ.organ_id);
-  if (cached) return cached;
+  const existing = COLOR_CACHE.get(organ.organ_id);
+  if (existing) return existing;
 
-  const colour = new THREE.Color(tissueHex(organ));
-  if (!CONTINUOUS.has(organ.system)) {
-    const seed = hash(organ.organ_id);
+  const baseColor = new THREE.Color(tissueHex(organ));
+
+  if (!UNVARYING_SYSTEMS.has(organ.system)) {
+    const entropy = computeFnv1a32(organ.organ_id);
     const hsl = { h: 0, s: 0, l: 0 };
-    colour.getHSL(hsl);
-    colour.setHSL(
-      (hsl.h + spread(seed, 0) * 0.014 + 1) % 1,
-      Math.min(Math.max(hsl.s + spread(seed, 8) * 0.06, 0), 1),
-      Math.min(Math.max(hsl.l + spread(seed, 16) * 0.062, 0.04), 0.96),
-    );
+    baseColor.getHSL(hsl);
+
+    const hueOffset = (hsl.h + normalizeHashByte(entropy, 0) * 0.014 + 1) % 1;
+    const satOffset = Math.min(Math.max(hsl.s + normalizeHashByte(entropy, 8) * 0.06, 0), 1);
+    const litOffset = Math.min(Math.max(hsl.l + normalizeHashByte(entropy, 16) * 0.062, 0.04), 0.96);
+
+    baseColor.setHSL(hueOffset, satOffset, litOffset);
   }
 
-  cache.set(organ.organ_id, colour);
-  return colour;
+  COLOR_CACHE.set(organ.organ_id, baseColor);
+  return baseColor;
 }
 
-const ROUGHNESS: Partial<Record<AnatomicalSystem, number>> = {
+const TISSUE_ROUGHNESS_MAP: Partial<Record<AnatomicalSystem, number>> = {
   skeletal: 0.78,
   articular: 0.44,
   muscular: 0.38,
@@ -261,10 +271,10 @@ const ROUGHNESS: Partial<Record<AnatomicalSystem, number>> = {
 };
 
 export function tissueRoughness(system: AnatomicalSystem): number {
-  return ROUGHNESS[system] ?? 0.5;
+  return TISSUE_ROUGHNESS_MAP[system] ?? 0.5;
 }
 
-const METALNESS: Partial<Record<AnatomicalSystem, number>> = {
+const TISSUE_METALNESS_MAP: Partial<Record<AnatomicalSystem, number>> = {
   skeletal: 0.02,
   articular: 0.08,
   muscular: 0.05,
@@ -281,20 +291,21 @@ const METALNESS: Partial<Record<AnatomicalSystem, number>> = {
 };
 
 export function tissueMetalness(system: AnatomicalSystem): number {
-  return METALNESS[system] ?? 0.04;
+  return TISSUE_METALNESS_MAP[system] ?? 0.04;
 }
 
-const TRANSPARENCY: Record<string, number> = {
+const OPACITY_SPECIAL_CASES: Record<string, number> = {
   "ocular-clear": 0.18,
   "ocular-interior": 0.55,
   connective: 0.42,
 };
 
 export function tissueOpacity(organ: Tissue): number {
-  return TRANSPARENCY[tissueFamily(organ).id] ?? 1;
+  const familyId = tissueFamily(organ).id;
+  return OPACITY_SPECIAL_CASES[familyId] ?? 1.0;
 }
 
-const DEPTH_BIAS: Readonly<Record<string, number>> = {
+const SYSTEM_DEPTH_BIAS: Readonly<Record<string, number>> = {
   regional: -2,
   integumentary: -2,
   connective: -1,
@@ -302,5 +313,6 @@ const DEPTH_BIAS: Readonly<Record<string, number>> = {
 };
 
 export function tissueDepthBias(organ: Tissue): number {
-  return DEPTH_BIAS[tissueFamily(organ).id] ?? 0;
+  const familyId = tissueFamily(organ).id;
+  return SYSTEM_DEPTH_BIAS[familyId] ?? 0;
 }

@@ -78,78 +78,106 @@ export interface RhythmDefinition {
   plan: Planner;
 }
 
-const ATRIAL_LENGTH = CYCLE.atria.end - CYCLE.atria.start;
-const ATRIAL_PEAK = CYCLE.atria.peak - CYCLE.atria.start;
-const NORMAL_PR = CYCLE.ventricles.start - CYCLE.atria.start;
-const NORMAL_SYSTOLE = CYCLE.ventricles.end - CYCLE.ventricles.start;
-const SYSTOLE_PEAK = (CYCLE.ventricles.peak - CYCLE.ventricles.start) / NORMAL_SYSTOLE;
-const S2_WITHIN_SYSTOLE = (CYCLE.s2 - CYCLE.ventricles.start) / NORMAL_SYSTOLE;
-const NORMAL_RR = 60 / RESTING_BPM;
+const KINEMATICS = Object.freeze({
+  atrialDuration: CYCLE.atria.end - CYCLE.atria.start,
+  atrialPeakOffset: CYCLE.atria.peak - CYCLE.atria.start,
+  prInterval: CYCLE.ventricles.start - CYCLE.atria.start,
+  systoleBaseDuration: CYCLE.ventricles.end - CYCLE.ventricles.start,
+  systolePeakRatio: (CYCLE.ventricles.peak - CYCLE.ventricles.start) / (CYCLE.ventricles.end - CYCLE.ventricles.start),
+  s2Fraction: (CYCLE.s2 - CYCLE.ventricles.start) / (CYCLE.ventricles.end - CYCLE.ventricles.start),
+  rrIntervalNominal: 60 / RESTING_BPM,
+});
 
 /** Computes duration of ventricular systole as a function of cycle RR interval. */
 export function systoleFor(interval: number): number {
-  return Math.min(0.36, Math.max(0.16, NORMAL_SYSTOLE * Math.sqrt(interval / NORMAL_RR)));
+  const scaled = KINEMATICS.systoleBaseDuration * Math.sqrt(interval / KINEMATICS.rrIntervalNominal);
+  return Math.min(0.36, Math.max(0.16, scaled));
 }
 
-function atrium(out: Planned, at: number, strength = 1): void {
-  out.atria.push({ at, peak: at + ATRIAL_PEAK, end: at + ATRIAL_LENGTH, strength });
-}
+const KinematicBuilder = {
+  addAtrium(target: Planned, startTime: number, force = 1): void {
+    target.atria.push({
+      at: startTime,
+      peak: startTime + KINEMATICS.atrialPeakOffset,
+      end: startTime + KINEMATICS.atrialDuration,
+      strength: force,
+    });
+  },
 
-function ventricle(
-  out: Planned,
-  at: number,
-  interval: number,
-  strength = 1,
-  firstSound = 1,
-  secondSound = 1,
-  wide = false,
-): void {
-  const length = systoleFor(interval);
-  out.ventricles.push({ at, peak: at + length * SYSTOLE_PEAK, end: at + length, strength, wide });
-  if (firstSound > 0) out.lub.push({ at, level: firstSound });
-  if (secondSound > 0) out.dub.push({ at: at + length * S2_WITHIN_SYSTOLE, level: secondSound });
-}
+  addVentricle(
+    target: Planned,
+    startTime: number,
+    rrSpan: number,
+    force = 1,
+    s1Amp = 1,
+    s2Amp = 1,
+    isWide = false,
+  ): void {
+    const dur = systoleFor(rrSpan);
+    target.ventricles.push({
+      at: startTime,
+      peak: startTime + dur * KINEMATICS.systolePeakRatio,
+      end: startTime + dur,
+      strength: force,
+      wide: isWide,
+    });
+    if (s1Amp > 0) target.lub.push({ at: startTime, level: s1Amp });
+    if (s2Amp > 0) target.dub.push({ at: startTime + dur * KINEMATICS.s2Fraction, level: s2Amp });
+  },
+};
 
-function sinus(bpm: number, pr: number): Planner {
-  const interval = 60 / bpm;
-  return (to, clocks, _random, out) => {
-    clocks.atria ??= 0;
-    while (clocks.atria < to) {
-      atrium(out, clocks.atria);
-      ventricle(out, clocks.atria + pr, interval);
-      clocks.atria += interval;
+function createSinusScheduler(bpmVal: number, prDelay: number): Planner {
+  const cycleTime = 60 / bpmVal;
+  return (untilTime, stateClocks, _rand, accumulator) => {
+    stateClocks.atria ??= 0;
+    while (stateClocks.atria < untilTime) {
+      KinematicBuilder.addAtrium(accumulator, stateClocks.atria);
+      KinematicBuilder.addVentricle(accumulator, stateClocks.atria + prDelay, cycleTime);
+      stateClocks.atria += cycleTime;
     }
   };
 }
 
-const NO_QUIVER = { atria: 0, ventricles: 0 };
-
-interface Beat {
+interface HarmonicCycleBeat {
   atrium: number;
   s1: number;
   s2: number;
   nextS1: number;
 }
 
-function sinusWith(
-  sounds: { s1?: number; s2?: number; strength?: number },
-  add: (beat: Beat, out: Planned) => void,
+function createAuscultationSinusScheduler(
+  soundConfig: { s1?: number; s2?: number; strength?: number },
+  extraDispatcher: (beatInfo: HarmonicCycleBeat, accumulator: Planned) => void,
 ): Planner {
-  const length = systoleFor(NORMAL_RR);
-  return (to, clocks, _random, out) => {
-    clocks.atria ??= 0;
-    while (clocks.atria < to) {
-      const s1 = clocks.atria + NORMAL_PR;
-      atrium(out, clocks.atria);
-      ventricle(out, s1, NORMAL_RR, sounds.strength ?? 1, sounds.s1 ?? 1, sounds.s2 ?? 1);
-      add(
-        { atrium: clocks.atria, s1, s2: s1 + length * S2_WITHIN_SYSTOLE, nextS1: s1 + NORMAL_RR },
-        out,
+  const systoleDuration = systoleFor(KINEMATICS.rrIntervalNominal);
+  return (untilTime, stateClocks, _rand, accumulator) => {
+    stateClocks.atria ??= 0;
+    while (stateClocks.atria < untilTime) {
+      const s1Time = stateClocks.atria + KINEMATICS.prInterval;
+      KinematicBuilder.addAtrium(accumulator, stateClocks.atria);
+      KinematicBuilder.addVentricle(
+        accumulator,
+        s1Time,
+        KINEMATICS.rrIntervalNominal,
+        soundConfig.strength ?? 1,
+        soundConfig.s1 ?? 1,
+        soundConfig.s2 ?? 1,
       );
-      clocks.atria += NORMAL_RR;
+      extraDispatcher(
+        {
+          atrium: stateClocks.atria,
+          s1: s1Time,
+          s2: s1Time + systoleDuration * KINEMATICS.s2Fraction,
+          nextS1: s1Time + KINEMATICS.rrIntervalNominal,
+        },
+        accumulator,
+      );
+      stateClocks.atria += KINEMATICS.rrIntervalNominal;
     }
   };
 }
+
+const STATIC_QUIET = Object.freeze({ atria: 0, ventricles: 0 });
 
 export const RHYTHMS: readonly RhythmDefinition[] = [
   {
@@ -161,9 +189,9 @@ export const RHYTHMS: readonly RhythmDefinition[] = [
       "Each beat starts in the atria; after a short pause at the AV node the ventricles " +
       "contract. The first sound is the AV valves closing, the second the aortic and " +
       "pulmonary valves.",
-    quiver: NO_QUIVER,
+    quiver: STATIC_QUIET,
     followsBreath: 1,
-    plan: sinus(RESTING_BPM, NORMAL_PR),
+    plan: createSinusScheduler(RESTING_BPM, KINEMATICS.prInterval),
   },
   {
     id: "sinus_tachycardia",
@@ -173,9 +201,9 @@ export const RHYTHMS: readonly RhythmDefinition[] = [
     what:
       "The same sequence, faster. Diastole shortens far more than systole, so the " +
       "ventricles have less time to fill between beats.",
-    quiver: NO_QUIVER,
+    quiver: STATIC_QUIET,
     followsBreath: 0.3,
-    plan: sinus(130, 0.12),
+    plan: createSinusScheduler(130, 0.12),
   },
   {
     id: "sinus_bradycardia",
@@ -183,9 +211,9 @@ export const RHYTHMS: readonly RhythmDefinition[] = [
     group: "Sinus",
     rate: "45 bpm",
     what: "The same sequence, slower, with long pauses in diastole.",
-    quiver: NO_QUIVER,
+    quiver: STATIC_QUIET,
     followsBreath: 1,
-    plan: sinus(45, 0.16),
+    plan: createSinusScheduler(45, 0.16),
   },
   {
     id: "av_block_1",
@@ -195,9 +223,9 @@ export const RHYTHMS: readonly RhythmDefinition[] = [
     what:
       "Every atrial beat reaches the ventricles, but late: the pause between the atria " +
       "and the ventricles is longer than 0.2 seconds.",
-    quiver: NO_QUIVER,
+    quiver: STATIC_QUIET,
     followsBreath: 1,
-    plan: sinus(RESTING_BPM, 0.32),
+    plan: createSinusScheduler(RESTING_BPM, 0.32),
   },
   {
     id: "mobitz_1",
@@ -207,18 +235,20 @@ export const RHYTHMS: readonly RhythmDefinition[] = [
     what:
       "Wenckebach: the pause after each atrial beat grows longer, until one atrial beat " +
       "is not followed by the ventricles at all. Then the sequence starts again.",
-    quiver: NO_QUIVER,
+    quiver: STATIC_QUIET,
     followsBreath: 1,
-    plan: (to, clocks, _random, out) => {
-      const delays = [0.16, 0.24, 0.3];
-      clocks.atria ??= 0;
-      clocks.beat ??= 0;
-      while (clocks.atria < to) {
-        atrium(out, clocks.atria);
-        const delay = delays[clocks.beat % 4];
-        if (delay !== undefined) ventricle(out, clocks.atria + delay, NORMAL_RR);
-        clocks.atria += NORMAL_RR;
-        clocks.beat += 1;
+    plan: (untilTime, stateClocks, _rand, accumulator) => {
+      const wenckebachDelays = [0.16, 0.24, 0.3];
+      stateClocks.atria ??= 0;
+      stateClocks.beat ??= 0;
+      while (stateClocks.atria < untilTime) {
+        KinematicBuilder.addAtrium(accumulator, stateClocks.atria);
+        const curDelay = wenckebachDelays[stateClocks.beat % 4];
+        if (curDelay !== undefined) {
+          KinematicBuilder.addVentricle(accumulator, stateClocks.atria + curDelay, KINEMATICS.rrIntervalNominal);
+        }
+        stateClocks.atria += KINEMATICS.rrIntervalNominal;
+        stateClocks.beat += 1;
       }
     },
   },
@@ -230,16 +260,18 @@ export const RHYTHMS: readonly RhythmDefinition[] = [
     what:
       "The pause stays the same, but some atrial beats are not conducted: the atria " +
       "contract and the ventricles do not, without warning.",
-    quiver: NO_QUIVER,
+    quiver: STATIC_QUIET,
     followsBreath: 1,
-    plan: (to, clocks, _random, out) => {
-      clocks.atria ??= 0;
-      clocks.beat ??= 0;
-      while (clocks.atria < to) {
-        atrium(out, clocks.atria);
-        if (clocks.beat % 3 !== 2) ventricle(out, clocks.atria + 0.16, NORMAL_RR);
-        clocks.atria += NORMAL_RR;
-        clocks.beat += 1;
+    plan: (untilTime, stateClocks, _rand, accumulator) => {
+      stateClocks.atria ??= 0;
+      stateClocks.beat ??= 0;
+      while (stateClocks.atria < untilTime) {
+        KinematicBuilder.addAtrium(accumulator, stateClocks.atria);
+        if (stateClocks.beat % 3 !== 2) {
+          KinematicBuilder.addVentricle(accumulator, stateClocks.atria + 0.16, KINEMATICS.rrIntervalNominal);
+        }
+        stateClocks.atria += KINEMATICS.rrIntervalNominal;
+        stateClocks.beat += 1;
       }
     },
   },
@@ -251,18 +283,26 @@ export const RHYTHMS: readonly RhythmDefinition[] = [
     what:
       "Nothing is conducted. The atria keep their own rhythm and the ventricles beat " +
       "slowly on theirs, independently — so the first sound changes in loudness.",
-    quiver: NO_QUIVER,
-    plan: (to, clocks, random, out) => {
-      const ventricular = 60 / 38;
-      clocks.atria ??= 0;
-      clocks.ventricles ??= 0.35;
-      while (clocks.atria < to) {
-        atrium(out, clocks.atria);
-        clocks.atria += NORMAL_RR;
+    quiver: STATIC_QUIET,
+    plan: (untilTime, stateClocks, randGen, accumulator) => {
+      const escapeCycle = 60 / 38;
+      stateClocks.atria ??= 0;
+      stateClocks.ventricles ??= 0.35;
+      while (stateClocks.atria < untilTime) {
+        KinematicBuilder.addAtrium(accumulator, stateClocks.atria);
+        stateClocks.atria += KINEMATICS.rrIntervalNominal;
       }
-      while (clocks.ventricles < to) {
-        ventricle(out, clocks.ventricles, ventricular, 1, 0.5 + 0.5 * random(), 1, true);
-        clocks.ventricles += ventricular;
+      while (stateClocks.ventricles < untilTime) {
+        KinematicBuilder.addVentricle(
+          accumulator,
+          stateClocks.ventricles,
+          escapeCycle,
+          1,
+          0.5 + 0.5 * randGen(),
+          1,
+          true,
+        );
+        stateClocks.ventricles += escapeCycle;
       }
     },
   },
@@ -277,15 +317,16 @@ export const RHYTHMS: readonly RhythmDefinition[] = [
       "to fill, and is weaker and quieter.",
     quiver: { atria: 0.35, ventricles: 0 },
     atrialTrace: "fibrillation",
-    plan: (to, clocks, random, out) => {
-      clocks.ventricles ??= 0.2;
-      clocks.filled ??= 0.7;
-      while (clocks.ventricles < to) {
-        const strength = 0.55 + 0.45 * Math.min(1, Math.max(0, (clocks.filled - 0.4) / 0.55));
-        const interval = 0.4 + 0.55 * random();
-        ventricle(out, clocks.ventricles, interval, strength, strength, strength);
-        clocks.ventricles += interval;
-        clocks.filled = interval;
+    plan: (untilTime, stateClocks, randGen, accumulator) => {
+      stateClocks.ventricles ??= 0.2;
+      stateClocks.filled ??= 0.7;
+      while (stateClocks.ventricles < untilTime) {
+        const fillFraction = Math.min(1, Math.max(0, (stateClocks.filled - 0.4) / 0.55));
+        const amp = 0.55 + 0.45 * fillFraction;
+        const randomRR = 0.4 + 0.55 * randGen();
+        KinematicBuilder.addVentricle(accumulator, stateClocks.ventricles, randomRR, amp, amp, amp);
+        stateClocks.ventricles += randomRR;
+        stateClocks.filled = randomRR;
       }
     },
   },
@@ -297,17 +338,26 @@ export const RHYTHMS: readonly RhythmDefinition[] = [
     what:
       "The atria contract very fast and regularly, about 300 times a minute. The AV node " +
       "lets every second one through, so the ventricles beat about 150.",
-    quiver: NO_QUIVER,
+    quiver: STATIC_QUIET,
     atrialTrace: "flutter",
-    plan: (to, clocks, _random, out) => {
-      const atrial = 0.2;
-      clocks.atria ??= 0;
-      clocks.beat ??= 0;
-      while (clocks.atria < to) {
-        atrium(out, clocks.atria, 0.45);
-        if (clocks.beat % 2 === 0) ventricle(out, clocks.atria + 0.16, atrial * 2, 0.85, 0.85, 0.85);
-        clocks.atria += atrial;
-        clocks.beat += 1;
+    plan: (untilTime, stateClocks, _rand, accumulator) => {
+      const flutterPeriod = 0.2;
+      stateClocks.atria ??= 0;
+      stateClocks.beat ??= 0;
+      while (stateClocks.atria < untilTime) {
+        KinematicBuilder.addAtrium(accumulator, stateClocks.atria, 0.45);
+        if (stateClocks.beat % 2 === 0) {
+          KinematicBuilder.addVentricle(
+            accumulator,
+            stateClocks.atria + 0.16,
+            flutterPeriod * 2,
+            0.85,
+            0.85,
+            0.85,
+          );
+        }
+        stateClocks.atria += flutterPeriod;
+        stateClocks.beat += 1;
       }
     },
   },
@@ -320,21 +370,34 @@ export const RHYTHMS: readonly RhythmDefinition[] = [
       "Now and then the ventricles contract early, with no atrial beat before them. The " +
       "next atrial beat finds them still recovering and is not conducted, so a pause " +
       "follows before the rhythm goes on.",
-    quiver: NO_QUIVER,
+    quiver: STATIC_QUIET,
     followsBreath: 1,
-    plan: (to, clocks, _random, out) => {
-      clocks.atria ??= 0;
-      clocks.beat ??= 0;
-      while (clocks.atria < to) {
-        atrium(out, clocks.atria);
-        if (clocks.beat % 5 === 3) {
-          const previous = clocks.atria - NORMAL_RR + NORMAL_PR;
-          ventricle(out, previous + 0.46, NORMAL_RR * 0.6, 0.8, 0.9, 0.7, true);
+    plan: (untilTime, stateClocks, _rand, accumulator) => {
+      stateClocks.atria ??= 0;
+      stateClocks.beat ??= 0;
+      while (stateClocks.atria < untilTime) {
+        KinematicBuilder.addAtrium(accumulator, stateClocks.atria);
+        if (stateClocks.beat % 5 === 3) {
+          const priorAtrium = stateClocks.atria - KINEMATICS.rrIntervalNominal;
+          const pvcInstant = priorAtrium + KINEMATICS.prInterval + 0.46;
+          KinematicBuilder.addVentricle(
+            accumulator,
+            pvcInstant,
+            KINEMATICS.rrIntervalNominal * 0.6,
+            0.8,
+            0.9,
+            0.7,
+            true,
+          );
         } else {
-          ventricle(out, clocks.atria + NORMAL_PR, NORMAL_RR);
+          KinematicBuilder.addVentricle(
+            accumulator,
+            stateClocks.atria + KINEMATICS.prInterval,
+            KINEMATICS.rrIntervalNominal,
+          );
         }
-        clocks.atria += NORMAL_RR;
-        clocks.beat += 1;
+        stateClocks.atria += KINEMATICS.rrIntervalNominal;
+        stateClocks.beat += 1;
       }
     },
   },
@@ -346,18 +409,26 @@ export const RHYTHMS: readonly RhythmDefinition[] = [
     what:
       "The ventricles beat very fast on their own, with the atria keeping a separate, " +
       "slower rhythm. With so little time to fill, each beat pumps less.",
-    quiver: NO_QUIVER,
-    plan: (to, clocks, random, out) => {
-      const ventricular = 60 / 170;
-      clocks.atria ??= 0.1;
-      clocks.ventricles ??= 0;
-      while (clocks.atria < to) {
-        atrium(out, clocks.atria);
-        clocks.atria += NORMAL_RR;
+    quiver: STATIC_QUIET,
+    plan: (untilTime, stateClocks, randGen, accumulator) => {
+      const vtCycle = 60 / 170;
+      stateClocks.atria ??= 0.1;
+      stateClocks.ventricles ??= 0;
+      while (stateClocks.atria < untilTime) {
+        KinematicBuilder.addAtrium(accumulator, stateClocks.atria);
+        stateClocks.atria += KINEMATICS.rrIntervalNominal;
       }
-      while (clocks.ventricles < to) {
-        ventricle(out, clocks.ventricles, ventricular, 0.65, 0.5 + 0.4 * random(), 0.6, true);
-        clocks.ventricles += ventricular;
+      while (stateClocks.ventricles < untilTime) {
+        KinematicBuilder.addVentricle(
+          accumulator,
+          stateClocks.ventricles,
+          vtCycle,
+          0.65,
+          0.5 + 0.4 * randGen(),
+          0.6,
+          true,
+        );
+        stateClocks.ventricles += vtCycle;
       }
     },
   },
@@ -381,7 +452,7 @@ export const RHYTHMS: readonly RhythmDefinition[] = [
     what:
       "No electrical activity, so nothing contracts and nothing is heard: the flat line " +
       "on an ECG. The heart standing still is the rhythm, not the animation stopping.",
-    quiver: NO_QUIVER,
+    quiver: STATIC_QUIET,
     plan: () => {},
   },
   {
@@ -393,13 +464,13 @@ export const RHYTHMS: readonly RhythmDefinition[] = [
       "A narrowed aortic valve: blood forced through it in systole makes a harsh murmur " +
       "that swells and fades between S1 and S2. The second sound is softer, and the pulse " +
       "weaker.",
-    quiver: NO_QUIVER,
+    quiver: STATIC_QUIET,
     followsBreath: 1,
-    plan: sinusWith({ s2: 0.55, strength: 0.8 }, (beat, out) => {
-      const at = beat.s1 + 0.04;
-      out.murmurs.push({
-        at,
-        length: beat.s2 - 0.03 - at,
+    plan: createAuscultationSinusScheduler({ s2: 0.55, strength: 0.8 }, (beat, accumulator) => {
+      const onset = beat.s1 + 0.04;
+      accumulator.murmurs.push({
+        at: onset,
+        length: beat.s2 - 0.03 - onset,
         shape: "diamond",
         pitch: 220,
         q: 0.9,
@@ -415,10 +486,10 @@ export const RHYTHMS: readonly RhythmDefinition[] = [
     what:
       "A mitral valve that does not close: some blood leaks back into the left atrium for " +
       "all of systole, heard as an even, blowing murmur from S1 right up to S2. S1 is soft.",
-    quiver: NO_QUIVER,
+    quiver: STATIC_QUIET,
     followsBreath: 1,
-    plan: sinusWith({ s1: 0.55, strength: 0.85 }, (beat, out) => {
-      out.murmurs.push({
+    plan: createAuscultationSinusScheduler({ s1: 0.55, strength: 0.85 }, (beat, accumulator) => {
+      accumulator.murmurs.push({
         at: beat.s1 + 0.01,
         length: beat.s2 - beat.s1,
         shape: "plateau",
@@ -436,10 +507,10 @@ export const RHYTHMS: readonly RhythmDefinition[] = [
     what:
       "An aortic valve that does not close: blood falls back into the left ventricle in " +
       "diastole, heard as a high, blowing murmur that starts at S2 and fades.",
-    quiver: NO_QUIVER,
+    quiver: STATIC_QUIET,
     followsBreath: 1,
-    plan: sinusWith({}, (beat, out) => {
-      out.murmurs.push({
+    plan: createAuscultationSinusScheduler({}, (beat, accumulator) => {
+      accumulator.murmurs.push({
         at: beat.s2 + 0.01,
         length: 0.34,
         shape: "decrescendo",
@@ -457,14 +528,14 @@ export const RHYTHMS: readonly RhythmDefinition[] = [
     what:
       "A narrowed mitral valve: a loud S1, a short opening snap after S2 as the stiff valve " +
       "opens, then a low rumble through diastole that grows as the atria contract.",
-    quiver: NO_QUIVER,
+    quiver: STATIC_QUIET,
     followsBreath: 1,
-    plan: sinusWith({ s1: 1 }, (beat, out) => {
-      out.extras.push({ at: beat.s2 + 0.08, kind: "snap" });
-      const at = beat.s2 + 0.13;
-      out.murmurs.push({
-        at,
-        length: beat.nextS1 - 0.02 - at,
+    plan: createAuscultationSinusScheduler({ s1: 1 }, (beat, accumulator) => {
+      accumulator.extras.push({ at: beat.s2 + 0.08, kind: "snap" });
+      const rumbleOnset = beat.s2 + 0.13;
+      accumulator.murmurs.push({
+        at: rumbleOnset,
+        length: beat.nextS1 - 0.02 - rumbleOnset,
         shape: "rumble",
         pitch: 110,
         q: 1,
@@ -481,10 +552,10 @@ export const RHYTHMS: readonly RhythmDefinition[] = [
       "A low thud just after S2, as blood rushes into a ventricle that is overfilled: " +
       "lub-dub-ta, like the word Kentucky. Normal in children and athletes, a sign of " +
       "heart failure in older adults.",
-    quiver: NO_QUIVER,
+    quiver: STATIC_QUIET,
     followsBreath: 1,
-    plan: sinusWith({}, (beat, out) => {
-      out.extras.push({ at: beat.s2 + 0.15, kind: "s3" });
+    plan: createAuscultationSinusScheduler({}, (beat, accumulator) => {
+      accumulator.extras.push({ at: beat.s2 + 0.15, kind: "s3" });
     }),
   },
   {
@@ -495,43 +566,43 @@ export const RHYTHMS: readonly RhythmDefinition[] = [
     what:
       "A low thud just before S1, as the atria push blood into a stiff ventricle: " +
       "ta-lub-dub, like the word Tennessee.",
-    quiver: NO_QUIVER,
+    quiver: STATIC_QUIET,
     followsBreath: 1,
-    plan: sinusWith({}, (beat, out) => {
-      out.extras.push({ at: beat.s1 - 0.07, kind: "s4" });
+    plan: createAuscultationSinusScheduler({}, (beat, accumulator) => {
+      accumulator.extras.push({ at: beat.s1 - 0.07, kind: "s4" });
     }),
   },
 ];
 
 export function rhythm(id: RhythmId): RhythmDefinition {
-  return RHYTHMS.find((cand) => cand.id === id) ?? RHYTHMS[0]!;
+  const match = RHYTHMS.find((r) => r.id === id);
+  return match ?? RHYTHMS[0]!;
 }
 
-function seeded(seed: number): () => number {
-  let state = seed >>> 0;
+function createPrng(initialSeed: number): () => number {
+  let s = initialSeed >>> 0;
   return () => {
-    state = (state + 0x6d2b79f5) >>> 0;
-    let t = state;
-    t = Math.imul(t ^ (t >>> 15), t | 1);
-    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    s = (s + 0x6d2b79f5) >>> 0;
+    let x = s;
+    x = Math.imul(x ^ (x >>> 15), x | 1);
+    x ^= x + Math.imul(x ^ (x >>> 7), x | 61);
+    return ((x ^ (x >>> 14)) >>> 0) / 4294967296;
   };
 }
 
-function wave(t: number, c: number, w: number, a: number): number {
-  const x = (t - c) / w;
-  return x * x > 16 ? 0 : a * Math.exp(-x * x);
+function gaussianPeak(timeInstant: number, centerVal: number, spread: number, amplitude: number): number {
+  const norm = (timeInstant - centerVal) / spread;
+  if (norm * norm > 16) return 0;
+  return amplitude * Math.exp(-norm * norm);
 }
 
-const TRACE_MEMORY_S = 0.8;
-
-function bump(t: number, contraction: Contraction): number {
-  if (t <= contraction.at || t >= contraction.end) return 0;
-  const rise = contraction.peak - contraction.at;
-  const fall = contraction.end - contraction.peak;
-  const x = t < contraction.peak ? (t - contraction.at) / rise : 1 - (t - contraction.peak) / fall;
-  const clamped = Math.min(1, Math.max(0, x));
-  return contraction.strength * clamped * clamped * (3 - 2 * clamped);
+function evaluateContractionCurve(currTime: number, c: Contraction): number {
+  if (currTime <= c.at || currTime >= c.end) return 0;
+  const ascending = c.peak - c.at;
+  const descending = c.end - c.peak;
+  const rawRatio = currTime < c.peak ? (currTime - c.at) / ascending : 1 - (currTime - c.peak) / descending;
+  const clampedRatio = Math.min(1, Math.max(0, rawRatio));
+  return c.strength * (clampedRatio * clampedRatio * (3 - 2 * clampedRatio));
 }
 
 export interface RhythmFrame {
@@ -543,7 +614,8 @@ export interface RhythmFrame {
   extras: ExtraSoundKind[];
 }
 
-const LOOKAHEAD_S = 2;
+const RUNTIME_LOOKAHEAD = 2;
+const HISTORY_WINDOW = 0.8;
 
 export class RhythmPlayer {
   private readonly planned: Planned = {
@@ -563,86 +635,102 @@ export class RhythmPlayer {
     readonly definition: RhythmDefinition,
     seed = 20260917,
   ) {
-    this.random = seeded(seed);
-    this.phases = [0, 1, 2, 3, 4, 5].map(() => this.random() * Math.PI * 2);
+    this.random = createPrng(seed);
+    this.phases = Array.from({ length: 6 }, () => this.random() * Math.PI * 2);
   }
 
   advance(before: number, after: number): RhythmFrame {
-    if (after + LOOKAHEAD_S > this.horizon) {
-      this.horizon = after + LOOKAHEAD_S;
+    if (after + RUNTIME_LOOKAHEAD > this.horizon) {
+      this.horizon = after + RUNTIME_LOOKAHEAD;
       this.definition.plan(this.horizon, this.clocks, this.random, this.planned);
-      const keep = before - TRACE_MEMORY_S;
-      this.planned.atria = this.planned.atria.filter((c) => c.end >= keep);
-      this.planned.ventricles = this.planned.ventricles.filter((c) => c.end >= keep);
-      this.planned.lub = this.planned.lub.filter((s) => s.at >= keep);
-      this.planned.dub = this.planned.dub.filter((s) => s.at >= keep);
-      this.planned.murmurs = this.planned.murmurs.filter((m) => m.at >= keep);
-      this.planned.extras = this.planned.extras.filter((e) => e.at >= keep);
+      const pruneCutoff = before - HISTORY_WINDOW;
+      this.planned.atria = this.planned.atria.filter((c) => c.end >= pruneCutoff);
+      this.planned.ventricles = this.planned.ventricles.filter((c) => c.end >= pruneCutoff);
+      this.planned.lub = this.planned.lub.filter((s) => s.at >= pruneCutoff);
+      this.planned.dub = this.planned.dub.filter((s) => s.at >= pruneCutoff);
+      this.planned.murmurs = this.planned.murmurs.filter((m) => m.at >= pruneCutoff);
+      this.planned.extras = this.planned.extras.filter((e) => e.at >= pruneCutoff);
     }
 
-    let atria = this.quiver(after, this.definition.quiver.atria, 0);
-    for (const contraction of this.planned.atria) {
-      atria = Math.max(atria, bump(after, contraction));
-    }
-    let ventricles = this.quiver(after, this.definition.quiver.ventricles, 3);
-    for (const contraction of this.planned.ventricles) {
-      ventricles = Math.max(ventricles, bump(after, contraction));
+    let aValue = this.calculateQuiver(after, this.definition.quiver.atria, 0);
+    for (const c of this.planned.atria) {
+      aValue = Math.max(aValue, evaluateContractionCurve(after, c));
     }
 
-    const within = (sound: { at: number }) => sound.at > before && sound.at <= after;
+    let vValue = this.calculateQuiver(after, this.definition.quiver.ventricles, 3);
+    for (const c of this.planned.ventricles) {
+      vValue = Math.max(vValue, evaluateContractionCurve(after, c));
+    }
+
+    const isWithinSpan = (item: { at: number }) => item.at > before && item.at <= after;
+
     return {
-      atria: SQUEEZE.atria * atria,
-      ventricles: SQUEEZE.ventricles * ventricles,
-      lub: this.planned.lub.filter(within).map((sound) => sound.level),
-      dub: this.planned.dub.filter(within).map((sound) => sound.level),
-      murmurs: this.planned.murmurs.filter(within),
-      extras: this.planned.extras.filter(within).map((extra) => extra.kind),
+      atria: SQUEEZE.atria * aValue,
+      ventricles: SQUEEZE.ventricles * vValue,
+      lub: this.planned.lub.filter(isWithinSpan).map((s) => s.level),
+      dub: this.planned.dub.filter(isWithinSpan).map((s) => s.level),
+      murmurs: this.planned.murmurs.filter(isWithinSpan),
+      extras: this.planned.extras.filter(isWithinSpan).map((e) => e.kind),
     };
   }
 
   ecgAt(t: number): number {
-    let v = 0;
-    const trace = this.definition.atrialTrace ?? "p";
+    let voltage = 0;
+    const mode = this.definition.atrialTrace ?? "p";
+
     for (const a of this.planned.atria) {
       if (t < a.at - 0.2 || t > a.end + 0.2) continue;
-      if (trace === "p") v += wave(t, a.at - 0.03, 0.03, 0.14);
-      else if (trace === "flutter") {
-        v += wave(t, a.at + 0.03, 0.05, -0.18) + wave(t, a.at + 0.13, 0.025, 0.07);
+      if (mode === "p") {
+        voltage += gaussianPeak(t, a.at - 0.03, 0.03, 0.14);
+      } else if (mode === "flutter") {
+        voltage +=
+          gaussianPeak(t, a.at + 0.03, 0.05, -0.18) +
+          gaussianPeak(t, a.at + 0.13, 0.025, 0.07);
       }
     }
-    if (trace === "fibrillation") {
-      v +=
+
+    if (mode === "fibrillation") {
+      voltage +=
         0.035 * Math.sin(2 * Math.PI * 6.1 * t + this.phases[0]!) +
         0.02 * Math.sin(2 * Math.PI * 8.7 * t + this.phases[1]!) +
         0.015 * Math.sin(2 * Math.PI * 4.3 * t + this.phases[2]!);
     }
-    for (const c of this.planned.ventricles) {
-      if (t < c.at - 0.2 || t > c.end + 0.3) continue;
-      const length = c.end - c.at;
-      const q = c.at - 0.04;
-      if (c.wide) {
-        v += wave(t, q + 0.01, 0.03, 0.85) + wave(t, q + 0.07, 0.03, -0.45);
-        v += wave(t, c.at + 0.62 * length, 0.06, -0.35);
+
+    for (const v of this.planned.ventricles) {
+      if (t < v.at - 0.2 || t > v.end + 0.3) continue;
+      const span = v.end - v.at;
+      const qTime = v.at - 0.04;
+
+      if (v.wide) {
+        voltage +=
+          gaussianPeak(t, qTime + 0.01, 0.03, 0.85) +
+          gaussianPeak(t, qTime + 0.07, 0.03, -0.45) +
+          gaussianPeak(t, v.at + 0.62 * span, 0.06, -0.35);
       } else {
-        v += wave(t, q - 0.025, 0.008, -0.12) + wave(t, q, 0.011, 1) + wave(t, q + 0.022, 0.01, -0.28);
-        v += wave(t, c.at + 0.62 * length, 0.045, 0.28);
+        voltage +=
+          gaussianPeak(t, qTime - 0.025, 0.008, -0.12) +
+          gaussianPeak(t, qTime, 0.011, 1.0) +
+          gaussianPeak(t, qTime + 0.022, 0.01, -0.28) +
+          gaussianPeak(t, v.at + 0.62 * span, 0.045, 0.28);
       }
     }
+
     if (this.definition.quiver.ventricles > 0) {
-      const swell = 0.7 + 0.3 * Math.sin(2 * Math.PI * 0.4 * t + this.phases[5]!);
-      v +=
-        0.45 * swell * Math.sin(2 * Math.PI * 5.1 * t + this.phases[3]!) +
+      const envelope = 0.7 + 0.3 * Math.sin(2 * Math.PI * 0.4 * t + this.phases[5]!);
+      voltage +=
+        0.45 * envelope * Math.sin(2 * Math.PI * 5.1 * t + this.phases[3]!) +
         0.18 * Math.sin(2 * Math.PI * 7.3 * t + this.phases[4]!);
     }
-    return v;
+
+    return voltage;
   }
 
-  private quiver(t: number, amount: number, offset: number): number {
-    if (amount <= 0) return 0;
-    const waveSin =
-      0.5 * Math.sin(2 * Math.PI * 5.3 * t + this.phases[offset]!) +
-      0.3 * Math.sin(2 * Math.PI * 7.9 * t + this.phases[offset + 1]!) +
-      0.2 * Math.sin(2 * Math.PI * 11.7 * t + this.phases[offset + 2]!);
-    return amount * 0.5 * (1 + waveSin);
+  private calculateQuiver(t: number, magnitude: number, phaseStartIdx: number): number {
+    if (magnitude <= 0) return 0;
+    const osc =
+      0.5 * Math.sin(2 * Math.PI * 5.3 * t + this.phases[phaseStartIdx]!) +
+      0.3 * Math.sin(2 * Math.PI * 7.9 * t + this.phases[phaseStartIdx + 1]!) +
+      0.2 * Math.sin(2 * Math.PI * 11.7 * t + this.phases[phaseStartIdx + 2]!);
+    return magnitude * 0.5 * (1 + osc);
   }
 }
