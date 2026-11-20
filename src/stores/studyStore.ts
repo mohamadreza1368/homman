@@ -2,6 +2,7 @@ import { create } from "zustand";
 
 import * as db from "@/lib/studyDb";
 import { useCaseStore } from "@/stores/caseStore";
+import { createExportPackage } from "@/features/local/journalVaultEngine";
 import type {
   ImportSummary,
   NoteInput,
@@ -190,6 +191,11 @@ export const useStudyStore = create<StudyState>()((set, get) => {
 
     exportJournal: async () => {
       try {
+        const { notes } = get();
+        createExportPackage(
+          notes.map((n) => ({ id: String(n.id), content: n.body })),
+          [],
+        );
         const exportedPath = await db.exportJournal();
         set({
           transfer: exportedPath ? `Saved to ${exportedPath}` : null,

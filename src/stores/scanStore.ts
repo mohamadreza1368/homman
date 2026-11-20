@@ -3,6 +3,7 @@ import { create } from "zustand";
 import { readLocal, writeLocal } from "@/lib/localStore";
 import { scanTint, type ScanTintId } from "@/features/viewer/scanTints";
 import type { SectionPlaneName } from "@/features/viewer/axialSlice";
+import { getOrientationPlaneConfig } from "@/features/viewer/crossSectionEngine";
 
 /**
  * State store for the HOOMAAN anatomical scanner and cross-sectional tomography suite.
@@ -210,6 +211,8 @@ export const useScanStore = create<ScannerState>()((set, get) => ({
     const state = get();
     if (plane === state.plane) return;
     writeLocal(STORAGE_KEYS.plane, plane);
+    // Resolve cutting plane normal from clean-room crossSectionEngine
+    getOrientationPlaneConfig(plane === "front" ? "coronal" : "axial");
     set({
       plane,
       at: state.elsewhere,

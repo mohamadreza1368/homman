@@ -4,6 +4,7 @@ import { create } from "zustand";
 import { SceneCommandSchema } from "@/lib/schemas";
 import type { SceneCommand, SessionMode, TokenUsage } from "@/lib/schemas";
 import type { SessionDetail } from "@/lib/studyDb";
+import { evaluateInputSafety, type TriageEvaluation } from "@/features/chat/clinicalSafetyEngine";
 
 /**
  * Dialogue transcript and session state management for HOOMAAN AI clinical assistant.
@@ -25,6 +26,7 @@ export interface ChatMessage {
   usage?: TokenUsage;
   model?: string;
   score?: number;
+  safety?: TriageEvaluation;
 }
 
 export interface CompletedTurn {
@@ -95,7 +97,8 @@ export const useChatStore = create<ChatState>()((set, get) => ({
   mode: "tutor",
   sessionRevision: 0,
 
-  startTurn: (requestId: string, prompt: string) =>
+  startTurn: (requestId: string, prompt: string) => {
+    const safety = evaluateInputSafety(prompt);
     set((state) => ({
       pendingRequestId: requestId,
       messages: [
@@ -106,6 +109,7 @@ export const useChatStore = create<ChatState>()((set, get) => ({
           content: prompt,
           tools: [],
           status: "complete",
+          safety,
         },
         {
           id: `a:${requestId}`,
@@ -115,7 +119,8 @@ export const useChatStore = create<ChatState>()((set, get) => ({
           status: "streaming",
         },
       ],
-    })),
+    }));
+  },
 
   appendDelta: (requestId: string, text: string) =>
     set((state) => ({

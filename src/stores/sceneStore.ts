@@ -8,6 +8,12 @@ import type {
   SceneCommand,
   SectionPlane,
 } from "@/lib/schemas";
+import {
+  applySingleSelection,
+  applyAdditiveSelection,
+  enterIsolation,
+  getNextTransparencyStep,
+} from "@/features/viewer/selectionEngine";
 import type { BackgroundMode } from "@/features/viewer/background";
 import type { LightingPresetId } from "@/features/viewer/lighting";
 import type { AnatomicalView } from "@/features/viewer/cameraViews";
@@ -434,14 +440,11 @@ export const useSceneStore = create<SceneStore>()((set, get) => ({
 
   selectOrgan: (organId, additive = false) =>
     set((state) => {
-      if (organId === null) return { selectedOrganIds: [] };
-      if (!additive) return { selectedOrganIds: [organId] };
-      const exists = state.selectedOrganIds.includes(organId);
-      return {
-        selectedOrganIds: exists
-          ? state.selectedOrganIds.filter((id) => id !== organId)
-          : [...state.selectedOrganIds, organId],
-      };
+      const currentSelection = new Set(state.selectedOrganIds);
+      const nextSelection = additive
+        ? (organId ? applyAdditiveSelection(currentSelection, organId) : currentSelection)
+        : applySingleSelection(organId);
+      return { selectedOrganIds: Array.from(nextSelection) };
     }),
 
   selectMany: (organIds) =>
@@ -451,9 +454,9 @@ export const useSceneStore = create<SceneStore>()((set, get) => ({
 
   addToSelection: (organIds) =>
     set((state) => {
-      const active = new Set(state.selectedOrganIds);
+      let active = new Set(state.selectedOrganIds);
       for (const id of organIds) {
-        if (id in state.organs) active.add(id);
+        if (id in state.organs) active = applyAdditiveSelection(active, id);
       }
       return { selectedOrganIds: Array.from(active) };
     }),
@@ -462,11 +465,11 @@ export const useSceneStore = create<SceneStore>()((set, get) => ({
   setCaseMarks: (marks) => set({ caseMarks: marks }),
 
   isolateSelection: () =>
-    set((state) =>
-      state.selectedOrganIds.length === 0
-        ? state
-        : { isolatedOrganIds: [...state.selectedOrganIds] },
-    ),
+    set((state) => {
+      if (state.selectedOrganIds.length === 0) return state;
+      const isolatedSet = enterIsolation(state.selectedOrganIds);
+      return { isolatedOrganIds: Array.from(isolatedSet) };
+    }),
 
   hideSelection: () =>
     set((state) => {
@@ -530,13 +533,12 @@ export const useSceneStore = create<SceneStore>()((set, get) => ({
   cycleSystemOpacity: (system) =>
     set((state) => {
       const nextMap = { ...state.systemOpacity };
-      const current = nextMap[system] ?? 1;
-      const idx = GHOST_STOPS.findIndex((s) => Math.abs(s - current) < 0.01);
-      const chosen = GHOST_STOPS[(idx + 1) % GHOST_STOPS.length]!;
-      if (chosen >= 1) {
+      const current = nextMap[system] ?? 1.0;
+      const nextOpacity = getNextTransparencyStep(current);
+      if (nextOpacity >= 1.0) {
         delete nextMap[system];
       } else {
-        nextMap[system] = chosen;
+        nextMap[system] = nextOpacity;
       }
       return { systemOpacity: nextMap };
     }),

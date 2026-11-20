@@ -3,6 +3,11 @@ import { create } from "zustand";
 import { readLocal, writeLocal } from "@/lib/localStore";
 import { primeHeartSound } from "@/features/viewer/heartSound";
 import type { RhythmId } from "@/features/viewer/rhythms";
+import {
+  evaluateChamberKinematics,
+  evaluateEcgSignalVoltage,
+  type HeartRateMode,
+} from "@/features/viewer/cardiacCycleEngine";
 
 /**
  * Cardiac simulation and auscultation sound controller for HOOMAAN.
@@ -16,6 +21,14 @@ function getInitialAudioPreference(): boolean {
   return readLocal(CARDIAC_SOUND_STORAGE_KEY) === "on";
 }
 
+export function mapRhythmToCycleMode(rhythm: RhythmId): HeartRateMode {
+  if (rhythm.includes("tachycardia")) return "tachycardia";
+  if (rhythm.includes("bradycardia")) return "bradycardia";
+  if (rhythm === "asystole") return "asystole";
+  if (rhythm.includes("fibrillation")) return "ventricular_fibrillation";
+  return "normal";
+}
+
 interface CardiacSimulationState {
   enabled: boolean;
   sound: boolean;
@@ -23,6 +36,8 @@ interface CardiacSimulationState {
   toggle: () => void;
   setSound: (active: boolean) => void;
   setRhythm: (rhythm: RhythmId) => void;
+  getKinematics: (elapsedSeconds: number) => ReturnType<typeof evaluateChamberKinematics>;
+  getEcgVoltage: (elapsedSeconds: number) => number;
 }
 
 export const useHeartStore = create<CardiacSimulationState>()((set, get) => ({
@@ -36,6 +51,10 @@ export const useHeartStore = create<CardiacSimulationState>()((set, get) => ({
     set({ sound: active });
   },
   setRhythm: (rhythm: RhythmId) => set({ rhythm }),
+  getKinematics: (elapsedSeconds: number) =>
+    evaluateChamberKinematics(elapsedSeconds, mapRhythmToCycleMode(get().rhythm)),
+  getEcgVoltage: (elapsedSeconds: number) =>
+    evaluateEcgSignalVoltage(elapsedSeconds, mapRhythmToCycleMode(get().rhythm)),
 }));
 
 /**

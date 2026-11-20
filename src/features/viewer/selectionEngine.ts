@@ -69,8 +69,26 @@ export function removeOrganFromIsolation(
 }
 
 /**
- * Cycles opacity level across standard steps: 1.0 (opaque) -> 0.28 -> 0.12 -> 1.0.
+ * Convenience helper wrappers matching standard functional idioms.
  */
+export function applySingleSelection(organId: string | null): Set<string> {
+  return resolveOrganSelection(new Set(), organId, false);
+}
+
+export function applyAdditiveSelection(
+  current: ReadonlySet<string>,
+  organId: string
+): Set<string> {
+  return resolveOrganSelection(current, organId, true);
+}
+
+export function enterIsolation(organIds: readonly string[]): Set<string> {
+  return new Set(organIds);
+}
+
+export function leaveIsolation(): null {
+  return null;
+}
 export function getNextTransparencyStep(current: number): number {
   const matchingIndex = TRANSPARENCY_STOPS.findIndex(
     (stop) => Math.abs(stop - current) < 0.02,

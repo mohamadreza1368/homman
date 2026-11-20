@@ -1,3 +1,5 @@
+import { normalizeMedicalSearchTerm } from "./diseaseCorrelationEngine";
+
 /** Curated links are explicit: similar names or partial meshes are not equivalence. */
 export interface Disease {
   id: string;
@@ -75,10 +77,10 @@ export const diseases: Disease[] = [
 ];
 
 export function searchDiseases(query: string): Disease[] {
-  const needle = query.trim().toLocaleLowerCase().replace(/[يى]/g, "ی").replace(/ك/g, "ک");
+  const needle = normalizeMedicalSearchTerm(query);
   if (!needle) return diseases;
   return diseases.filter((d) => [d.name.fa, d.name.en, ...d.aliases, ...d.sites.flatMap((s) => [s.fa, s.en])]
-    .some((text) => text.toLocaleLowerCase().replace(/[يى]/g, "ی").replace(/ك/g, "ک").includes(needle)));
+    .some((text) => normalizeMedicalSearchTerm(text).includes(needle)));
 }
 
 export function diseasesForStructure(id: string, model: "male" | "female"): Disease[] {
