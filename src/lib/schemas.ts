@@ -13,7 +13,7 @@ export const PROTOCOL_VERSION = 2;
 // Shared Primitives & Enums
 // ---------------------------------------------------------------------------
 
-export const LanguageSchema = z.enum(["auto", "bg", "es", "en"]);
+export const LanguageSchema = z.enum(["auto", "fa", "en", "bg", "es"]);
 export type Language = z.infer<typeof LanguageSchema>;
 
 export const UserProfileSchema = z.enum(["layperson", "student", "clinician"]);

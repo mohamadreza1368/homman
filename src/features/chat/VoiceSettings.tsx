@@ -45,6 +45,7 @@ function formatPaceMultiplier(num: number): string {
 
 const LOCALE_DISPLAY_NAMES: Record<Language, string> = {
   auto: "English",
+  fa: "فارسی (Persian)",
   en: "English",
   es: "Spanish",
   bg: "Bulgarian",

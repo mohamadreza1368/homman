@@ -13,7 +13,7 @@ from pydantic import AfterValidator, BaseModel, ConfigDict, Field
 PROTOCOL_VERSION = 2
 ENGINE_VERSION = "0.1.0"
 
-Language = Literal["auto", "bg", "es", "en"]
+Language = Literal["auto", "fa", "en", "bg", "es"]
 UserProfile = Literal["layperson", "student", "clinician"]
 GenderModel = Literal["male", "female"]
 AiProvider = Literal["anthropic", "openai", "google"]
