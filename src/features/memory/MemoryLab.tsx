@@ -29,6 +29,9 @@ import { MemoryReader } from "./MemoryReader";
 import { MemoryTimeline as Timeline } from "./MemoryTimeline";
 import { useMemoryDataLoader } from "./useMemoryDataLoader";
 import { useHologramLabScene } from "./useHologramLabScene";
+import { MemoryLabHeader } from "./MemoryLabHeader";
+import { MemoryLabIntroFooter } from "./MemoryLabIntroFooter";
+import { MemoryLabEraseToast } from "./MemoryLabEraseToast";
 import { StudiedOrgansPanel } from "./StudiedOrgansPanel";
 import { useMemoryCallout } from "./useMemoryCallout";
 import { useMemoryHotkeys } from "./useMemoryHotkeys";
@@ -38,7 +41,6 @@ export function MemoryLab({ onClose }: { onClose: () => void }) {
   const webglStageRef = useRef<HTMLDivElement>(null);
   const avatarContainerRef = useRef<HTMLDivElement>(null);
 
-  const headerRef = useRef<HTMLElement>(null);
   const leftPanelRef = useRef<HTMLElement>(null);
   const rightPanelRef = useRef<HTMLElement>(null);
   const footerRef = useRef<HTMLElement>(null);
@@ -477,7 +479,7 @@ export function MemoryLab({ onClose }: { onClose: () => void }) {
           visibleOrganRowCount={visibleOrganRowCount}
           isOrganCameraZoomed={isOrganCameraZoomed}
           onOrganHover={handleOrganHover}
-          onOrganPin={(id) => setPinnedOrganNode((prev) => (prev === id ? null : id))}
+          onOrganPin={(id: string) => setPinnedOrganNode((prev) => (prev === id ? null : id))}
           onToggleUnfold={() => setIsAllOrgansUnfolded((all) => !all)}
           onToggleZoom={() => {
             if (!isOrganCameraZoomed) {
@@ -489,57 +491,16 @@ export function MemoryLab({ onClose }: { onClose: () => void }) {
       </div>
 
       <div className="ml-hud">
-        <header ref={headerRef} className="ml-head">
-          <div className="ml-title">STUDY MEMORY</div>
-          <div className="ml-sub">
-            YOUR JOURNAL · {availableLiveMemories.length} MEMORIES · STORED ON THIS COMPUTER
-          </div>
-        </header>
-
-        <div className="ml-corner">
-          <button
-            type="button"
-            className={`ml-help-toggle ${isHelpGuideVisible ? "ml-on" : ""}`}
-            onClick={() => setIsHelpGuideVisible((v) => !v)}
-            aria-expanded={isHelpGuideVisible}
-            aria-label="How this screen works"
-            title="How this screen works (?)"
-          >
-            ?
-          </button>
-          <button
-            type="button"
-            className={`ml-focus-toggle ${isFocusReaderActive ? "ml-on" : ""}`}
-            onClick={toggleFocusReader}
-            aria-pressed={isFocusReaderActive}
-            title={
-              isFocusReaderActive
-                ? "Bring the film texture back"
-                : "Clear the film texture and sharpen the text for reading"
-            }
-          >
-            <i aria-hidden>◎</i>
-            FOCUS {isFocusReaderActive ? "ON" : "OFF"}
-          </button>
-          <button
-            type="button"
-            className={`ml-sound ${isAudioEnabled ? "ml-on" : ""}`}
-            onClick={toggleAudio}
-            aria-pressed={isAudioEnabled}
-            title={isAudioEnabled ? "Turn the lab's sound off" : "Turn the lab's sound on"}
-          >
-            <i aria-hidden>
-              <b />
-              <b />
-              <b />
-              <b />
-            </i>
-            SOUND {isAudioEnabled ? "ON" : "OFF"}
-          </button>
-          <button type="button" className="ml-exit" onClick={handleLabDismissal}>
-            EXIT <span aria-hidden>✕</span>
-          </button>
-        </div>
+        <MemoryLabHeader
+          memoryCount={availableLiveMemories.length}
+          isHelpGuideVisible={isHelpGuideVisible}
+          onToggleHelpGuide={() => setIsHelpGuideVisible((v) => !v)}
+          isFocusReaderActive={isFocusReaderActive}
+          onToggleFocusReader={toggleFocusReader}
+          isAudioEnabled={isAudioEnabled}
+          onToggleAudio={toggleAudio}
+          onDismiss={handleLabDismissal}
+        />
 
         {memoryList && memoryList.length === 0 && (
           <div className="ml-empty">
@@ -600,36 +561,14 @@ export function MemoryLab({ onClose }: { onClose: () => void }) {
 
             <footer ref={footerRef} className="ml-bottom">
               {isIntroSequenceActive ? (
-                <>
-                  <div className="ml-row">
-                    <div className="ml-status">
-                      {currentHoloPhase === "boot" &&
-                        (isSlowInitialLoad
-                          ? "STILL LOADING · THIS COMPUTER IS TAKING LONGER THAN USUAL"
-                          : "ACCESSING STUDY MEMORY")}
-                      {currentHoloPhase === "deploy" && "DEPLOYING HOLOGRAPHIC PROJECTION"}
-                      {currentHoloPhase === "materialize" && "RECONSTRUCTING NEURAL SURFACE"}
-                      {currentHoloPhase === "mapping" &&
-                        `MAPPING STUDY MEMORY · ${
-                          memoryLookupMap
-                            .get(memoryList![Math.max(0, mappedMemoryCount - 1)]!.key)
-                            ?.title.toUpperCase() ?? ""
-                        }`}
-                    </div>
-                    <div className="ml-percent">
-                      {mappedMemoryCount}
-                      <small>/ {totalRegisteredMemories} MAPPED</small>
-                    </div>
-                  </div>
-                  <div className="ml-bar">
-                    <i
-                      style={{
-                        width: `${(mappedMemoryCount / totalRegisteredMemories) * 100}%`,
-                      }}
-                    />
-                  </div>
-                  <div className="ml-skip">CLICK TO SKIP</div>
-                </>
+                <MemoryLabIntroFooter
+                  currentHoloPhase={currentHoloPhase}
+                  isSlowInitialLoad={isSlowInitialLoad}
+                  mappedMemoryCount={mappedMemoryCount}
+                  totalRegisteredMemories={totalRegisteredMemories}
+                  memoryLookupMap={memoryLookupMap}
+                  memoryList={memoryList ?? []}
+                />
               ) : (
                 <Timeline
                   memories={memoryList!}
@@ -661,14 +600,7 @@ export function MemoryLab({ onClose }: { onClose: () => void }) {
 
         {isHelpGuideVisible && <LabHelp onClose={() => setIsHelpGuideVisible(false)} />}
 
-        {pendingEraseItem && (
-          <div className="ml-toast" role="status">
-            <span>MEMORY ERASED</span>
-            <button type="button" onClick={() => dispatchMemoryRestore(pendingEraseItem.key)}>
-              RESTORE ({pendingEraseItem.left})
-            </button>
-          </div>
-        )}
+        <MemoryLabEraseToast pendingItem={pendingEraseItem} onRestore={dispatchMemoryRestore} />
 
         {advisoryStatusNotice && !displayErrorMessage && (
           <div className="ml-notice" role="status">
