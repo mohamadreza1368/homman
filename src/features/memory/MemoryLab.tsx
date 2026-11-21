@@ -1,14 +1,11 @@
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import { Markdown } from "@/features/chat/Markdown";
-import { stripOrganRefs } from "@/features/chat/organRefs";
 import { loadManifest, meshUrl } from "@/lib/manifest";
 import type { ManifestOrgan } from "@/lib/schemas";
 import {
   getStudySession,
   listNotes,
   listStudySessions,
-  type SessionDetail,
   type StudyNote,
 } from "@/lib/studyDb";
 import { useSceneStore } from "@/stores/sceneStore";
@@ -18,7 +15,7 @@ import "./memoryLab.css";
 import { EraseQueue, RESTORE_WINDOW_S } from "./eraseQueue";
 import { createLabSound, storedLabSound, storeLabSound, type LabSound } from "./labSound";
 import { calloutPlacement, freeMargins, studiedRowsFor, type Box } from "./layout";
-import { byMonth, memoriesFrom, stepMemory, tally, type Memory, type MemoryKind } from "./memories";
+import { memoriesFrom, stepMemory, type Memory } from "./memories";
 import { createBodyHologram, type BodyHologram } from "./scene/bodyHologram";
 import type { BrainStructure } from "./scene/brainLoader";
 import { studiedIds, studiedOrgans, type StudiedOrgan } from "./studied";
@@ -29,86 +26,24 @@ import {
   type MemoryScene,
 } from "./scene/memoryScene";
 
-const CLASSIFICATION_TITLES: Record<MemoryKind, string> = {
-  session: "STUDY SESSION",
-  case: "CASE VISIT",
-  note: "NOTE",
-};
-
-type ViewportLayoutTier = "wide" | "medium" | "compact";
-
-function computeLayoutTier(width: number, height: number): ViewportLayoutTier {
-  if (width < 960 || height < 600) return "compact";
-  if (width < 1320 || height < 780) return "medium";
-  return "wide";
-}
-
-const EXCLUDE_SURFACE_FILTER = /^(Hairs of|Eyelashes|Pubic hairs)/;
-const LOCAL_STORAGE_FOCUS_KEY = "hoomaan.memory.focus.v1";
-
-function retrievePersistedFocus(): boolean {
-  try {
-    return window.localStorage.getItem(LOCAL_STORAGE_FOCUS_KEY) === "on";
-  } catch {
-    return false;
-  }
-}
-
-function persistFocusSetting(active: boolean): void {
-  try {
-    window.localStorage.setItem(LOCAL_STORAGE_FOCUS_KEY, active ? "on" : "off");
-  } catch {
-    // Gracefully ignore local storage restrictions
-  }
-}
-
-const EXTENDED_LOAD_WARNING_DELAY_MS = 15000;
-const CONTEXT_RESTORE_TIMEOUT_MS = 6000;
-const ERASE_HOLD_DURATION_MS = 1400;
-
-function evaluateGraphicsAdvisory(
-  hasNoHardwareWebGL: boolean,
-  gpuStatus: GraphicsStatus | null,
-): string | null {
-  if (hasNoHardwareWebGL) {
-    return "THIS COMPUTER CANNOT DRAW THE HOLOGRAM · EVERY MEMORY IS STILL HERE TO READ";
-  }
-  if (!gpuStatus) return null;
-  if (gpuStatus.lost) {
-    return "THE GRAPHICS CARD RESET · RESTORING THE HOLOGRAM…";
-  }
-  if (gpuStatus.adapter === "software") {
-    return "NO GRAPHICS ACCELERATION ON THIS COMPUTER · RUNNING LIGHT";
-  }
-  if (gpuStatus.eased) {
-    return "EFFECTS EASED TO KEEP THE HOLOGRAM SMOOTH ON THIS COMPUTER";
-  }
-  return null;
-}
-
-type MemoryInspectionState =
-  | { state: "loading" }
-  | { state: "session"; detail: SessionDetail }
-  | { state: "note"; note: StudyNote }
-  | { state: "missing" };
-
-const REUSABLE_TIMESTAMP_FORMATTER = new Intl.DateTimeFormat("en-GB", {
-  day: "2-digit",
-  month: "short",
-  year: "numeric",
-  hour: "2-digit",
-  minute: "2-digit",
-});
-
-const formatEpochTimestamp = (ms: number) => REUSABLE_TIMESTAMP_FORMATTER.format(ms);
-
-function formatDiagnosticError(err: unknown): string {
-  const messageStr = err instanceof Error ? err.message : String(err);
-  if (/fetch|network|load/i.test(messageStr)) {
-    return "The brain hologram could not be loaded. Your memories are safe — try again.";
-  }
-  return `The hologram stopped: ${messageStr}`;
-}
+import {
+  CLASSIFICATION_TITLES,
+  computeLayoutTier,
+  CONTEXT_RESTORE_TIMEOUT_MS,
+  evaluateGraphicsAdvisory,
+  EXCLUDE_SURFACE_FILTER,
+  EXTENDED_LOAD_WARNING_DELAY_MS,
+  formatDiagnosticError,
+  formatEpochTimestamp,
+  persistFocusSetting,
+  retrievePersistedFocus,
+  type MemoryInspectionState,
+  type ViewportLayoutTier,
+} from "./memoryLabUtils";
+import { LabHelp } from "./LabHelp";
+import { MemoryIndex } from "./MemoryIndex";
+import { MemoryReader } from "./MemoryReader";
+import { MemoryTimeline as Timeline } from "./MemoryTimeline";
 
 export function MemoryLab({ onClose }: { onClose: () => void }) {
   const containerRootRef = useRef<HTMLDivElement>(null);
@@ -1019,300 +954,5 @@ export function MemoryLab({ onClose }: { onClose: () => void }) {
     </div>
   );
 }
-
-const CONTROL_GUIDE_CATALOG: readonly {
-  title: string;
-  items: readonly (readonly [string, string])[];
-}[] = [
-  {
-    title: "THE BRAIN",
-    items: [
-      [
-        "Point at a light",
-        "Every light is a memory: cyan a study session, amber a case visit, violet a note. Pointing names it.",
-      ],
-      ["Click a light", "Opens that memory in the reader on the right."],
-      ["Drag", "Turns the brain."],
-      [
-        "The strip at the bottom",
-        "Every memory in the order you made it. Point or click, the same as on the brain.",
-      ],
-    ],
-  },
-  {
-    title: "THE KEYS",
-    items: [
-      ["← →", "The previous or next memory, in the order you made them."],
-      ["Enter", "Reads the open memory large, or back at the side."],
-      [
-        "Esc",
-        "Steps back one thing at a time — the large reader, the memory, the index — and then leaves.",
-      ],
-      ["?", "Opens and closes this guide."],
-    ],
-  },
-  {
-    title: "THE READER",
-    items: [
-      ["⤢ / ⤡", "Reads the memory large, or back at the side."],
-      ["Close", "Puts the memory away."],
-      [
-        "Hold to erase",
-        "Hold until the bar fills. The memory dissolves and Restore brings it back for eight seconds; after that it is deleted from your journal for good.",
-      ],
-    ],
-  },
-  {
-    title: "THE FIGURE",
-    items: [
-      ["Amber inside the body", "The structures the open memory was about, named underneath."],
-      [
-        "Point at a name",
-        "Shows that structure alone, the others dimmed. Click it to keep it so; click again to see them all.",
-      ],
-      [
-        "+ More / Show fewer",
-        "Unfolds the rest of the list when there are more than the screen has room for.",
-      ],
-      [
-        "⊕ Zoom in / ⊖ Whole body",
-        "Moves in on the chosen structure — or on all of them — and holds the figure still; drag to turn it. Whole body steps back.",
-      ],
-      ["Drag", "Turns the figure."],
-    ],
-  },
-  {
-    title: "AT THE TOP",
-    items: [
-      ["Memory index", "The counts, the months and your most recent memories."],
-      ["Focus", "Clears the film texture and sharpens the text for reading; the hologram keeps moving."],
-      ["Sound", "Turns the tones that answer what you do on or off."],
-      ["Exit", "Back to the atlas."],
-    ],
-  },
-];
-
-const LabHelp = memo(function LabHelp({ onClose }: { onClose: () => void }) {
-  return (
-    <section className="ml-panel ml-help" role="dialog" aria-label="How this screen works">
-      <h3>
-        HOW THIS SCREEN WORKS
-        <button
-          type="button"
-          className="ml-expand"
-          onClick={onClose}
-          aria-label="Close the guide"
-          title="Close (Esc)"
-        >
-          ✕
-        </button>
-      </h3>
-      <div className="ml-help-body">
-        {CONTROL_GUIDE_CATALOG.map((section) => (
-          <div key={section.title} className="ml-help-group">
-            <h4>{section.title}</h4>
-            <dl>
-              {section.items.map(([shortcut, description]) => (
-                <div key={shortcut}>
-                  <dt>{shortcut}</dt>
-                  <dd>{description}</dd>
-                </div>
-              ))}
-            </dl>
-          </div>
-        ))}
-        <p className="ml-help-foot">
-          Everything here is read from this computer; nothing is sent anywhere.
-        </p>
-      </div>
-    </section>
-  );
-});
-
-const MemoryIndex = memo(function MemoryIndex({
-  live,
-  selected,
-  onChoose,
-}: {
-  live: Memory[];
-  selected: string | null;
-  onChoose: (key: string | null) => void;
-}) {
-  const kindTally = useMemo(() => tally(live), [live]);
-  const monthDist = useMemo(() => byMonth(live), [live]);
-  const maxBucketCount = Math.max(1, ...monthDist.map((m) => m.count));
-  const recentHistory = useMemo(() => [...live].reverse().slice(0, 12), [live]);
-
-  return (
-    <>
-      <h3>
-        MEMORY INDEX <span>{String(live.length).padStart(3, "0")}</span>
-      </h3>
-      {(["session", "case", "note"] as const).map((kind) => (
-        <div key={kind} className="ml-count">
-          <i className={`ml-dot ml-${kind}`} />
-          <span>{CLASSIFICATION_TITLES[kind]}S</span>
-          <b>{kindTally[kind]}</b>
-        </div>
-      ))}
-      <h3 className="ml-gap">BY MONTH</h3>
-      <div className="ml-months">
-        {monthDist.map((m) => (
-          <div key={m.month} className="ml-month" title={`${m.month}: ${m.count}`}>
-            <i style={{ height: `${(m.count / maxBucketCount) * 100}%` }} />
-          </div>
-        ))}
-      </div>
-      <div className="ml-months-scale">
-        <span>{monthDist[0]?.month}</span>
-        <span>{monthDist[monthDist.length - 1]?.month}</span>
-      </div>
-      <h3 className="ml-gap">RECENT</h3>
-      <ol className="ml-recent">
-        {recentHistory.map((m) => (
-          <li key={m.key}>
-            <button
-              type="button"
-              onClick={() => onChoose(m.key)}
-              className={m.key === selected ? "ml-on" : ""}
-            >
-              <i className={`ml-dot ml-${m.kind}`} />
-              <em>{m.title}</em>
-            </button>
-          </li>
-        ))}
-      </ol>
-    </>
-  );
-});
-
-const MemoryReader = memo(function MemoryReader({
-  memory,
-  reading,
-  wide,
-  holding,
-  onToggleWide,
-  onClose,
-  onHoldStart,
-  onHoldEnd,
-  onHoldDone,
-}: {
-  memory: Memory;
-  reading: MemoryInspectionState | null;
-  wide: boolean;
-  holding: boolean;
-  onToggleWide: () => void;
-  onClose: (key: null) => void;
-  onHoldStart: () => void;
-  onHoldEnd: () => void;
-  onHoldDone: (key: string) => void;
-}) {
-  return (
-    <>
-      <h3>
-        {CLASSIFICATION_TITLES[memory.kind]} <span>{formatEpochTimestamp(memory.at)}</span>
-        <button
-          type="button"
-          className="ml-expand"
-          onClick={onToggleWide}
-          title={wide ? "Back to the side" : "Read it large"}
-          aria-pressed={wide}
-        >
-          {wide ? "⤡" : "⤢"}
-        </button>
-      </h3>
-      <div className="ml-reading-title">{memory.title}</div>
-      <div className="ml-reading">
-        {reading?.state === "loading" && <p className="ml-faint">RECALLING…</p>}
-        {reading?.state === "missing" && (
-          <p className="ml-faint">This memory is no longer in the journal.</p>
-        )}
-        {reading?.state === "note" && <p className="ml-note">{stripOrganRefs(reading.note.body)}</p>}
-        {reading?.state === "session" && (
-          <>
-            {reading.detail.session.score !== null && (
-              <p className="ml-score">
-                SCORE {reading.detail.session.score}
-                {reading.detail.session.verdict ? ` · ${reading.detail.session.verdict}` : ""}
-              </p>
-            )}
-            {reading.detail.messages.map((msg, idx) => (
-              <div key={idx} className={`ml-message ml-${msg.role}`}>
-                <span>{msg.role === "user" ? "YOU" : "ASSISTANT"}</span>
-                {msg.role === "assistant" ? (
-                  <Markdown structurePins={false}>{stripOrganRefs(msg.content)}</Markdown>
-                ) : (
-                  <p>{msg.content}</p>
-                )}
-              </div>
-            ))}
-          </>
-        )}
-      </div>
-      <div className="ml-actions">
-        <button type="button" className="ml-close-reading" onClick={() => onClose(null)}>
-          CLOSE
-        </button>
-        <button
-          type="button"
-          className={`ml-erase ${holding ? "ml-holding" : ""}`}
-          style={{ ["--ml-hold" as string]: `${ERASE_HOLD_DURATION_MS}ms` }}
-          onPointerDown={onHoldStart}
-          onPointerUp={onHoldEnd}
-          onPointerLeave={onHoldEnd}
-          onAnimationEnd={() => onHoldDone(memory.key)}
-          title="Hold to erase this memory from your journal"
-        >
-          <i />
-          HOLD TO ERASE
-        </button>
-      </div>
-    </>
-  );
-});
-
-const Timeline = memo(function Timeline({
-  memories,
-  erased,
-  selected,
-  onChoose,
-  onHover,
-}: {
-  memories: Memory[];
-  erased: Set<string>;
-  selected: string | null;
-  onChoose: (key: string | null) => void;
-  onHover: (key: string | null) => void;
-}) {
-  const extractKeyFromEvent = (evtTarget: EventTarget | null) => {
-    const tickKey = (evtTarget as HTMLElement | null)?.closest<HTMLElement>(".ml-tick")?.dataset.key;
-    return tickKey && !erased.has(tickKey) ? tickKey : null;
-  };
-
-  return (
-    <div
-      className="ml-timeline"
-      aria-label="Memories in the order they were made"
-      onClick={(e) => {
-        const foundKey = extractKeyFromEvent(e.target);
-        if (foundKey) onChoose(foundKey);
-      }}
-      onMouseOver={(e) => onHover(extractKeyFromEvent(e.target))}
-      onMouseLeave={() => onHover(null)}
-    >
-      {memories.map((entry) => (
-        <button
-          type="button"
-          key={entry.key}
-          data-key={entry.key}
-          className={`ml-tick ml-${entry.kind} ${erased.has(entry.key) ? "ml-gone" : ""} ${
-            entry.key === selected ? "ml-on" : ""
-          }`}
-          aria-label={`${entry.title}, ${formatEpochTimestamp(entry.at)}`}
-        />
-      ))}
-    </div>
-  );
-});
 
 export default MemoryLab;

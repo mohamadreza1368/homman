@@ -1,10 +1,6 @@
 import { useMemo, useState } from "react";
 
-import type { AnatomicalSystem, ManifestOrgan, SectionPlane } from "@/lib/schemas";
-
-import { busiestTouches, coverageLegend } from "@/features/viewer/coverage";
-import { exportViewImage } from "@/features/viewer/exportView";
-import { explodeScope, MAX_EXPLODE } from "@/features/viewer/explode";
+import type { AnatomicalSystem, ManifestOrgan } from "@/lib/schemas";
 import { SYSTEM_COLOURS, SYSTEM_LABELS } from "@/features/viewer/palette";
 
 import { StructureSearch } from "./StructureSearch";
@@ -14,205 +10,18 @@ import {
   organSubtitle,
   useSceneStore,
 } from "@/stores/sceneStore";
-import { useStudyStore } from "@/stores/studyStore";
 import { useInterfaceLanguage } from "@/stores/interfaceLanguage";
 
-const PERSIAN_SYSTEM_NAMES: Record<string, string> = {
-  articular: "مفاصل",
-  cardiovascular: "قلب و عروق",
-  digestive: "گوارش",
-  endocrine: "غدد",
-  lymphatic: "لنفاوی",
-  muscular: "عضلات",
-  nervous: "عصبی",
-  regional: "سطح بدن",
-  renal: "ادراری",
-  reproductive: "تولیدمثل",
-  respiratory: "تنفسی",
-  skeletal: "اسکلت",
-  integumentary: "پوست",
-  visceral: "احشا",
-};
+import {
+  PERSIAN_SYSTEM_NAMES,
+  SECTION_PLANES_LIST,
+  systemIsOpen,
+} from "./treeConstants";
+import { ViewportCaptureButton } from "./ViewportCaptureButton";
+import { StudyCoverageDisplay } from "./StudyCoverageDisplay";
+import { ExplodedViewSlider } from "./ExplodedViewSlider";
 
-const SECTION_PLANES_LIST: SectionPlane[] = ["axial", "coronal", "sagittal"];
-
-/**
- * Checks whether an anatomical system folder is currently expanded in the tree view.
- */
-export function systemIsOpen(
-  expandedMap: Record<string, boolean>,
-  systemName: string,
-): boolean {
-  return expandedMap[systemName] === true;
-}
-
-function ViewportCaptureButton() {
-  const isPersian = useInterfaceLanguage((state) => state.language === "fa");
-  const [isExporting, setIsExporting] = useState(false);
-  const [exportOutcome, setExportOutcome] = useState<string | null>(null);
-
-  const handleCapture = () => {
-    setIsExporting(true);
-    setExportOutcome(null);
-    exportViewImage()
-      .then((savedPath) => setExportOutcome(savedPath ? `Saved to ${savedPath}` : null))
-      .catch((err: unknown) =>
-        setExportOutcome(err instanceof Error ? err.message : String(err)),
-      )
-      .finally(() => setIsExporting(false));
-  };
-
-  return (
-    <div className="pt-1">
-      <button
-        type="button"
-        disabled={isExporting}
-        onClick={handleCapture}
-        title="Save the viewport, with its labels and its attribution, as a PNG"
-        className="w-full rounded border border-slate-700 py-1 text-[11px] text-slate-300 transition hover:border-sky-600 hover:text-sky-200 disabled:opacity-40"
-      >
-        {isExporting
-          ? isPersian
-            ? "در حال ذخیره…"
-            : "Saving…"
-          : isPersian
-            ? "ذخیرهٔ نمای فعلی به‌عنوان تصویر"
-            : "Save this view as an image"}
-      </button>
-      {exportOutcome && (
-        <button
-          type="button"
-          onClick={() => setExportOutcome(null)}
-          className="mt-1 block w-full truncate text-left text-[10px] text-slate-500 hover:text-slate-300"
-          title={exportOutcome}
-        >
-          {exportOutcome}
-        </button>
-      )}
-    </div>
-  );
-}
-
-function StudyCoverageDisplay() {
-  const isPersian = useInterfaceLanguage((state) => state.language === "fa");
-  const isCoverageActive = useStudyStore((state) => state.coverageVisible);
-  const setCoverageActive = useStudyStore((state) => state.setCoverageVisible);
-  const coverageData = useStudyStore((state) => state.coverage);
-
-  const maxTouches = busiestTouches(coverageData);
-  const totalStudiedOrgans = Object.keys(coverageData).length;
-
-  return (
-    <>
-      <label className="flex cursor-pointer items-center gap-2 pt-1 text-xs text-slate-300">
-        <input
-          type="checkbox"
-          checked={isCoverageActive}
-          onChange={(event) => void setCoverageActive(event.target.checked)}
-          className="accent-teal-400"
-        />
-        <span>{isPersian ? "نمایش بخش‌های مطالعه‌شده" : "Show what I have studied"}</span>
-      </label>
-
-      {!isCoverageActive && (
-        <p className="text-[10px] leading-snug text-slate-600">
-          Colours the body by your own notes and sessions, so the parts you have not
-          worked on are the ones that stay grey.
-        </p>
-      )}
-
-      {isCoverageActive && maxTouches === 0 && (
-        <p className="text-[10px] leading-snug text-slate-600">
-          Nothing filed against a structure yet. Write a note or ask about something
-          with it selected, and it will start to show here.
-        </p>
-      )}
-
-      {isCoverageActive && maxTouches > 0 && (
-        <div className="space-y-1 pt-0.5">
-          <div className="flex items-center gap-2">
-            {coverageLegend(maxTouches).map(({ label, hex }) => (
-              <span key={label} className="flex items-center gap-1">
-                <span
-                  aria-hidden
-                  className="h-2 w-2 rounded-full ring-1 ring-inset ring-black/30"
-                  style={{ backgroundColor: hex }}
-                />
-                <span className="text-[9px] text-slate-500">{label}</span>
-              </span>
-            ))}
-          </div>
-          <p className="text-[10px] leading-snug text-slate-600">
-            {totalStudiedOrgans} structure{totalStudiedOrgans === 1 ? "" : "s"} touched. The scale is
-            relative to your own journal, not to the atlas — the brightest is
-            whatever you have worked on most.
-          </p>
-        </div>
-      )}
-    </>
-  );
-}
-
-function ExplodedViewSlider() {
-  const isPersian = useInterfaceLanguage((state) => state.language === "fa");
-  const explodeFactor = useSceneStore((state) => state.explode);
-  const updateExplode = useSceneStore((state) => state.setExplode);
-  const activeSelectedIds = useSceneStore((state) => state.selectedOrganIds);
-  const activeIsolatedIds = useSceneStore((state) => state.isolatedOrganIds);
-
-  const activeScope = explodeScope({
-    selectedOrganIds: activeSelectedIds,
-    isolatedOrganIds: activeIsolatedIds,
-  });
-
-  const subjectScopeDescription =
-    activeScope === "selection"
-      ? `the ${activeSelectedIds.length} structures you have selected`
-      : activeScope === "region"
-        ? `the ${activeIsolatedIds?.length ?? 0} parts you are studying`
-        : "everything on screen";
-
-  return (
-    <section className="space-y-1 border-t border-slate-800 pt-3">
-      <div className="flex items-center gap-2">
-        <h2 className="text-xs font-semibold uppercase tracking-wider text-slate-500">
-          {isPersian ? "نمای بازشده" : "Exploded view"}
-        </h2>
-        {explodeFactor > 0 && (
-          <button
-            type="button"
-            onClick={() => updateExplode(0)}
-            className="ml-auto rounded border border-violet-700/70 bg-violet-600/15 px-2 py-0.5 text-[10px] text-violet-300"
-          >
-            {isPersian ? "بازگرداندن" : "Reassemble"}
-          </button>
-        )}
-      </div>
-      <input
-        type="range"
-        min={0}
-        max={MAX_EXPLODE}
-        step={0.05}
-        value={explodeFactor}
-        aria-label="How far apart to push the parts"
-        onChange={(event) => updateExplode(Number(event.target.value))}
-        className="w-full accent-violet-500"
-      />
-      <p className="text-[10px] leading-snug text-slate-600">
-        {isPersian ? (
-          "اجزای انتخاب‌شده یا ساختارهای نمایش‌داده‌شده از مرکز خود فاصله می‌گیرند. برای بازگشت لغزنده را روی صفر قرار دهید؛ کلید X نیز مراحل را تغییر می‌دهد."
-        ) : (
-          <>
-            Pushes {subjectScopeDescription} apart, away from its own centre, so you can see
-            the faces that are normally pressed together. Nothing is hidden and nothing
-            moves out of order — slide back to zero for the anatomy exactly as it was.{" "}
-            <kbd>X</kbd> steps through it from the keyboard.
-          </>
-        )}
-      </p>
-    </section>
-  );
-}
+export { systemIsOpen };
 
 /**
  * Hierarchical tree navigator for inspecting, isolating, toggling, and adjusting opacity of organ systems.

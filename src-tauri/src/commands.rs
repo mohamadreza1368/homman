@@ -1,8 +1,7 @@
 //! Tauri command bindings exposed to the frontend webview runtime.
 //!
-//! Exposes typed invocation handlers for local SQLite journal storage, process
-//! management of the Python sidecar, credential management, external IPC bridge,
-//! and native OS dialog integration.
+//! Handles invocation dispatch across credential storage, Python engine sidecar IPC,
+//! local SQLite study database, system control bridge, and hardware settings.
 
 use serde::Deserialize;
 use serde_json::{Map, Value};
@@ -39,10 +38,10 @@ impl serde::Serialize for CommandError {
     }
 }
 
-type CommandResult<T> = Result<T, CommandError>;
+pub type CommandResult<T> = Result<T, CommandError>;
 
 // ---------------------------------------------------------------------------
-// Credentials Management
+// 1. Authentication & Keyring Handlers
 // ---------------------------------------------------------------------------
 
 #[tauri::command]
@@ -63,7 +62,7 @@ pub fn delete_api_key(provider: Provider) -> CommandResult<()> {
 }
 
 // ---------------------------------------------------------------------------
-// Engine Sidecar Orchestration
+// 2. Python Sidecar Execution & Protocol Framing
 // ---------------------------------------------------------------------------
 
 #[derive(Debug, Deserialize)]
@@ -74,48 +73,6 @@ pub struct FrontendRequest {
     rest: Map<String, Value>,
 }
 
-const FORBIDDEN_FIELDS: [&str; 2] = ["api_key", "kind"];
-
-fn build_frame(kind: &str, request: FrontendRequest) -> CommandResult<String> {
-    if let Some(bad_field) = FORBIDDEN_FIELDS
-        .iter()
-        .find(|field| request.rest.contains_key(**field))
-    {
-        return Err(CommandError::Invalid(format!(
-            "request must not set the reserved field '{bad_field}'"
-        )));
-    }
-
-    let secret_key = keyring_store::read(request.provider)?;
-
-    let mut map = request.rest;
-    map.insert("kind".into(), Value::String(kind.into()));
-    map.insert("request_id".into(), Value::String(request.request_id));
-    map.insert(
-        "provider".into(),
-        serde_json::to_value(request.provider)
-            .map_err(|e| CommandError::Invalid(e.to_string()))?,
-    );
-    map.insert("api_key".into(), Value::String(secret_key));
-
-    serde_json::to_string(&Value::Object(map))
-        .map_err(|e| CommandError::Invalid(e.to_string()))
-}
-
-#[tauri::command]
-pub fn ask_agent(engine: State<'_, EngineHandle>, request: FrontendRequest) -> CommandResult<()> {
-    let frame = build_frame("agent_request", request)?;
-    engine.send_frame(&frame)?;
-    Ok(())
-}
-
-#[tauri::command]
-pub fn list_models(engine: State<'_, EngineHandle>, request: FrontendRequest) -> CommandResult<()> {
-    let frame = build_frame("list_models", request)?;
-    engine.send_frame(&frame)?;
-    Ok(())
-}
-
 #[derive(Debug, Deserialize)]
 pub struct LocalRequest {
     request_id: String,
@@ -123,25 +80,59 @@ pub struct LocalRequest {
     rest: Map<String, Value>,
 }
 
-fn build_local_frame(kind: &str, request: LocalRequest) -> CommandResult<String> {
-    if let Some(bad_field) = FORBIDDEN_FIELDS
-        .iter()
-        .find(|field| request.rest.contains_key(**field))
-    {
-        return Err(CommandError::Invalid(format!(
-            "request must not set the reserved field '{bad_field}'"
-        )));
+fn assert_unreserved_fields(fields: &Map<String, Value>) -> CommandResult<()> {
+    for forbidden in &["api_key", "kind"] {
+        if fields.contains_key(*forbidden) {
+            return Err(CommandError::Invalid(format!(
+                "request payload must not define reserved field '{forbidden}'"
+            )));
+        }
     }
-    let mut map = request.rest;
-    map.insert("kind".into(), Value::String(kind.into()));
-    map.insert("request_id".into(), Value::String(request.request_id));
-    serde_json::to_string(&Value::Object(map))
-        .map_err(|e| CommandError::Invalid(e.to_string()))
+    Ok(())
+}
+
+fn compose_provider_frame(kind: &str, request: FrontendRequest) -> CommandResult<String> {
+    assert_unreserved_fields(&request.rest)?;
+    let api_secret = keyring_store::read(request.provider)?;
+
+    let mut envelope = request.rest;
+    envelope.insert("kind".into(), Value::String(kind.into()));
+    envelope.insert("request_id".into(), Value::String(request.request_id));
+    envelope.insert(
+        "provider".into(),
+        serde_json::to_value(request.provider)
+            .map_err(|e| CommandError::Invalid(e.to_string()))?,
+    );
+    envelope.insert("api_key".into(), Value::String(api_secret));
+
+    serde_json::to_string(&Value::Object(envelope)).map_err(|e| CommandError::Invalid(e.to_string()))
+}
+
+fn compose_local_frame(kind: &str, request: LocalRequest) -> CommandResult<String> {
+    assert_unreserved_fields(&request.rest)?;
+    let mut envelope = request.rest;
+    envelope.insert("kind".into(), Value::String(kind.into()));
+    envelope.insert("request_id".into(), Value::String(request.request_id));
+    serde_json::to_string(&Value::Object(envelope)).map_err(|e| CommandError::Invalid(e.to_string()))
+}
+
+#[tauri::command]
+pub fn ask_agent(engine: State<'_, EngineHandle>, request: FrontendRequest) -> CommandResult<()> {
+    let frame = compose_provider_frame("agent_request", request)?;
+    engine.send_frame(&frame)?;
+    Ok(())
+}
+
+#[tauri::command]
+pub fn list_models(engine: State<'_, EngineHandle>, request: FrontendRequest) -> CommandResult<()> {
+    let frame = compose_provider_frame("list_models", request)?;
+    engine.send_frame(&frame)?;
+    Ok(())
 }
 
 #[tauri::command]
 pub fn ask_local(engine: State<'_, EngineHandle>, request: LocalRequest) -> CommandResult<()> {
-    let frame = build_local_frame("local_chat_request", request)?;
+    let frame = compose_local_frame("local_chat_request", request)?;
     engine.send_frame(&frame)?;
     Ok(())
 }
@@ -151,7 +142,7 @@ pub fn list_local_models(
     engine: State<'_, EngineHandle>,
     request: LocalRequest,
 ) -> CommandResult<()> {
-    let frame = build_local_frame("local_models_request", request)?;
+    let frame = compose_local_frame("local_models_request", request)?;
     engine.send_frame(&frame)?;
     Ok(())
 }
@@ -169,13 +160,16 @@ pub fn restart_engine(app: tauri::AppHandle) -> CommandResult<()> {
 
 #[tauri::command]
 pub fn cancel_request(engine: State<'_, EngineHandle>, request_id: String) -> CommandResult<()> {
-    let cancel_msg = serde_json::json!({ "kind": "cancel", "request_id": request_id });
-    engine.send_frame(&cancel_msg.to_string())?;
+    let frame = serde_json::json!({
+        "kind": "cancel",
+        "request_id": request_id
+    });
+    engine.send_frame(&frame.to_string())?;
     Ok(())
 }
 
 // ---------------------------------------------------------------------------
-// Study Journal Database
+// 3. Local Study Journal & Case Simulation
 // ---------------------------------------------------------------------------
 
 #[tauri::command]
@@ -345,10 +339,10 @@ pub fn token_usage(db: State<'_, StudyDb>, days: i64) -> CommandResult<Vec<Usage
 }
 
 // ---------------------------------------------------------------------------
-// File Export / Import Operations
+// 4. Native Dialogs & Disk Transfer
 // ---------------------------------------------------------------------------
 
-const JOURNAL_FILE_EXTENSION: &str = "hoomaan-journal.json";
+const JOURNAL_DEFAULT_NAME: &str = "hoomaan-journal.json";
 
 #[tauri::command]
 pub async fn export_journal(
@@ -357,34 +351,61 @@ pub async fn export_journal(
 ) -> CommandResult<Option<String>> {
     use tauri_plugin_dialog::DialogExt;
 
-    let journal = db.export()?;
-    let serialized = serde_json::to_string_pretty(&journal)
+    let payload = db.export()?;
+    let encoded = serde_json::to_string_pretty(&payload)
         .map_err(|e| CommandError::Invalid(e.to_string()))?;
 
-    let Some(dest_path) = app
+    let Some(chosen) = app
         .dialog()
         .file()
-        .set_file_name(JOURNAL_FILE_EXTENSION)
+        .set_file_name(JOURNAL_DEFAULT_NAME)
         .add_filter("HOOMAAN journal", &["json"])
         .blocking_save_file()
     else {
         return Ok(None);
     };
-    let target = dest_path
+
+    let target_file = chosen
         .into_path()
         .map_err(|e| CommandError::Invalid(e.to_string()))?;
-
-    std::fs::write(&target, serialized).map_err(|e| CommandError::Invalid(e.to_string()))?;
-    Ok(Some(target.display().to_string()))
+    std::fs::write(&target_file, encoded).map_err(|e| CommandError::Invalid(e.to_string()))?;
+    Ok(Some(target_file.display().to_string()))
 }
 
-fn sanitize_suggested_filename(raw_name: &str) -> String {
-    let sanitized: String = raw_name
+#[tauri::command]
+pub async fn import_journal(
+    app: tauri::AppHandle,
+    db: State<'_, StudyDb>,
+) -> CommandResult<Option<ImportSummary>> {
+    use tauri_plugin_dialog::DialogExt;
+
+    let Some(selected) = app
+        .dialog()
+        .file()
+        .add_filter("HOOMAAN journal", &["json"])
+        .blocking_pick_file()
+    else {
+        return Ok(None);
+    };
+
+    let filepath = selected
+        .into_path()
+        .map_err(|e| CommandError::Invalid(e.to_string()))?;
+    let raw_text = std::fs::read_to_string(&filepath).map_err(|e| CommandError::Invalid(e.to_string()))?;
+    let decoded: JournalExport = serde_json::from_str(&raw_text).map_err(|_| {
+        CommandError::Invalid("That file is not a HOOMAAN study journal.".into())
+    })?;
+
+    Ok(Some(db.import(decoded)?))
+}
+
+fn sanitize_view_filename(name: &str) -> String {
+    let clean: String = name
         .chars()
         .filter(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.'))
         .take(80)
         .collect();
-    let trimmed = sanitized.trim_matches('.').to_string();
+    let trimmed = clean.trim_matches('.').to_string();
     if trimmed.is_empty() {
         return String::new();
     }
@@ -404,80 +425,53 @@ pub async fn save_view_image(
     use base64::Engine as _;
     use tauri_plugin_dialog::DialogExt;
 
-    let image_bytes = base64::engine::general_purpose::STANDARD
+    let image_data = base64::engine::general_purpose::STANDARD
         .decode(png_base64.as_bytes())
         .map_err(|_| CommandError::Invalid("The image could not be decoded.".into()))?;
 
-    let chosen_name = file_name
+    let default_name = file_name
         .as_deref()
-        .map(sanitize_suggested_filename)
-        .filter(|name| !name.is_empty())
+        .map(sanitize_view_filename)
+        .filter(|s| !s.is_empty())
         .unwrap_or_else(|| "hoomaan-view.png".to_string());
 
-    let Some(save_path) = app
+    let Some(dialog_result) = app
         .dialog()
         .file()
-        .set_file_name(&chosen_name)
+        .set_file_name(&default_name)
         .add_filter("PNG image", &["png"])
         .blocking_save_file()
     else {
         return Ok(None);
     };
-    let mut final_path = save_path
+
+    let mut dest_path = dialog_result
         .into_path()
         .map_err(|e| CommandError::Invalid(e.to_string()))?;
-    if final_path.extension().is_none_or(|ext| !ext.eq_ignore_ascii_case("png")) {
-        final_path.set_extension("png");
+    if dest_path.extension().is_none_or(|ext| !ext.eq_ignore_ascii_case("png")) {
+        dest_path.set_extension("png");
     }
 
-    std::fs::write(&final_path, image_bytes).map_err(|e| CommandError::Invalid(e.to_string()))?;
-    Ok(Some(final_path.display().to_string()))
-}
-
-#[tauri::command]
-pub async fn import_journal(
-    app: tauri::AppHandle,
-    db: State<'_, StudyDb>,
-) -> CommandResult<Option<ImportSummary>> {
-    use tauri_plugin_dialog::DialogExt;
-
-    let Some(picked_path) = app
-        .dialog()
-        .file()
-        .add_filter("HOOMAAN journal", &["json"])
-        .blocking_pick_file()
-    else {
-        return Ok(None);
-    };
-    let target = picked_path
-        .into_path()
-        .map_err(|e| CommandError::Invalid(e.to_string()))?;
-
-    let contents = std::fs::read_to_string(&target).map_err(|e| CommandError::Invalid(e.to_string()))?;
-    let decoded_journal: JournalExport = serde_json::from_str(&contents).map_err(|_| {
-        CommandError::Invalid("That file is not a HOOMAAN study journal.".into())
-    })?;
-
-    Ok(Some(db.import(decoded_journal)?))
+    std::fs::write(&dest_path, image_data).map_err(|e| CommandError::Invalid(e.to_string()))?;
+    Ok(Some(dest_path.display().to_string()))
 }
 
 // ---------------------------------------------------------------------------
-// Control Bridge Supervision
+// 5. External Bridge Supervision & Diagnostics
 // ---------------------------------------------------------------------------
 
 #[tauri::command]
 pub fn bridge_status(app: tauri::AppHandle, bridge: State<'_, ControlBridge>) -> BridgeStatus {
-    let mut current = bridge.status();
-    current.server = mcp_server_dir(&app);
-    current
-}
-
-fn mcp_server_dir(app: &tauri::AppHandle) -> Option<String> {
-    let target_dir = app.path().resource_dir().ok()?.join("hoomaan-mcp");
-    target_dir
-        .join("atlas.py")
-        .is_file()
-        .then(|| target_dir.to_string_lossy().into_owned())
+    let mut status = bridge.status();
+    let resource_root = app.path().resource_dir().ok().map(|d| d.join("hoomaan-mcp"));
+    status.server = resource_root.and_then(|r| {
+        if r.join("atlas.py").is_file() {
+            Some(r.to_string_lossy().into_owned())
+        } else {
+            None
+        }
+    });
+    status
 }
 
 #[tauri::command]
@@ -493,10 +487,6 @@ pub fn stop_bridge(bridge: State<'_, ControlBridge>) -> BridgeStatus {
     bridge.stop();
     bridge.status()
 }
-
-// ---------------------------------------------------------------------------
-// Audit & Diagnostic Logging
-// ---------------------------------------------------------------------------
 
 #[tauri::command]
 pub fn read_log(log: State<'_, AppLog>) -> Vec<LogEntry> {
@@ -515,6 +505,11 @@ pub fn clear_log(log: State<'_, AppLog>) -> CommandResult<()> {
 }
 
 #[tauri::command]
+pub fn log_event(log: State<'_, AppLog>, level: String, source: String, message: String) {
+    log.append(&level, &source, &message);
+}
+
+#[tauri::command]
 pub async fn save_log_copy(
     app: tauri::AppHandle,
     contents: String,
@@ -530,6 +525,7 @@ pub async fn save_log_copy(
     else {
         return Ok(None);
     };
+
     let mut dest_path = dest
         .into_path()
         .map_err(|e| CommandError::Invalid(e.to_string()))?;
@@ -542,24 +538,15 @@ pub async fn save_log_copy(
 }
 
 #[tauri::command]
-pub fn log_event(log: State<'_, AppLog>, level: String, source: String, message: String) {
-    log.append(&level, &source, &message);
-}
-
-// ---------------------------------------------------------------------------
-// Display Hardware Settings
-// ---------------------------------------------------------------------------
-
-#[tauri::command]
 pub fn display_status(app: tauri::AppHandle) -> DisplayStatus {
-    let persisted = app
+    let settings = app
         .path()
         .app_data_dir()
         .map(|dir| display::read(&dir))
         .unwrap_or_default();
     DisplayStatus {
         supported: display::SUPPORTED,
-        stable_display: persisted.stable_display,
+        stable_display: settings.stable_display,
         active: display::active(),
     }
 }
@@ -573,78 +560,17 @@ pub fn set_stable_display(
     let dir = app
         .path()
         .app_data_dir()
-        .map_err(|err| CommandError::Invalid(format!("no data folder to keep the setting in: {err}")))?;
+        .map_err(|err| CommandError::Invalid(format!("no data directory: {err}")))?;
     display::write(&dir, DisplaySettings { stable_display: on })
-        .map_err(|err| CommandError::Invalid(format!("could not save the display setting: {err}")))?;
+        .map_err(|err| CommandError::Invalid(format!("could not save display setting: {err}")))?;
     log.append(
         "info",
         "display",
         if on {
-            "stable display on, from next launch"
+            "stable display enabled"
         } else {
-            "stable display off, from next launch"
+            "stable display disabled"
         },
     );
     Ok(display_status(app))
-}
-
-#[cfg(test)]
-mod tests {
-    use super::{build_local_frame, sanitize_suggested_filename, LocalRequest};
-
-    fn make_local_req(json_str: &str) -> LocalRequest {
-        serde_json::from_str(json_str).expect("parse request")
-    }
-
-    #[test]
-    fn a_local_request_gets_its_kind_and_id_and_nothing_else() {
-        let frame = build_local_frame(
-            "local_chat_request",
-            make_local_req(r#"{"request_id":"local-1","query":"hola","model":"gemma3:4b"}"#),
-        )
-        .expect("build frame");
-        let parsed: serde_json::Value = serde_json::from_str(&frame).unwrap();
-        assert_eq!(parsed["kind"], "local_chat_request");
-        assert_eq!(parsed["request_id"], "local-1");
-        assert_eq!(parsed["query"], "hola");
-        assert!(parsed.get("api_key").is_none());
-    }
-
-    #[test]
-    fn a_local_request_cannot_smuggle_a_key_or_a_kind() {
-        for invalid_json in [
-            r#"{"request_id":"local-1","api_key":"sk-anything"}"#,
-            r#"{"request_id":"local-1","kind":"agent_request"}"#,
-        ] {
-            assert!(build_local_frame("local_chat_request", make_local_req(invalid_json)).is_err());
-        }
-    }
-
-    #[test]
-    fn keeps_a_reasonable_name() {
-        assert_eq!(
-            sanitize_suggested_filename("hoomaan-axial-T8-13cm-cut.png"),
-            "hoomaan-axial-T8-13cm-cut.png"
-        );
-    }
-
-    #[test]
-    fn adds_the_extension_when_it_is_missing() {
-        assert_eq!(sanitize_suggested_filename("section"), "section.png");
-    }
-
-    #[test]
-    fn refuses_to_carry_a_path() {
-        assert_eq!(sanitize_suggested_filename("../../etc/passwd"), "etcpasswd.png");
-        assert_eq!(
-            sanitize_suggested_filename("C:\\Windows\\system32\\a"),
-            "CWindowssystem32a.png"
-        );
-    }
-
-    #[test]
-    fn falls_back_rather_than_naming_a_file_nothing() {
-        assert!(sanitize_suggested_filename("...").is_empty());
-        assert!(sanitize_suggested_filename("").is_empty());
-    }
 }

@@ -1,87 +1,47 @@
 import * as THREE from "three";
-import { Pass } from "three/examples/jsm/postprocessing/Pass.js";
 
-import { placeOnCortex, type MemoryKind } from "../memories";
-import { loadBrain, type Brain, type BrainStructure } from "./brainLoader";
+import { loadBrain, type Brain } from "./brainLoader";
 import { floorGrid, orbitRings, projector } from "./environment";
-import { brainMaterial, brainPoints, LOOK, RegionLight } from "./hologram";
+import { brainMaterial, brainPoints, RegionLight } from "./hologram";
 import { floatName, nameplate } from "./nameplate";
 import { createPost } from "./post";
-import { classifyAdapter, FrameGovernor, LEVELS, pixelRatioFor, startingLevel, type Adapter } from "./quality";
+import { classifyAdapter, FrameGovernor, LEVELS, pixelRatioFor, startingLevel } from "./quality";
+import {
+  easeCubic,
+  ERASE_TRANSITION_SEC,
+  MAX_MAPPING_SEC,
+  MIN_MAPPING_SEC,
+  PALETTE,
+  PICK_HIT_PROXIMITY_PX,
+  STAGES,
+  TARGET_FRAME_RADIUS,
+  type FocusMargins,
+  type LabPhase,
+  type MemoryScene,
+  type MemorySceneOptions,
+  type SceneLayer,
+} from "./memorySceneTypes";
+import {
+  cortexPlaces,
+  eraseBurst,
+  fireBurst,
+  memoryNodes,
+  memoryThread,
+  updateThreadPresence,
+} from "./memoryVisuals";
+import { LayerPass } from "./LayerPass";
 
-export type LabPhase = "boot" | "deploy" | "materialize" | "mapping" | "live";
+export * from "./memorySceneTypes";
 
-export interface GraphicsStatus {
-  adapter: Adapter;
-  level: number;
-  eased: boolean;
-  lost: boolean;
+function queryRendererDescription(renderer: THREE.WebGLRenderer): string | null {
+  try {
+    const gl = renderer.getContext();
+    const ext = gl.getExtension("WEBGL_debug_renderer_info");
+    return String(gl.getParameter(ext ? ext.UNMASKED_RENDERER_WEBGL : gl.RENDERER));
+  } catch {
+    return null;
+  }
 }
-
-export interface SceneMemory {
-  key: string;
-  kind: MemoryKind;
-}
-
-export interface MemorySceneOptions {
-  meshUrl: string;
-  structures: readonly BrainStructure[];
-  dracoPath: string;
-  memories: readonly SceneMemory[];
-  reducedMotion?: boolean;
-  onHover?: (key: string | null) => void;
-  onSelect?: (key: string | null) => void;
-  onPhase?: (phase: LabPhase, mapped: number) => void;
-  onError?: (error: unknown) => void;
-  onGraphics?: (status: GraphicsStatus) => void;
-}
-
-export interface FocusMargins {
-  left: number;
-  right: number;
-  top: number;
-  bottom: number;
-}
-
-export interface SceneLayer {
-  scene: THREE.Scene;
-  camera: THREE.PerspectiveCamera;
-  rect(): { left: number; top: number; width: number; height: number } | null;
-  update(now: number, aspect: number, pixelRatio: number, particles: number): void;
-}
-
-export interface MemoryScene {
-  select(key: string | null): void;
-  erase(key: string): void;
-  restore(key: string): void;
-  screenPosition(key: string): { x: number; y: number } | null;
-  skipIntro(): void;
-  setFocus(margins: FocusMargins): void;
-  addLayer(layer: SceneLayer): () => void;
-  setFilm(on: boolean): void;
-  dispose(): void;
-}
-
-const STAGES = { boot: 1.1, deploy: 2.4, materialize: 1.4 } as const;
-const DURATION_PER_MEMORY_SEC = 0.22;
-const MIN_MAPPING_SEC = 3.0;
-const MAX_MAPPING_SEC = 12.0;
-const PICK_HIT_PROXIMITY_PX = 18;
-const ERASE_TRANSITION_SEC = 1.6;
-const BURST_PARTICLE_COUNT = 240;
-const TARGET_FRAME_RADIUS = 1.4;
-const THREAD_SUBDIVISIONS = 14;
-
-const PALETTE: Record<MemoryKind, THREE.Color> = {
-  session: new THREE.Color("#56e1ff"),
-  case: new THREE.Color("#ffb347"),
-  note: new THREE.Color("#c29bff"),
-};
-
-const easeCubic = (v: number) => {
-  const c = Math.min(1, Math.max(0, v));
-  return c * c * (3 - 2 * c);
-};
 
 export function createMemoryScene(container: HTMLElement, opts: MemorySceneOptions): MemoryScene {
   const isReducedMotion =
@@ -91,7 +51,7 @@ export function createMemoryScene(container: HTMLElement, opts: MemorySceneOptio
   const keyToIndexMap = new Map(opts.memories.map((m, i) => [m.key, i]));
   const mappingPeriodSec = Math.min(
     MAX_MAPPING_SEC,
-    Math.max(MIN_MAPPING_SEC, totalCount * DURATION_PER_MEMORY_SEC),
+    Math.max(MIN_MAPPING_SEC, totalCount * 0.22),
   );
   const introEndSec = STAGES.boot + STAGES.deploy + STAGES.materialize;
   const sequenceEndSec = introEndSec + mappingPeriodSec;
@@ -240,7 +200,9 @@ export function createMemoryScene(container: HTMLElement, opts: MemorySceneOptio
       synapticThread = memoryThread(coordinateNodes);
       eraseBurstMesh = eraseBurst();
 
-      stageAnchor.add(synapticThread, nodePoints, eraseBurstMesh);
+      if (synapticThread && nodePoints && eraseBurstMesh) {
+        stageAnchor.add(synapticThread, nodePoints, eraseBurstMesh);
+      }
       startEpochSec = performance.now() / 1000;
     } catch (e) {
       opts.onError?.(e);
@@ -402,114 +364,88 @@ export function createMemoryScene(container: HTMLElement, opts: MemorySceneOptio
       opts.onPhase?.(currentPhase, mappedTotal);
     }
 
-    const bootProgress = easeCubic(elapsedSec / STAGES.boot);
-    const deployProgress = easeCubic((elapsedSec - STAGES.boot) / STAGES.deploy);
-    const materializeProgress = easeCubic((elapsedSec - STAGES.boot - STAGES.deploy) / STAGES.materialize);
+    if (!pointerDrag) {
+      currentRotationAngle += (isReducedMotion ? 0.0008 : 0.0025);
+    }
+    stageAnchor.rotation.y = currentRotationAngle;
 
-    floatName(titleMesh, mainCamera, nowSec, easeCubic((elapsedSec - STAGES.boot - 0.4) / 1.6));
+    floatName(titleMesh, mainCamera, nowSec, Math.min(1, Math.max(0, (elapsedSec - STAGES.boot) / STAGES.deploy)));
 
-    const motionMultiplier = isReducedMotion ? 0.35 : 1.0;
-    const cameraOrbitRate = nowSec * 0.03 * motionMultiplier;
+    let hasPresenceMutations = false;
+    activeEraseTransitions.forEach((trans, idx) => {
+      const p = Math.min(1, (nowSec - trans.started) / ERASE_TRANSITION_SEC);
+      const easedP = easeCubic(p);
+      presenceArray[idx] = trans.from + (trans.to - trans.from) * easedP;
+      hasPresenceMutations = true;
+      if (p >= 1) activeEraseTransitions.delete(idx);
+    });
 
-    mainCamera.position.set(
-      Math.sin(cameraOrbitRate) * 0.8,
-      0.45 + Math.sin(nowSec * 0.1) * 0.12,
-      5.6,
-    );
-    mainCamera.lookAt(0, 0.02, 0);
+    if (hasPresenceMutations && nodePoints && synapticThread) {
+      const presenceAttr = nodePoints.geometry.getAttribute("presence") as THREE.BufferAttribute;
+      presenceAttr.copyArray(presenceArray);
+      presenceAttr.needsUpdate = true;
+      updateThreadPresence(synapticThread, presenceArray);
+    }
+
+    if (nodePoints) {
+      const u = nodePoints.material.uniforms;
+      u.uTime!.value = nowSec;
+      u.uShown!.value = mappedTotal;
+      u.uHover!.value = currentHoveredIndex;
+      u.uSelected!.value = currentSelectedIndex;
+      u.uPixel!.value = webglRenderer.getPixelRatio();
+      u.uFade!.value = Math.min(1, Math.max(0, (elapsedSec - introEndSec) / 0.8));
+    }
+
+    if (synapticThread) {
+      const u = synapticThread.material.uniforms;
+      u.uShown!.value = mappedTotal;
+      u.uTime!.value = nowSec;
+      u.uFade!.value = Math.min(1, Math.max(0, (elapsedSec - introEndSec) / 0.8));
+    }
+
+    if (eraseBurstMesh) {
+      eraseBurstMesh.material.uniforms.uTime!.value = nowSec;
+      eraseBurstMesh.material.uniforms.uPixel!.value = webglRenderer.getPixelRatio();
+    }
+
+    if (ambientDust) {
+      ambientDust.material.uniforms.uTime!.value = nowSec;
+    }
+    if (corticalSurface) {
+      corticalSurface.material.uniforms.uTime!.value = nowSec;
+    }
 
     computeFramingProjection(container.clientWidth, container.clientHeight);
 
-    if (!pointerDrag && currentHoveredIndex < 0 && currentSelectedIndex < 0) {
-      currentRotationAngle += 0.0012 * motionMultiplier;
+    if (!contextDropped) {
+      postPipeline.film.uniforms.uTime!.value = nowSec;
+      postPipeline.composer.render();
     }
-    stageAnchor.rotation.y = currentRotationAngle;
-    stageAnchor.updateMatrixWorld();
-
-    const ambientElements: THREE.ShaderMaterial[] = [
-      floorGridMesh.material as THREE.ShaderMaterial,
-      ...(floorProjector.children.map((c) => (c as THREE.Mesh).material) as THREE.ShaderMaterial[]),
-    ];
-    for (const mat of ambientElements) {
-      mat.uniforms.uFade!.value = bootProgress;
-      mat.uniforms.uTime!.value = nowSec;
-    }
-
-    telemetryRings.children.forEach((ring, idx) => {
-      ring.rotation.z = nowSec * (ring.userData.spin as number) * motionMultiplier + idx;
-      const ringMat = (ring as THREE.LineLoop).material as THREE.ShaderMaterial;
-      ringMat.uniforms.uFade!.value = deployProgress * 0.7;
-      ringMat.uniforms.uTime!.value = nowSec;
-    });
-
-    if (brainModel && corticalSurface && ambientDust && nodePoints && synapticThread && eraseBurstMesh) {
-      const surfaceUniforms = corticalSurface.material.uniforms;
-      surfaceUniforms.uTime!.value = nowSec;
-      surfaceUniforms.uReveal!.value = materializeProgress;
-      surfaceUniforms.uScanOn!.value = currentPhase === "mapping" ? 1 : 0;
-      surfaceUniforms.uCentre!.value = mainCamera.position.length();
-      surfaceUniforms.uScanY!.value =
-        brainModel.bottom + (brainModel.top - brainModel.bottom) * ((elapsedSec - introEndSec) / mappingPeriodSec);
-
-      const dustUniforms = ambientDust.material.uniforms;
-      dustUniforms.uTime!.value = nowSec;
-      dustUniforms.uAssemble!.value = deployProgress;
-      dustUniforms.uDust!.value = 1 - materializeProgress * 0.9;
-      dustUniforms.uPixel!.value = webglRenderer.getPixelRatio() * (container.clientHeight / 900);
-
-      if (activeEraseTransitions.size > 0) {
-        const presenceBuffer = nodePoints.geometry.getAttribute("presence") as THREE.BufferAttribute;
-        for (const [nodeIdx, trans] of activeEraseTransitions) {
-          const k = easeCubic((nowSec - trans.started) / ERASE_TRANSITION_SEC);
-          presenceArray[nodeIdx] = trans.from + (trans.to - trans.from) * k;
-          presenceBuffer.setX(nodeIdx, presenceArray[nodeIdx]!);
-          if (k >= 1) {
-            activeEraseTransitions.delete(nodeIdx);
-          }
-        }
-        presenceBuffer.needsUpdate = true;
-        updateThreadPresence(synapticThread, presenceArray);
-      }
-
-      const nodeUniforms = nodePoints.material.uniforms;
-      nodeUniforms.uTime!.value = nowSec;
-      nodeUniforms.uShown!.value = currentPhase === "live" ? totalCount : mappedTotal;
-      nodeUniforms.uHover!.value = currentHoveredIndex;
-      nodeUniforms.uSelected!.value = currentSelectedIndex;
-      nodeUniforms.uPixel!.value = webglRenderer.getPixelRatio();
-      nodeUniforms.uFade!.value = materializeProgress;
-
-      const threadUniforms = synapticThread.material.uniforms;
-      threadUniforms.uShown!.value =
-        currentPhase === "live"
-          ? totalCount
-          : Math.max(0, ((elapsedSec - introEndSec) / mappingPeriodSec) * totalCount);
-      threadUniforms.uTime!.value = nowSec;
-      threadUniforms.uFade!.value = materializeProgress;
-
-      const burstUniforms = eraseBurstMesh.material.uniforms;
-      burstUniforms.uTime!.value = nowSec;
-      burstUniforms.uPixel!.value = webglRenderer.getPixelRatio();
-    }
-
-    (postPipeline.film.uniforms.uTime as { value: number }).value = nowSec;
-    postPipeline.composer.render();
   };
 
+  lastFrameEpoch = performance.now() / 1000;
   animationFrameId = requestAnimationFrame(renderLoop);
 
   return {
     select(key: string | null) {
-      currentSelectedIndex = key === null ? -1 : (keyToIndexMap.get(key) ?? -1);
+      currentSelectedIndex = key ? keyToIndexMap.get(key) ?? -1 : -1;
     },
     erase(key: string) {
       const idx = keyToIndexMap.get(key);
-      if (idx === undefined || !eraseBurstMesh) return;
-      const now = performance.now() / 1000;
-      activeEraseTransitions.set(idx, { from: presenceArray[idx]!, to: 0, started: now });
-      fireBurst(eraseBurstMesh, coordinateNodes[idx]!, now, PALETTE[opts.memories[idx]!.kind]);
-      if (currentSelectedIndex === idx) {
-        currentSelectedIndex = -1;
+      if (idx === undefined) return;
+      activeEraseTransitions.set(idx, {
+        from: presenceArray[idx]!,
+        to: 0,
+        started: performance.now() / 1000,
+      });
+      if (eraseBurstMesh && coordinateNodes[idx]) {
+        fireBurst(
+          eraseBurstMesh,
+          coordinateNodes[idx]!,
+          performance.now() / 1000,
+          PALETTE[opts.memories[idx]!.kind],
+        );
       }
     },
     restore(key: string) {
@@ -523,400 +459,35 @@ export function createMemoryScene(container: HTMLElement, opts: MemorySceneOptio
     },
     screenPosition(key: string) {
       const idx = keyToIndexMap.get(key);
-      return idx === undefined || presenceArray[idx]! < 0.3 ? null : projectVertex(idx);
+      return idx !== undefined ? projectVertex(idx) : null;
+    },
+    skipIntro() {
+      timelineSkipSec = sequenceEndSec + 10;
     },
     setFocus(margins: FocusMargins) {
-      viewportMargins = margins;
-    },
-    setFilm(enabled: boolean) {
-      postPipeline.setFilm(enabled);
+      viewportMargins = { ...margins };
     },
     addLayer(layer: SceneLayer) {
       registeredLayers.add(layer);
-      return () => registeredLayers.delete(layer);
+      return () => {
+        registeredLayers.delete(layer);
+      };
     },
-    skipIntro() {
-      if (startEpochSec !== null && getElapsedTimeSec() < sequenceEndSec) {
-        timelineSkipSec += sequenceEndSec - getElapsedTimeSec();
-      }
+    setFilm(on: boolean) {
+      postPipeline.setFilm(on);
     },
     dispose() {
       isTornDown = true;
       cancelAnimationFrame(animationFrameId);
       containerObserver.disconnect();
-
       domCanvas.removeEventListener("pointerdown", handlePointerDown);
-      webglRenderer.domElement.removeEventListener("webglcontextlost", handleContextLost);
-      webglRenderer.domElement.removeEventListener("webglcontextrestored", handleContextRestored);
       window.removeEventListener("pointermove", handlePointerMove);
       window.removeEventListener("pointerup", handlePointerUp);
-
-      illuminationController.dispose();
-      registeredLayers.clear();
-
-      mainScene.traverse((node) => {
-        const m = node as THREE.Mesh;
-        m.geometry?.dispose();
-        const mat = m.material as THREE.Material | THREE.Material[] | undefined;
-        if (Array.isArray(mat)) {
-          mat.forEach((entry) => entry.dispose());
-        } else {
-          mat?.dispose();
-        }
-      });
-
+      webglRenderer.domElement.removeEventListener("webglcontextlost", handleContextLost);
+      webglRenderer.domElement.removeEventListener("webglcontextrestored", handleContextRestored);
       postPipeline.dispose();
       webglRenderer.dispose();
       domCanvas.remove();
     },
   };
-}
-
-function queryRendererDescription(renderer: THREE.WebGLRenderer): string | null {
-  try {
-    const gl = renderer.getContext();
-    const ext = gl.getExtension("WEBGL_debug_renderer_info");
-    return String(gl.getParameter(ext ? ext.UNMASKED_RENDERER_WEBGL : gl.RENDERER));
-  } catch {
-    return null;
-  }
-}
-
-class LayerPass extends Pass {
-  constructor(
-    private readonly layers: ReadonlySet<SceneLayer>,
-    private readonly container: HTMLElement,
-    private readonly timeProvider: () => number,
-    private readonly particleShareProvider: () => number,
-  ) {
-    super();
-    this.needsSwap = false;
-    this.clear = false;
-  }
-
-  override render(
-    renderer: THREE.WebGLRenderer,
-    _write: THREE.WebGLRenderTarget,
-    read: THREE.WebGLRenderTarget,
-  ): void {
-    if (this.layers.size === 0) return;
-    const viewW = Math.max(1, this.container.clientWidth);
-    const viewH = Math.max(1, this.container.clientHeight);
-    const pixelScaling = read.width / viewW;
-    const previousAutoClear = renderer.autoClear;
-    renderer.autoClear = false;
-
-    for (const layer of this.layers) {
-      const area = layer.rect();
-      if (!area || area.width < 2 || area.height < 2) continue;
-
-      layer.update(
-        this.timeProvider(),
-        area.width / area.height,
-        pixelScaling,
-        this.particleShareProvider(),
-      );
-
-      const x = Math.round(area.left * pixelScaling);
-      const y = Math.round((viewH - area.top - area.height) * pixelScaling);
-      const w = Math.round(area.width * pixelScaling);
-      const h = Math.round(area.height * pixelScaling);
-
-      read.viewport.set(x, y, w, h);
-      read.scissor.set(x, y, w, h);
-      read.scissorTest = true;
-
-      renderer.setRenderTarget(this.renderToScreen ? null : read);
-      renderer.clearDepth();
-      renderer.render(layer.scene, layer.camera);
-    }
-
-    read.viewport.set(0, 0, read.width, read.height);
-    read.scissor.set(0, 0, read.width, read.height);
-    read.scissorTest = false;
-
-    renderer.setRenderTarget(this.renderToScreen ? null : read);
-    renderer.autoClear = previousAutoClear;
-  }
-}
-
-function cortexPlaces(brain: Brain, memoryCount: number): THREE.Vector3[] {
-  const posAttr = brain.geometry.getAttribute("position") as THREE.BufferAttribute;
-  const regionAttr = brain.geometry.getAttribute("region") as THREE.BufferAttribute;
-  const cerebrumIndices = new Set(
-    brain.regions.map((r, idx) => (r.division === "Cerebrum" ? idx : -1)).filter((idx) => idx >= 0),
-  );
-
-  const decimationStep = Math.max(1, Math.floor(posAttr.count / 12000));
-  const vertexPool: number[] = [];
-
-  for (let v = 0; v < posAttr.count; v += decimationStep) {
-    if (cerebrumIndices.size > 0 && !cerebrumIndices.has(regionAttr.getX(v))) {
-      continue;
-    }
-    vertexPool.push(posAttr.getX(v), posAttr.getY(v), posAttr.getZ(v));
-  }
-
-  return placeOnCortex(memoryCount, vertexPool).map((pointIdx) =>
-    new THREE.Vector3(
-      vertexPool[pointIdx * 3]!,
-      vertexPool[pointIdx * 3 + 1]!,
-      vertexPool[pointIdx * 3 + 2]!,
-    ).multiplyScalar(1.02),
-  );
-}
-
-function memoryNodes(coords: THREE.Vector3[], memories: readonly SceneMemory[]) {
-  const count = Math.max(1, coords.length);
-  const positionBuffer = new Float32Array(count * 3);
-  const colorBuffer = new Float32Array(count * 3);
-  const orderBuffer = new Float32Array(count);
-  const presenceBuffer = new Float32Array(count).fill(1);
-
-  coords.forEach((p, idx) => {
-    p.toArray(positionBuffer, idx * 3);
-    PALETTE[memories[idx]!.kind].toArray(colorBuffer, idx * 3);
-    orderBuffer[idx] = idx;
-  });
-
-  const geo = new THREE.BufferGeometry();
-  geo.setAttribute("position", new THREE.BufferAttribute(positionBuffer, 3));
-  geo.setAttribute("colour", new THREE.BufferAttribute(colorBuffer, 3));
-  geo.setAttribute("order", new THREE.BufferAttribute(orderBuffer, 1));
-  geo.setAttribute("presence", new THREE.BufferAttribute(presenceBuffer, 1));
-  geo.boundingSphere = new THREE.Sphere(new THREE.Vector3(), 3);
-
-  const mat = new THREE.ShaderMaterial({
-    transparent: true,
-    depthWrite: false,
-    blending: THREE.AdditiveBlending,
-    uniforms: {
-      uTime: { value: 0 },
-      uShown: { value: 0 },
-      uHover: { value: -1 },
-      uSelected: { value: -1 },
-      uPixel: { value: 1 },
-      uFade: { value: 0 },
-    },
-    vertexShader: /* glsl */ `
-      attribute vec3 colour;
-      attribute float order;
-      attribute float presence;
-      uniform float uTime;
-      uniform float uShown;
-      uniform float uHover;
-      uniform float uSelected;
-      uniform float uPixel;
-      uniform float uFade;
-      varying vec3 vColour;
-      varying float vAlpha;
-      varying float vRing;
-
-      void main() {
-        float isShown = step(order, uShown - 0.5);
-        float arrivingFlare = exp(-pow(max(0.0, uShown - 1.0 - order) * 1.6, 2.0));
-        float isFocused = max(step(abs(order - uHover), 0.1), step(abs(order - uSelected), 0.1));
-        vRing = step(abs(order - uSelected), 0.1);
-        vColour = colour;
-
-        float breathing = 0.85 + 0.15 * sin(uTime * 1.3 + order * 0.7);
-        vAlpha = isShown * presence * uFade * breathing * (0.75 + 0.25 * isFocused);
-
-        vec4 mvPos = modelViewMatrix * vec4(position, 1.0);
-        gl_PointSize = uPixel * (10.0 + arrivingFlare * 10.0 + isFocused * 9.0 + vRing * 11.0) * (5.6 / -mvPos.z);
-        gl_Position = projectionMatrix * mvPos;
-      }
-    `,
-    fragmentShader: /* glsl */ `
-      varying vec3 vColour;
-      varying float vAlpha;
-      varying float vRing;
-
-      void main() {
-        vec2 delta = gl_PointCoord - 0.5;
-        float radius = length(delta) * 2.0;
-        if (radius > 1.0) discard;
-
-        float innerCore = exp(-radius * radius * 9.0);
-        float peripheralGlow = exp(-radius * 3.4) * 0.22;
-        float selectionRing = vRing * smoothstep(0.08, 0.0, abs(radius - 0.82));
-
-        gl_FragColor = vec4(vColour * (innerCore + peripheralGlow + selectionRing) * vAlpha * 0.72, 1.0);
-      }
-    `,
-  });
-
-  return new THREE.Points(geo, mat);
-}
-
-function memoryThread(coords: THREE.Vector3[]) {
-  const pairCount = Math.max(0, coords.length - 1);
-  const vertexCount = Math.max(2, pairCount * THREAD_SUBDIVISIONS * 2);
-  const vertexPositions = new Float32Array(vertexCount * 3);
-  const progressAttributes = new Float32Array(vertexCount);
-  const edgeIndices = new Float32Array(vertexCount * 2);
-  const threadPresence = new Float32Array(vertexCount).fill(1);
-
-  const sampleVec = new THREE.Vector3();
-
-  for (let idx = 0; idx < pairCount; idx++) {
-    const originP = coords[idx]!;
-    const destP = coords[idx + 1]!;
-    const centerP = originP.clone().add(destP).multiplyScalar(0.5);
-    const elevatedApex = centerP.clone().normalize().multiplyScalar(0.06 + originP.distanceTo(destP) * 0.25);
-    const bezierSpline = new THREE.QuadraticBezierCurve3(originP, centerP.add(elevatedApex), destP);
-
-    for (let k = 0; k < THREAD_SUBDIVISIONS; k++) {
-      const endpoints: readonly [number, number][] = [
-        [0, k / THREAD_SUBDIVISIONS],
-        [1, (k + 1) / THREAD_SUBDIVISIONS],
-      ];
-      for (const [slot, factor] of endpoints) {
-        const vIdx = (idx * THREAD_SUBDIVISIONS + k) * 2 + slot;
-        bezierSpline.getPoint(factor, sampleVec).toArray(vertexPositions, vIdx * 3);
-        progressAttributes[vIdx] = idx + factor;
-        edgeIndices[vIdx * 2] = idx;
-        edgeIndices[vIdx * 2 + 1] = idx + 1;
-      }
-    }
-  }
-
-  const geometry = new THREE.BufferGeometry();
-  geometry.setAttribute("position", new THREE.BufferAttribute(vertexPositions, 3));
-  geometry.setAttribute("along", new THREE.BufferAttribute(progressAttributes, 1));
-  geometry.setAttribute("ends", new THREE.BufferAttribute(edgeIndices, 2));
-  geometry.setAttribute("presence", new THREE.BufferAttribute(threadPresence, 1));
-  geometry.boundingSphere = new THREE.Sphere(new THREE.Vector3(), 3);
-
-  const threadMat = new THREE.ShaderMaterial({
-    transparent: true,
-    depthWrite: false,
-    blending: THREE.AdditiveBlending,
-    uniforms: {
-      uShown: { value: 0 },
-      uTime: { value: 0 },
-      uFade: { value: 0 },
-      uCyan: { value: LOOK.cyan },
-    },
-    vertexShader: /* glsl */ `
-      attribute float along;
-      attribute float presence;
-      varying float vAlong;
-      varying float vPresence;
-
-      void main() {
-        vAlong = along;
-        vPresence = presence;
-        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-      }
-    `,
-    fragmentShader: /* glsl */ `
-      uniform float uShown;
-      uniform float uTime;
-      uniform float uFade;
-      uniform vec3 uCyan;
-      varying float vAlong;
-      varying float vPresence;
-
-      void main() {
-        float leadingEdge = uShown - 1.0;
-        if (vAlong > leadingEdge) discard;
-
-        float headGlow = exp(-pow((leadingEdge - vAlong) * 3.0, 2.0));
-        float travelingPulse = exp(-pow(mod(vAlong - uTime * 1.2, 24.0) - 12.0, 2.0) * 0.5) * 0.5;
-
-        float alphaValue = (0.18 + headGlow * 0.8 + travelingPulse * 0.3) * vPresence * uFade;
-        gl_FragColor = vec4(uCyan * alphaValue, 1.0);
-      }
-    `,
-  });
-
-  return new THREE.LineSegments(geometry, threadMat);
-}
-
-function updateThreadPresence(thread: THREE.LineSegments, presence: Float32Array) {
-  const geo = thread.geometry;
-  const edgesAttr = geo.getAttribute("ends") as THREE.BufferAttribute;
-  const presenceAttr = geo.getAttribute("presence") as THREE.BufferAttribute;
-
-  for (let v = 0; v < presenceAttr.count; v++) {
-    presenceAttr.setX(
-      v,
-      Math.min(presence[edgesAttr.getX(v)] ?? 1, presence[edgesAttr.getY(v)] ?? 1),
-    );
-  }
-  presenceAttr.needsUpdate = true;
-}
-
-function eraseBurst() {
-  const coords = new Float32Array(BURST_PARTICLE_COUNT * 3);
-  const velocityVectors = new Float32Array(BURST_PARTICLE_COUNT * 3);
-  const randomSeeds = new Float32Array(BURST_PARTICLE_COUNT);
-
-  for (let i = 0; i < BURST_PARTICLE_COUNT; i++) {
-    const dir = new THREE.Vector3(Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5).normalize();
-    dir.toArray(velocityVectors, i * 3);
-    randomSeeds[i] = Math.random();
-  }
-
-  const geometry = new THREE.BufferGeometry();
-  geometry.setAttribute("position", new THREE.BufferAttribute(coords, 3));
-  geometry.setAttribute("direction", new THREE.BufferAttribute(velocityVectors, 3));
-  geometry.setAttribute("seed", new THREE.BufferAttribute(randomSeeds, 1));
-  geometry.boundingSphere = new THREE.Sphere(new THREE.Vector3(), 4);
-
-  const burstMat = new THREE.ShaderMaterial({
-    transparent: true,
-    depthWrite: false,
-    blending: THREE.AdditiveBlending,
-    uniforms: {
-      uTime: { value: 0 },
-      uStart: { value: -100 },
-      uOrigin: { value: new THREE.Vector3() },
-      uColour: { value: new THREE.Color() },
-      uPixel: { value: 1 },
-    },
-    vertexShader: /* glsl */ `
-      attribute vec3 direction;
-      attribute float seed;
-      uniform float uTime;
-      uniform float uStart;
-      uniform vec3 uOrigin;
-      uniform float uPixel;
-      varying float vAlpha;
-
-      void main() {
-        float lifetimeProgress = (uTime - uStart) / (1.2 + seed * 1.2);
-        vAlpha = lifetimeProgress < 0.0 || lifetimeProgress > 1.0
-          ? 0.0
-          : (1.0 - lifetimeProgress) * (1.0 - lifetimeProgress);
-
-        vec3 displacedPos = uOrigin + direction * (0.05 + seed * 0.5) * (1.0 - pow(1.0 - clamp(lifetimeProgress, 0.0, 1.0), 3.0));
-        displacedPos.y += lifetimeProgress * lifetimeProgress * 0.15;
-
-        vec4 mvPos = modelViewMatrix * vec4(displacedPos, 1.0);
-        gl_PointSize = uPixel * (2.0 + seed * 3.0) * (5.6 / -mvPos.z);
-        gl_Position = projectionMatrix * mvPos;
-      }
-    `,
-    fragmentShader: /* glsl */ `
-      uniform vec3 uColour;
-      varying float vAlpha;
-
-      void main() {
-        vec2 delta = gl_PointCoord - 0.5;
-        if (dot(delta, delta) > 0.25) discard;
-        gl_FragColor = vec4(uColour * vAlpha * 0.9, 1.0);
-      }
-    `,
-  });
-
-  return new THREE.Points(geometry, burstMat);
-}
-
-function fireBurst(burstPoints: THREE.Points, origin: THREE.Vector3, timestampSec: number, colorVal: THREE.Color) {
-  const burstUniforms = (burstPoints.material as THREE.ShaderMaterial).uniforms;
-  burstUniforms.uStart!.value = timestampSec;
-  (burstUniforms.uOrigin!.value as THREE.Vector3).copy(origin);
-  (burstUniforms.uColour!.value as THREE.Color).copy(colorVal);
 }

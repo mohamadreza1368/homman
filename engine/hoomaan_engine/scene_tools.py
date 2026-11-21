@@ -115,7 +115,7 @@ def register_scene_tools(agent: Agent[SceneContext, str]) -> None:
         ]
         if not found:
             return (
-                f"Nothing loaded matches {query!r}. It may belong to a hidden system — "
+                f"Nothing loaded matches {query!r}. It may belong to a hidden system that is switched off — "
                 "try set_layer_visibility or broaden the search term."
             )
 

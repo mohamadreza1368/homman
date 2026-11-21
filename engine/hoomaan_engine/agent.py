@@ -171,6 +171,9 @@ def extract_token_usage(event: AgentRunResultEvent) -> TokenUsage | None:
     )
 
 
+_usage_of = extract_token_usage
+
+
 def _parse_token_num(raw_val: object) -> int | None:
     """Validate and coerce non-negative integer token values."""
     if isinstance(raw_val, bool) or not isinstance(raw_val, (int, float)):
