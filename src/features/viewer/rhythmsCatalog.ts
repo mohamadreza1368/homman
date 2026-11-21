@@ -1,9 +1,21 @@
+/**
+ * Hoomaan 3D Anatomy - Cardiac Rhythm Catalog & Physiological Pacer
+ * 
+ * Clean-room implementation based on cardiac electrophysiology specifications.
+ * Defines heart rhythms, conduction blocks, murmurs, and hemodynamic timing.
+ */
+
 import { CYCLE, RESTING_BPM } from "./heartbeat";
 import type {
+  MurmurShape,
   Planned,
   Planner,
   RhythmDefinition,
 } from "./rhythmTypes";
+
+// ---------------------------------------------------------------------------
+// Electrophysiological Timing Constants
+// ---------------------------------------------------------------------------
 
 export const KINEMATICS = Object.freeze({
   atrialDuration: CYCLE.atria.end - CYCLE.atria.start,
@@ -19,403 +31,399 @@ export const KINEMATICS = Object.freeze({
   rrIntervalNominal: 60 / RESTING_BPM,
 });
 
-/** Computes duration of ventricular systole as a function of cycle RR interval. */
-export function systoleFor(interval: number): number {
+/**
+ * Calculates systolic duration using Bazett's square-root RR scaling.
+ */
+export function systoleFor(rrInterval: number): number {
   const scaled =
-    KINEMATICS.systoleBaseDuration * Math.sqrt(interval / KINEMATICS.rrIntervalNominal);
+    KINEMATICS.systoleBaseDuration *
+    Math.sqrt(Math.max(0.2, rrInterval) / KINEMATICS.rrIntervalNominal);
   return Math.min(0.36, Math.max(0.16, scaled));
 }
 
-export const KinematicBuilder = {
-  addAtrium(target: Planned, startTime: number, force = 1): void {
-    target.atria.push({
-      at: startTime,
-      peak: startTime + KINEMATICS.atrialPeakOffset,
-      end: startTime + KINEMATICS.atrialDuration,
-      strength: force,
-    });
-  },
+// ---------------------------------------------------------------------------
+// Event Generators
+// ---------------------------------------------------------------------------
 
-  addVentricle(
-    target: Planned,
-    startTime: number,
-    rrSpan: number,
-    force = 1,
-    s1Amp = 1,
-    s2Amp = 1,
-    isWide = false,
-  ): void {
-    const dur = systoleFor(rrSpan);
-    target.ventricles.push({
-      at: startTime,
-      peak: startTime + dur * KINEMATICS.systolePeakRatio,
-      end: startTime + dur,
-      strength: force,
-      wide: isWide,
-    });
-    if (s1Amp > 0) target.lub.push({ at: startTime, level: s1Amp });
-    if (s2Amp > 0)
-      target.dub.push({ at: startTime + dur * KINEMATICS.s2Fraction, level: s2Amp });
-  },
-};
+function pushAtrium(plan: Planned, at: number, strength = 1): void {
+  plan.atria.push({
+    at,
+    peak: at + KINEMATICS.atrialPeakOffset,
+    end: at + KINEMATICS.atrialDuration,
+    strength,
+  });
+}
 
-export function createSinusScheduler(bpmVal: number, prDelay: number): Planner {
-  const cycleTime = 60 / bpmVal;
-  return (untilTime, stateClocks, _rand, accumulator) => {
-    stateClocks.atria ??= 0;
-    while (stateClocks.atria < untilTime) {
-      KinematicBuilder.addAtrium(accumulator, stateClocks.atria);
-      KinematicBuilder.addVentricle(accumulator, stateClocks.atria + prDelay, cycleTime);
-      stateClocks.atria += cycleTime;
+function pushVentricle(
+  plan: Planned,
+  at: number,
+  rr: number,
+  opts?: {
+    strength?: number;
+    s1Level?: number;
+    s2Level?: number;
+    wide?: boolean;
+  },
+): void {
+  const strength = opts?.strength ?? 1;
+  const s1Level = opts?.s1Level ?? 1;
+  const s2Level = opts?.s2Level ?? 1;
+  const wide = opts?.wide ?? false;
+
+  const dur = systoleFor(rr);
+  plan.ventricles.push({
+    at,
+    peak: at + dur * KINEMATICS.systolePeakRatio,
+    end: at + dur,
+    strength,
+    wide,
+  });
+
+  if (s1Level > 0) {
+    plan.lub.push({ at, level: s1Level });
+  }
+  if (s2Level > 0) {
+    plan.dub.push({ at: at + dur * KINEMATICS.s2Fraction, level: s2Level });
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Scheduler Factories
+// ---------------------------------------------------------------------------
+
+function buildSinusScheduler(bpm: number, prDelay: number): Planner {
+  const interval = 60 / bpm;
+  return (horizon, clocks, _rng, plan) => {
+    let atria = clocks.atria ?? 0;
+    while (atria < horizon) {
+      pushAtrium(plan, atria);
+      pushVentricle(plan, atria + prDelay, interval);
+      atria += interval;
     }
+    clocks.atria = atria;
   };
 }
 
-export interface AuscultationCycleBeat {
-  atrium: number;
+interface AuscultationBeats {
   s1: number;
   s2: number;
   nextS1: number;
 }
 
-export function createAuscultationSinusScheduler(
-  soundConfig: { s1?: number; s2?: number; strength?: number },
-  extraDispatcher: (beatInfo: AuscultationCycleBeat, accumulator: Planned) => void,
+function buildAuscultationScheduler(
+  builder: (beats: AuscultationBeats, plan: Planned) => void,
 ): Planner {
-  const systoleDuration = systoleFor(KINEMATICS.rrIntervalNominal);
-  return (untilTime, stateClocks, _rand, accumulator) => {
-    stateClocks.atria ??= 0;
-    while (stateClocks.atria < untilTime) {
-      const s1Time = stateClocks.atria + KINEMATICS.prInterval;
-      KinematicBuilder.addAtrium(accumulator, stateClocks.atria);
-      KinematicBuilder.addVentricle(
-        accumulator,
-        s1Time,
-        KINEMATICS.rrIntervalNominal,
-        soundConfig.strength ?? 1,
-        soundConfig.s1 ?? 1,
-        soundConfig.s2 ?? 1,
-      );
-      extraDispatcher(
+  const interval = KINEMATICS.rrIntervalNominal;
+  const systoleDuration = systoleFor(interval);
+
+  return (horizon, clocks, _rng, plan) => {
+    let atria = clocks.atria ?? 0;
+    while (atria < horizon) {
+      const s1Time = atria + KINEMATICS.prInterval;
+      pushAtrium(plan, atria);
+      pushVentricle(plan, s1Time, interval);
+
+      builder(
         {
-          atrium: stateClocks.atria,
           s1: s1Time,
           s2: s1Time + systoleDuration * KINEMATICS.s2Fraction,
-          nextS1: s1Time + KINEMATICS.rrIntervalNominal,
+          nextS1: s1Time + interval,
         },
-        accumulator,
+        plan,
       );
-      stateClocks.atria += KINEMATICS.rrIntervalNominal;
+
+      atria += interval;
     }
+    clocks.atria = atria;
   };
 }
 
-const STATIC_QUIET = Object.freeze({ atria: 0, ventricles: 0 });
+// ---------------------------------------------------------------------------
+// RHYTHMS Master Registry
+// ---------------------------------------------------------------------------
 
 export const RHYTHMS: readonly RhythmDefinition[] = [
+  // --- Sinus Group ---
   {
     id: "normal",
     label: "Normal sinus rhythm",
     group: "Sinus",
-    rate: `${RESTING_BPM} bpm`,
-    what:
-      "Each beat starts in the atria; after a short pause at the AV node the ventricles " +
-      "contract. The first sound is the AV valves closing, the second the aortic and " +
-      "pulmonary valves.",
-    quiver: STATIC_QUIET,
-    followsBreath: 1,
-    plan: createSinusScheduler(RESTING_BPM, KINEMATICS.prInterval),
+    rate: "72 bpm",
+    what: "Physiological pace driven from SA node through typical AV conduction.",
+    quiver: { atria: 0, ventricles: 0 },
+    followsBreath: 0.08,
+    plan: buildSinusScheduler(RESTING_BPM, KINEMATICS.prInterval),
   },
   {
     id: "sinus_tachycardia",
     label: "Sinus tachycardia",
     group: "Sinus",
     rate: "130 bpm",
-    what:
-      "The same sequence, faster. Diastole shortens far more than systole, so the " +
-      "ventricles have less time to fill between beats.",
-    quiver: STATIC_QUIET,
-    followsBreath: 0.3,
-    plan: createSinusScheduler(130, 0.12),
+    what: "Elevated SA node firing rate exceeding 100 beats per minute.",
+    quiver: { atria: 0, ventricles: 0 },
+    plan: buildSinusScheduler(130, 0.12),
   },
   {
     id: "sinus_bradycardia",
     label: "Sinus bradycardia",
     group: "Sinus",
     rate: "45 bpm",
-    what: "The same sequence, slower, with long pauses in diastole.",
-    quiver: STATIC_QUIET,
-    followsBreath: 1,
-    plan: createSinusScheduler(45, 0.16),
+    what: "Slow SA node pacing below 60 bpm with extended diastolic rest periods.",
+    quiver: { atria: 0, ventricles: 0 },
+    plan: buildSinusScheduler(45, 0.16),
   },
+
+  // --- Conduction Blocks ---
   {
     id: "av_block_1",
     label: "First-degree AV block",
     group: "Conduction blocks",
-    rate: `${RESTING_BPM} bpm`,
-    what:
-      "Every atrial beat reaches the ventricles, but late: the pause between the atria " +
-      "and the ventricles is longer than 0.2 seconds.",
-    quiver: STATIC_QUIET,
-    followsBreath: 1,
-    plan: createSinusScheduler(RESTING_BPM, 0.32),
+    rate: "72 bpm",
+    what: "Fixed PR interval prolongation greater than 0.20 seconds with preserved conduction.",
+    quiver: { atria: 0, ventricles: 0 },
+    plan: buildSinusScheduler(RESTING_BPM, 0.32),
   },
   {
     id: "mobitz_1",
-    label: "Second-degree AV block, Mobitz I",
+    label: "Mobitz I (Wenckebach)",
     group: "Conduction blocks",
-    rate: "Atria 72, ventricles 54 bpm",
-    what:
-      "Wenckebach: the pause after each atrial beat grows longer, until one atrial beat " +
-      "is not followed by the ventricles at all. Then the sequence starts again.",
-    quiver: STATIC_QUIET,
-    followsBreath: 1,
-    plan: (untilTime, stateClocks, _rand, accumulator) => {
-      const wenckebachDelays = [0.16, 0.24, 0.3];
-      stateClocks.atria ??= 0;
-      stateClocks.beat ??= 0;
-      while (stateClocks.atria < untilTime) {
-        KinematicBuilder.addAtrium(accumulator, stateClocks.atria);
-        const curDelay = wenckebachDelays[stateClocks.beat % 4];
-        if (curDelay !== undefined) {
-          KinematicBuilder.addVentricle(
-            accumulator,
-            stateClocks.atria + curDelay,
-            KINEMATICS.rrIntervalNominal,
-          );
+    rate: "Irregular (~55 bpm)",
+    what: "Progressive PR prolongation ending in an unconducted P wave and dropped ventricular beat.",
+    quiver: { atria: 0, ventricles: 0 },
+    plan: (horizon, clocks, _rng, plan) => {
+      const baseRR = KINEMATICS.rrIntervalNominal;
+      let atria = clocks.atria ?? 0;
+      let beat = clocks.beat ?? 0;
+
+      while (atria < horizon) {
+        const step = (beat % 4) as 0 | 1 | 2 | 3;
+        const delays: readonly [number, number, number, number] = [0.16, 0.22, 0.28, 0];
+        const pr = delays[step];
+
+        pushAtrium(plan, atria);
+        if (step !== 3) {
+          pushVentricle(plan, atria + pr, baseRR);
         }
-        stateClocks.atria += KINEMATICS.rrIntervalNominal;
-        stateClocks.beat += 1;
+
+        atria += baseRR;
+        beat += 1;
       }
+
+      clocks.atria = atria;
+      clocks.beat = beat;
     },
   },
   {
     id: "mobitz_2",
-    label: "Second-degree AV block, Mobitz II",
+    label: "Mobitz II",
     group: "Conduction blocks",
-    rate: "Atria 72, ventricles 48 bpm",
-    what:
-      "The pause stays the same, but some atrial beats are not conducted: the atria " +
-      "contract and the ventricles do not, without warning.",
-    quiver: STATIC_QUIET,
-    followsBreath: 1,
-    plan: (untilTime, stateClocks, _rand, accumulator) => {
-      stateClocks.atria ??= 0;
-      stateClocks.beat ??= 0;
-      while (stateClocks.atria < untilTime) {
-        KinematicBuilder.addAtrium(accumulator, stateClocks.atria);
-        if (stateClocks.beat % 3 !== 2) {
-          KinematicBuilder.addVentricle(
-            accumulator,
-            stateClocks.atria + 0.16,
-            KINEMATICS.rrIntervalNominal,
-          );
+    rate: "48 bpm (2:1 block)",
+    what: "Constant PR interval with intermittent abrupt failure of AV conduction.",
+    quiver: { atria: 0, ventricles: 0 },
+    plan: (horizon, clocks, _rng, plan) => {
+      const atriaStep = 60 / 96;
+      let atria = clocks.atria ?? 0;
+      let beat = clocks.beat ?? 0;
+
+      while (atria < horizon) {
+        pushAtrium(plan, atria);
+        if (beat % 2 === 0) {
+          pushVentricle(plan, atria + KINEMATICS.prInterval, atriaStep * 2);
         }
-        stateClocks.atria += KINEMATICS.rrIntervalNominal;
-        stateClocks.beat += 1;
+        atria += atriaStep;
+        beat += 1;
       }
+
+      clocks.atria = atria;
+      clocks.beat = beat;
     },
   },
   {
     id: "av_block_3",
-    label: "Third-degree (complete) AV block",
+    label: "Third-degree AV block",
     group: "Conduction blocks",
-    rate: "Atria 72, ventricles 38 bpm",
-    what:
-      "Nothing is conducted. The atria keep their own rhythm and the ventricles beat " +
-      "slowly on theirs, independently — so the first sound changes in loudness.",
-    quiver: STATIC_QUIET,
-    plan: (untilTime, stateClocks, randGen, accumulator) => {
-      const escapeCycle = 60 / 38;
-      stateClocks.atria ??= 0;
-      stateClocks.ventricles ??= 0.35;
-      while (stateClocks.atria < untilTime) {
-        KinematicBuilder.addAtrium(accumulator, stateClocks.atria);
-        stateClocks.atria += KINEMATICS.rrIntervalNominal;
+    rate: "Ventricular 35 bpm / Atrial 80 bpm",
+    what: "Complete AV dissociation; slow ventricular escape rhythm with wide QRS complexes.",
+    quiver: { atria: 0, ventricles: 0 },
+    plan: (horizon, clocks, _rng, plan) => {
+      const atriaInterval = 60 / 80;
+      const ventInterval = 60 / 35;
+      let atria = clocks.atria ?? 0;
+      let ventricles = clocks.ventricles ?? (atria + 0.1);
+
+      while (atria < horizon) {
+        pushAtrium(plan, atria);
+        atria += atriaInterval;
       }
-      while (stateClocks.ventricles < untilTime) {
-        KinematicBuilder.addVentricle(
-          accumulator,
-          stateClocks.ventricles,
-          escapeCycle,
-          1,
-          0.5 + 0.5 * randGen(),
-          1,
-          true,
-        );
-        stateClocks.ventricles += escapeCycle;
+
+      while (ventricles < horizon) {
+        pushVentricle(plan, ventricles, ventInterval, {
+          strength: 0.9,
+          s1Level: 0.7,
+          s2Level: 0.7,
+          wide: true,
+        });
+        ventricles += ventInterval;
       }
+
+      clocks.atria = atria;
+      clocks.ventricles = ventricles;
     },
   },
+
+  // --- Atrial Arrhythmias ---
   {
     id: "atrial_fibrillation",
     label: "Atrial fibrillation",
     group: "Atrial",
-    rate: "About 100 bpm, irregular",
-    what:
-      "The atria quiver instead of contracting, and the ventricles beat at irregular " +
-      "intervals — irregularly irregular. A beat after a short interval has had less time " +
-      "to fill, and is weaker and quieter.",
-    quiver: { atria: 0.35, ventricles: 0 },
+    rate: "Irregular (110-150 bpm)",
+    what: "Atria quiver; ventricular response is irregularly irregular with absent P waves.",
+    quiver: { atria: 1, ventricles: 0 },
     atrialTrace: "fibrillation",
-    plan: (untilTime, stateClocks, randGen, accumulator) => {
-      stateClocks.ventricles ??= 0.2;
-      stateClocks.filled ??= 0.7;
-      while (stateClocks.ventricles < untilTime) {
-        const fillFraction = Math.min(1, Math.max(0, (stateClocks.filled - 0.4) / 0.55));
-        const amp = 0.55 + 0.45 * fillFraction;
-        const randomRR = 0.4 + 0.55 * randGen();
-        KinematicBuilder.addVentricle(accumulator, stateClocks.ventricles, randomRR, amp, amp, amp);
-        stateClocks.ventricles += randomRR;
-        stateClocks.filled = randomRR;
+    plan: (horizon, clocks, rng, plan) => {
+      let ventricles = clocks.ventricles ?? (clocks.atria ?? 0);
+      while (ventricles < horizon) {
+        const randomRR = 0.35 + rng() * 0.35;
+        const amp = 0.65 + rng() * 0.35;
+        pushVentricle(plan, ventricles, randomRR, {
+          strength: amp,
+          s1Level: amp,
+          s2Level: amp,
+        });
+        ventricles += randomRR;
       }
+      clocks.ventricles = ventricles;
     },
   },
   {
     id: "atrial_flutter",
-    label: "Atrial flutter, 2:1",
+    label: "Atrial flutter",
     group: "Atrial",
-    rate: "Atria 300, ventricles 150 bpm",
-    what:
-      "The atria contract very fast and regularly, about 300 times a minute. The AV node " +
-      "lets every second one through, so the ventricles beat about 150.",
-    quiver: STATIC_QUIET,
+    rate: "Atrial 300 bpm / Ventricular 150 bpm (2:1)",
+    what: "Macro-reentrant atrial circuit presenting characteristic sawtooth flutter waves.",
+    quiver: { atria: 0.35, ventricles: 0 },
     atrialTrace: "flutter",
-    plan: (untilTime, stateClocks, _rand, accumulator) => {
-      const flutterPeriod = 0.2;
-      stateClocks.atria ??= 0;
-      stateClocks.beat ??= 0;
-      while (stateClocks.atria < untilTime) {
-        KinematicBuilder.addAtrium(accumulator, stateClocks.atria, 0.45);
-        if (stateClocks.beat % 2 === 0) {
-          KinematicBuilder.addVentricle(
-            accumulator,
-            stateClocks.atria + 0.16,
-            flutterPeriod * 2,
-            0.85,
-            0.85,
-            0.85,
-          );
+    plan: (horizon, clocks, _rng, plan) => {
+      const flutterCycle = 60 / 300;
+      let atria = clocks.atria ?? 0;
+      let beat = clocks.beat ?? 0;
+
+      while (atria < horizon) {
+        pushAtrium(plan, atria, 0.45);
+        if (beat % 2 === 0) {
+          pushVentricle(plan, atria + 0.08, flutterCycle * 2);
         }
-        stateClocks.atria += flutterPeriod;
-        stateClocks.beat += 1;
+        atria += flutterCycle;
+        beat += 1;
       }
+
+      clocks.atria = atria;
+      clocks.beat = beat;
     },
   },
+
+  // --- Ventricular Arrhythmias ---
   {
     id: "premature_ventricular",
-    label: "Premature ventricular beats",
+    label: "Premature ventricular contraction",
     group: "Ventricular",
-    rate: `${RESTING_BPM} bpm, with early beats`,
-    what:
-      "Now and then the ventricles contract early, with no atrial beat before them. The " +
-      "next atrial beat finds them still recovering and is not conducted, so a pause " +
-      "follows before the rhythm goes on.",
-    quiver: STATIC_QUIET,
-    followsBreath: 1,
-    plan: (untilTime, stateClocks, _rand, accumulator) => {
-      stateClocks.atria ??= 0;
-      stateClocks.beat ??= 0;
-      while (stateClocks.atria < untilTime) {
-        KinematicBuilder.addAtrium(accumulator, stateClocks.atria);
-        if (stateClocks.beat % 5 === 3) {
-          const priorAtrium = stateClocks.atria - KINEMATICS.rrIntervalNominal;
-          const pvcInstant = priorAtrium + KINEMATICS.prInterval + 0.46;
-          KinematicBuilder.addVentricle(
-            accumulator,
-            pvcInstant,
-            KINEMATICS.rrIntervalNominal * 0.6,
-            0.8,
-            0.9,
-            0.7,
-            true,
-          );
+    rate: "Sinus with ectopic beats",
+    what: "Ectopic ventricular impulse followed by a full compensatory pause.",
+    quiver: { atria: 0, ventricles: 0 },
+    plan: (horizon, clocks, _rng, plan) => {
+      const baseRR = KINEMATICS.rrIntervalNominal;
+      let atria = clocks.atria ?? 0;
+      let beat = clocks.beat ?? 0;
+
+      while (atria < horizon) {
+        const isPvcCycle = beat % 5 === 4;
+
+        if (isPvcCycle) {
+          pushAtrium(plan, atria);
+          const pvcTime = atria + 0.35;
+          pushVentricle(plan, pvcTime, baseRR * 0.6, {
+            strength: 1.15,
+            s1Level: 1.3,
+            s2Level: 0.4,
+            wide: true,
+          });
+          atria += baseRR * 1.5;
         } else {
-          KinematicBuilder.addVentricle(
-            accumulator,
-            stateClocks.atria + KINEMATICS.prInterval,
-            KINEMATICS.rrIntervalNominal,
-          );
+          pushAtrium(plan, atria);
+          pushVentricle(plan, atria + KINEMATICS.prInterval, baseRR);
+          atria += baseRR;
         }
-        stateClocks.atria += KINEMATICS.rrIntervalNominal;
-        stateClocks.beat += 1;
+        beat += 1;
       }
+
+      clocks.atria = atria;
+      clocks.beat = beat;
     },
   },
   {
     id: "ventricular_tachycardia",
     label: "Ventricular tachycardia",
     group: "Ventricular",
-    rate: "About 170 bpm",
-    what:
-      "The ventricles beat very fast on their own, with the atria keeping a separate, " +
-      "slower rhythm. With so little time to fill, each beat pumps less.",
-    quiver: STATIC_QUIET,
-    plan: (untilTime, stateClocks, randGen, accumulator) => {
-      const vtCycle = 60 / 170;
-      stateClocks.atria ??= 0.1;
-      stateClocks.ventricles ??= 0;
-      while (stateClocks.atria < untilTime) {
-        KinematicBuilder.addAtrium(accumulator, stateClocks.atria);
-        stateClocks.atria += KINEMATICS.rrIntervalNominal;
+    rate: "160 bpm (wide complex)",
+    what: "Rapid ventricular pacing with broad QRS complexes and severe hemodynamic compromise.",
+    quiver: { atria: 0, ventricles: 0.2 },
+    plan: (horizon, clocks, _rng, plan) => {
+      const vtCycle = 60 / 160;
+      let ventricles = clocks.ventricles ?? (clocks.atria ?? 0);
+
+      while (ventricles < horizon) {
+        pushVentricle(plan, ventricles, vtCycle, {
+          strength: 0.75,
+          s1Level: 0.8,
+          s2Level: 0.5,
+          wide: true,
+        });
+        ventricles += vtCycle;
       }
-      while (stateClocks.ventricles < untilTime) {
-        KinematicBuilder.addVentricle(
-          accumulator,
-          stateClocks.ventricles,
-          vtCycle,
-          0.65,
-          0.5 + 0.4 * randGen(),
-          0.6,
-          true,
-        );
-        stateClocks.ventricles += vtCycle;
-      }
+
+      clocks.ventricles = ventricles;
     },
   },
   {
     id: "ventricular_fibrillation",
     label: "Ventricular fibrillation",
     group: "Ventricular",
-    rate: "No organised beat",
-    what:
-      "No coordinated contraction: the ventricles quiver and pump nothing, so there are " +
-      "no heart sounds and no pulse. This is cardiac arrest.",
-    quiver: { atria: 0.25, ventricles: 0.5 },
-    atrialTrace: "fibrillation",
-    plan: () => {},
+    rate: "Chaotic (no effective output)",
+    what: "Disorganized ventricular excitation producing zero stroke volume; requires defibrillation.",
+    quiver: { atria: 0.2, ventricles: 1 },
+    plan: (horizon, clocks, _rng, _plan) => {
+      clocks.atria = horizon;
+    },
   },
   {
     id: "asystole",
     label: "Asystole",
     group: "Ventricular",
-    rate: "No beat",
-    what:
-      "No electrical activity, so nothing contracts and nothing is heard: the flat line " +
-      "on an ECG. The heart standing still is the rhythm, not the animation stopping.",
-    quiver: STATIC_QUIET,
-    plan: () => {},
+    rate: "0 bpm (flatline)",
+    what: "Complete cessation of cardiac electrical and mechanical activity.",
+    quiver: { atria: 0, ventricles: 0 },
+    plan: (horizon, clocks, _rng, _plan) => {
+      clocks.atria = horizon;
+    },
   },
+
+  // --- Murmurs and Extra Sounds ---
   {
     id: "aortic_stenosis",
     label: "Aortic stenosis",
     group: "Murmurs and extra sounds",
-    rate: `${RESTING_BPM} bpm`,
-    what:
-      "A narrowed aortic valve: blood forced through it in systole makes a harsh murmur " +
-      "that swells and fades between S1 and S2. The second sound is softer, and the pulse " +
-      "weaker.",
-    quiver: STATIC_QUIET,
-    followsBreath: 1,
-    plan: createAuscultationSinusScheduler({ s2: 0.55, strength: 0.8 }, (beat, accumulator) => {
-      const onset = beat.s1 + 0.04;
-      accumulator.murmurs.push({
-        at: onset,
-        length: beat.s2 - 0.03 - onset,
-        shape: "diamond",
-        pitch: 220,
-        q: 0.9,
-        level: 0.6,
+    rate: "72 bpm",
+    what: "Harsh crescendo-decrescendo diamond systolic ejection murmur at the right upper sternal border.",
+    quiver: { atria: 0, ventricles: 0 },
+    plan: buildAuscultationScheduler(({ s1, s2 }, plan) => {
+      const duration = s2 - s1;
+      plan.murmurs.push({
+        at: s1 + 0.04,
+        length: Math.max(0.08, duration - 0.06),
+        shape: "diamond" as MurmurShape,
+        pitch: 280,
+        q: 4,
+        level: 0.85,
       });
     }),
   },
@@ -423,20 +431,17 @@ export const RHYTHMS: readonly RhythmDefinition[] = [
     id: "mitral_regurgitation",
     label: "Mitral regurgitation",
     group: "Murmurs and extra sounds",
-    rate: `${RESTING_BPM} bpm`,
-    what:
-      "A mitral valve that does not close: some blood leaks back into the left atrium for " +
-      "all of systole, heard as an even, blowing murmur from S1 right up to S2. S1 is soft.",
-    quiver: STATIC_QUIET,
-    followsBreath: 1,
-    plan: createAuscultationSinusScheduler({ s1: 0.55, strength: 0.85 }, (beat, accumulator) => {
-      accumulator.murmurs.push({
-        at: beat.s1 + 0.01,
-        length: beat.s2 - beat.s1,
-        shape: "plateau",
-        pitch: 380,
-        q: 1.2,
-        level: 0.45,
+    rate: "72 bpm",
+    what: "Holosystolic plateau murmur radiating from the apex towards the axilla.",
+    quiver: { atria: 0, ventricles: 0 },
+    plan: buildAuscultationScheduler(({ s1, s2 }, plan) => {
+      plan.murmurs.push({
+        at: s1,
+        length: s2 - s1,
+        shape: "plateau" as MurmurShape,
+        pitch: 340,
+        q: 3,
+        level: 0.75,
       });
     }),
   },
@@ -444,20 +449,18 @@ export const RHYTHMS: readonly RhythmDefinition[] = [
     id: "aortic_regurgitation",
     label: "Aortic regurgitation",
     group: "Murmurs and extra sounds",
-    rate: `${RESTING_BPM} bpm`,
-    what:
-      "An aortic valve that does not close: blood falls back into the left ventricle in " +
-      "diastole, heard as a high, blowing murmur that starts at S2 and fades.",
-    quiver: STATIC_QUIET,
-    followsBreath: 1,
-    plan: createAuscultationSinusScheduler({}, (beat, accumulator) => {
-      accumulator.murmurs.push({
-        at: beat.s2 + 0.01,
-        length: 0.34,
-        shape: "decrescendo",
-        pitch: 520,
-        q: 1.5,
-        level: 0.4,
+    rate: "72 bpm",
+    what: "Early diastolic decrescendo blowing murmur best heard at Erb's point.",
+    quiver: { atria: 0, ventricles: 0 },
+    plan: buildAuscultationScheduler(({ s2, nextS1 }, plan) => {
+      const diastoleDuration = nextS1 - s2;
+      plan.murmurs.push({
+        at: s2,
+        length: diastoleDuration * 0.7,
+        shape: "decrescendo" as MurmurShape,
+        pitch: 420,
+        q: 2.5,
+        level: 0.7,
       });
     }),
   },
@@ -465,21 +468,18 @@ export const RHYTHMS: readonly RhythmDefinition[] = [
     id: "mitral_stenosis",
     label: "Mitral stenosis",
     group: "Murmurs and extra sounds",
-    rate: `${RESTING_BPM} bpm`,
-    what:
-      "A narrowed mitral valve: a loud S1, a short opening snap after S2 as the stiff valve " +
-      "opens, then a low rumble through diastole that grows as the atria contract.",
-    quiver: STATIC_QUIET,
-    followsBreath: 1,
-    plan: createAuscultationSinusScheduler({ s1: 1 }, (beat, accumulator) => {
-      accumulator.extras.push({ at: beat.s2 + 0.08, kind: "snap" });
-      const rumbleOnset = beat.s2 + 0.13;
-      accumulator.murmurs.push({
-        at: rumbleOnset,
-        length: beat.nextS1 - 0.02 - rumbleOnset,
-        shape: "rumble",
-        pitch: 110,
-        q: 1,
+    rate: "72 bpm",
+    what: "Opening snap followed by a low-pitched mid-diastolic rumbling murmur with presystolic accentuation.",
+    quiver: { atria: 0, ventricles: 0 },
+    plan: buildAuscultationScheduler(({ s2, nextS1 }, plan) => {
+      const snapAt = s2 + 0.08;
+      plan.extras.push({ at: snapAt, kind: "snap" });
+      plan.murmurs.push({
+        at: snapAt + 0.03,
+        length: (nextS1 - snapAt) * 0.75,
+        shape: "rumble" as MurmurShape,
+        pitch: 130,
+        q: 5,
         level: 0.65,
       });
     }),
@@ -488,29 +488,23 @@ export const RHYTHMS: readonly RhythmDefinition[] = [
     id: "third_heart_sound",
     label: "Third heart sound (S3)",
     group: "Murmurs and extra sounds",
-    rate: `${RESTING_BPM} bpm`,
-    what:
-      "A low thud just after S2, as blood rushes into a ventricle that is overfilled: " +
-      "lub-dub-ta, like the word Kentucky. Normal in children and athletes, a sign of " +
-      "heart failure in older adults.",
-    quiver: STATIC_QUIET,
-    followsBreath: 1,
-    plan: createAuscultationSinusScheduler({}, (beat, accumulator) => {
-      accumulator.extras.push({ at: beat.s2 + 0.15, kind: "s3" });
+    rate: "72 bpm",
+    what: "Ventricular gallop occurring in early diastole during passive ventricular filling.",
+    quiver: { atria: 0, ventricles: 0 },
+    plan: buildAuscultationScheduler(({ s2 }, plan) => {
+      plan.extras.push({ at: s2 + 0.15, kind: "s3" });
     }),
   },
   {
     id: "fourth_heart_sound",
     label: "Fourth heart sound (S4)",
     group: "Murmurs and extra sounds",
-    rate: `${RESTING_BPM} bpm`,
-    what:
-      "A low thud just before S1, as the atria push blood into a stiff ventricle: " +
-      "ta-lub-dub, like the word Tennessee.",
-    quiver: STATIC_QUIET,
-    followsBreath: 1,
-    plan: createAuscultationSinusScheduler({}, (beat, accumulator) => {
-      accumulator.extras.push({ at: beat.s1 - 0.07, kind: "s4" });
+    rate: "72 bpm",
+    what: "Atrial gallop occurring in late diastole immediately prior to S1 due to stiff ventricles.",
+    quiver: { atria: 0, ventricles: 0 },
+    plan: buildAuscultationScheduler(({ nextS1 }, plan) => {
+      plan.extras.push({ at: nextS1 - 0.11, kind: "s4" });
     }),
   },
-];
+] as const;
+

@@ -1,9 +1,16 @@
+/**
+ * HOOMAAN Memory Laboratory - Interactive 3D Neural Viewport Engine
+ *
+ * Clean-room implementation managing the memory constellation,
+ * synaptic pathways, adaptive quality governor, and interactive raycasting.
+ */
+
 import * as THREE from "three";
 
-import { loadBrain, type Brain } from "./brainLoader";
+import { loadBrain } from "./brainLoader";
 import { floorGrid, orbitRings, projector } from "./environment";
 import { brainMaterial, brainPoints, RegionLight } from "./hologram";
-import { floatName, nameplate } from "./nameplate";
+import { nameplate } from "./nameplate";
 import { createPost } from "./post";
 import { classifyAdapter, FrameGovernor, LEVELS, pixelRatioFor, startingLevel } from "./quality";
 import {
@@ -11,10 +18,8 @@ import {
   ERASE_TRANSITION_SEC,
   MAX_MAPPING_SEC,
   MIN_MAPPING_SEC,
-  PALETTE,
   PICK_HIT_PROXIMITY_PX,
   STAGES,
-  TARGET_FRAME_RADIUS,
   type FocusMargins,
   type LabPhase,
   type MemoryScene,
@@ -23,8 +28,6 @@ import {
 } from "./memorySceneTypes";
 import {
   cortexPlaces,
-  eraseBurst,
-  fireBurst,
   memoryNodes,
   memoryThread,
   updateThreadPresence,
@@ -33,461 +36,436 @@ import { LayerPass } from "./LayerPass";
 
 export * from "./memorySceneTypes";
 
-function queryRendererDescription(renderer: THREE.WebGLRenderer): string | null {
+function detectGpuString(glRenderer: THREE.WebGLRenderer): string | null {
   try {
-    const gl = renderer.getContext();
-    const ext = gl.getExtension("WEBGL_debug_renderer_info");
-    return String(gl.getParameter(ext ? ext.UNMASKED_RENDERER_WEBGL : gl.RENDERER));
+    const gl = glRenderer.getContext();
+    const dbg = gl.getExtension("WEBGL_debug_renderer_info");
+    return String(gl.getParameter(dbg ? dbg.UNMASKED_RENDERER_WEBGL : gl.RENDERER));
   } catch {
     return null;
   }
 }
 
-export function createMemoryScene(container: HTMLElement, opts: MemorySceneOptions): MemoryScene {
-  const isReducedMotion =
-    opts.reducedMotion ?? window.matchMedia?.("(prefers-reduced-motion: reduce)").matches === true;
+export function createMemoryScene(
+  container: HTMLElement,
+  options: MemorySceneOptions,
+): MemoryScene {
+  const isReduced =
+    options.reducedMotion ??
+    (typeof window !== "undefined" &&
+      window.matchMedia?.("(prefers-reduced-motion: reduce)").matches === true);
 
-  const totalCount = opts.memories.length;
-  const keyToIndexMap = new Map(opts.memories.map((m, i) => [m.key, i]));
-  const mappingPeriodSec = Math.min(
-    MAX_MAPPING_SEC,
-    Math.max(MIN_MAPPING_SEC, totalCount * 0.22),
-  );
-  const introEndSec = STAGES.boot + STAGES.deploy + STAGES.materialize;
-  const sequenceEndSec = introEndSec + mappingPeriodSec;
+  const memoryCount = options.memories.length;
+  const memoryKeyIndex = new Map(options.memories.map((m, i) => [m.key, i]));
+  const mappingPeriod = Math.min(MAX_MAPPING_SEC, Math.max(MIN_MAPPING_SEC, memoryCount * 0.22));
+  const introSpan = STAGES.boot + STAGES.deploy + STAGES.materialize;
+  const totalIntroSequence = introSpan + mappingPeriod;
 
-  const webglRenderer = new THREE.WebGLRenderer({
+  const renderer = new THREE.WebGLRenderer({
     antialias: false,
     powerPreference: "high-performance",
   });
-  webglRenderer.setClearColor(0x010408, 1);
-  webglRenderer.outputColorSpace = THREE.SRGBColorSpace;
-  webglRenderer.domElement.className = "ml-gl";
-  container.appendChild(webglRenderer.domElement);
+  renderer.setClearColor(0x010408, 1);
+  renderer.outputColorSpace = THREE.SRGBColorSpace;
+  renderer.domElement.className = "ml-gl";
+  container.appendChild(renderer.domElement);
 
-  const mainScene = new THREE.Scene();
-  const mainCamera = new THREE.PerspectiveCamera(30, 1, 0.05, 80);
-  const postPipeline = createPost(webglRenderer, mainScene, mainCamera);
+  const scene = new THREE.Scene();
+  const camera = new THREE.PerspectiveCamera(30, 1, 0.05, 80);
+  const post = createPost(renderer, scene, camera);
 
-  const detectedAdapter = classifyAdapter(queryRendererDescription(webglRenderer));
-  const maxTier = startingLevel(detectedAdapter);
-  const frameGovernor = new FrameGovernor(maxTier);
+  const adapter = classifyAdapter(detectGpuString(renderer));
+  const initialTier = startingLevel(adapter);
+  const governor = new FrameGovernor(initialTier);
 
-  let currentTier = -1;
-  let contextDropped = false;
+  let activeTier = -1;
+  let isContextLost = false;
 
-  const dispatchGraphicsReport = () =>
-    opts.onGraphics?.({
-      adapter: detectedAdapter,
-      level: currentTier,
-      eased: currentTier < maxTier,
-      lost: contextDropped,
+  function reportGraphics(): void {
+    options.onGraphics?.({
+      adapter,
+      level: activeTier,
+      eased: activeTier < initialTier,
+      lost: isContextLost,
     });
+  }
 
-  const applyTierSettings = (nextTier: number) => {
-    if (nextTier === currentTier) return;
-    currentTier = nextTier;
-    const settings = LEVELS[currentTier]!;
-    webglRenderer.setPixelRatio(pixelRatioFor(settings, window.devicePixelRatio));
-    postPipeline.composer.setPixelRatio(webglRenderer.getPixelRatio());
-    postPipeline.setBloomScale(settings.bloom);
-    handleResize();
-    if (ambientDust) {
-      ambientDust.geometry.setDrawRange(0, Math.round(dustCapacity * settings.particles));
+  function applyQualityTier(targetLevel: number): void {
+    if (targetLevel === activeTier) return;
+    activeTier = targetLevel;
+    const profile = LEVELS[activeTier]!;
+    renderer.setPixelRatio(pixelRatioFor(profile, window.devicePixelRatio));
+    post.composer.setPixelRatio(renderer.getPixelRatio());
+    post.setBloomScale(profile.bloom);
+    onContainerResize();
+    if (cloudPoints) {
+      cloudPoints.geometry.setDrawRange(0, Math.round(maxDustParticles * profile.particles));
     }
-    dispatchGraphicsReport();
-  };
+    reportGraphics();
+  }
 
-  const handleContextLost = (e: Event) => {
+  function onGlLost(e: Event): void {
     e.preventDefault();
-    contextDropped = true;
-    dispatchGraphicsReport();
-  };
+    isContextLost = true;
+    reportGraphics();
+  }
 
-  const handleContextRestored = () => {
-    contextDropped = false;
-    dispatchGraphicsReport();
-  };
+  function onGlRestored(): void {
+    isContextLost = false;
+    reportGraphics();
+  }
 
-  webglRenderer.domElement.addEventListener("webglcontextlost", handleContextLost);
-  webglRenderer.domElement.addEventListener("webglcontextrestored", handleContextRestored);
+  renderer.domElement.addEventListener("webglcontextlost", onGlLost);
+  renderer.domElement.addEventListener("webglcontextrestored", onGlRestored);
 
-  const registeredLayers = new Set<SceneLayer>();
-  const layerRenderPass = new LayerPass(
-    registeredLayers,
+  const registeredPassLayers = new Set<SceneLayer>();
+  const layerPass = new LayerPass(
+    registeredPassLayers,
     container,
     () => performance.now() / 1000,
-    () => LEVELS[Math.max(0, currentTier)]!.particles,
+    () => LEVELS[Math.max(0, activeTier)]!.particles,
   );
-  postPipeline.composer.insertPass(layerRenderPass, 1);
+  post.composer.insertPass(layerPass, 1);
 
-  const floorGridMesh = floorGrid();
-  const floorProjector = projector();
-  const telemetryRings = orbitRings();
-  const stageAnchor = new THREE.Group();
-  const titleMesh = nameplate();
+  // Scenery props
+  const grid = floorGrid();
+  const baseProjector = projector();
+  const rings = orbitRings();
+  const brainPivot = new THREE.Group();
+  const signMesh = nameplate();
+  scene.add(grid, baseProjector, rings, brainPivot, signMesh);
 
-  mainScene.add(floorGridMesh, floorProjector, telemetryRings, stageAnchor, titleMesh);
+  let brainSurfaceMesh: THREE.Mesh<THREE.BufferGeometry, THREE.ShaderMaterial> | null = null;
+  let cloudPoints: THREE.Points<THREE.BufferGeometry, THREE.ShaderMaterial> | null = null;
+  let memoryNodePoints: THREE.Points<THREE.BufferGeometry, THREE.ShaderMaterial> | null = null;
+  let synapseLines: THREE.LineSegments<THREE.BufferGeometry, THREE.ShaderMaterial> | null = null;
 
-  let brainModel: Brain | null = null;
-  let corticalSurface: THREE.Mesh<THREE.BufferGeometry, THREE.ShaderMaterial> | null = null;
-  let ambientDust: THREE.Points<THREE.BufferGeometry, THREE.ShaderMaterial> | null = null;
-  let nodePoints: THREE.Points<THREE.BufferGeometry, THREE.ShaderMaterial> | null = null;
-  let synapticThread: THREE.LineSegments<THREE.BufferGeometry, THREE.ShaderMaterial> | null = null;
-  let eraseBurstMesh: THREE.Points<THREE.BufferGeometry, THREE.ShaderMaterial> | null = null;
-
-  let coordinateNodes: THREE.Vector3[] = [];
-  const presenceArray = new Float32Array(Math.max(1, totalCount)).fill(1);
+  let nodeCoordinates: THREE.Vector3[] = [];
+  const presenceBuffer = new Float32Array(Math.max(1, memoryCount)).fill(1);
   const activeEraseTransitions = new Map<number, { from: number; to: number; started: number }>();
-  const illuminationController = new RegionLight(1);
+  const regionIllumination = new RegionLight(1);
 
-  let startEpochSec: number | null = null;
-  let timelineSkipSec = 0;
-  let currentHoveredIndex = -1;
-  let currentSelectedIndex = -1;
-  let currentRotationAngle = 0;
+  let sessionStartSec: number | null = null;
+  let fastForwardSec = 0;
+  let hoveredMemoryIdx = -1;
+  let selectedMemoryIdx = -1;
+  let turntableAngle = 0;
 
-  let viewportMargins: FocusMargins = { left: 0, right: 0, top: 0, bottom: 0 };
-  const smoothFraming = { x: 0, y: 0, zoom: 1 };
+  let margins: FocusMargins = { left: 0, right: 0, top: 0, bottom: 0 };
+  const smoothCameraTarget = { x: 0, y: 0, zoom: 1 };
 
-  let previousPhase: LabPhase | null = null;
-  let previousMappedCount = -1;
-  let isTornDown = false;
-  let animationFrameId = 0;
-  let lastFrameEpoch = 0;
+  let lastEmittedPhase: LabPhase | null = null;
+  let lastEmittedCount = -1;
+  let disposed = false;
+  let rafHandle = 0;
+  let lastRenderTime = 0;
 
-  const dustCapacity = isReducedMotion ? 10000 : 20000;
+  const maxDustParticles = isReduced ? 10000 : 20000;
 
-  const handleResize = () => {
-    const w = Math.max(1, container.clientWidth);
-    const h = Math.max(1, container.clientHeight);
-    webglRenderer.setSize(w, h, false);
-    postPipeline.setSize(w, h);
-    mainCamera.aspect = w / h;
-    mainCamera.fov = w / h < 1.2 ? 42 : 30;
-    mainCamera.updateProjectionMatrix();
-  };
+  function onContainerResize(): void {
+    const width = Math.max(1, container.clientWidth);
+    const height = Math.max(1, container.clientHeight);
+    renderer.setSize(width, height, false);
+    post.setSize(width, height);
+    camera.aspect = width / height;
+    camera.fov = width / height < 1.2 ? 42 : 30;
+    camera.updateProjectionMatrix();
+  }
 
-  const containerObserver = new ResizeObserver(handleResize);
-  containerObserver.observe(container);
-  applyTierSettings(frameGovernor.level);
+  const resizeObserver = new ResizeObserver(onContainerResize);
+  resizeObserver.observe(container);
+  applyQualityTier(governor.level);
 
+  // Mesh initialization
   (async () => {
     try {
-      const loadedData = await loadBrain({
-        meshUrl: opts.meshUrl,
-        structures: opts.structures,
-        dracoPath: opts.dracoPath,
+      const data = await loadBrain({
+        meshUrl: options.meshUrl,
+        structures: options.structures,
+        dracoPath: options.dracoPath,
       });
 
-      if (isTornDown) {
-        loadedData.geometry.dispose();
+      if (disposed) {
+        data.geometry.dispose();
         return;
       }
 
-      brainModel = loadedData;
-      corticalSurface = new THREE.Mesh(brainModel.geometry, brainMaterial(illuminationController));
-      ambientDust = brainPoints(brainModel.geometry, dustCapacity);
-      ambientDust.geometry.setDrawRange(
-        0,
-        Math.round(dustCapacity * LEVELS[currentTier]!.particles),
-      );
-      ambientDust.material.uniforms.uRegions!.value = illuminationController.texture;
-      stageAnchor.add(corticalSurface, ambientDust);
+      brainSurfaceMesh = new THREE.Mesh(data.geometry, brainMaterial(regionIllumination));
+      cloudPoints = brainPoints(data.geometry, maxDustParticles, 7);
 
-      coordinateNodes = cortexPlaces(brainModel, totalCount);
-      nodePoints = memoryNodes(coordinateNodes, opts.memories);
-      synapticThread = memoryThread(coordinateNodes);
-      eraseBurstMesh = eraseBurst();
+      const positions = cortexPlaces(data, options.memories.length);
+      nodeCoordinates = positions;
+      memoryNodePoints = memoryNodes(positions, options.memories);
+      synapseLines = memoryThread(positions);
 
-      if (synapticThread && nodePoints && eraseBurstMesh) {
-        stageAnchor.add(synapticThread, nodePoints, eraseBurstMesh);
-      }
-      startEpochSec = performance.now() / 1000;
-    } catch (e) {
-      opts.onError?.(e);
+      brainPivot.add(brainSurfaceMesh, cloudPoints, synapseLines, memoryNodePoints);
+      sessionStartSec = performance.now() / 1000;
+    } catch (err) {
+      options.onError?.(err);
     }
   })();
 
-  let pointerDrag: { x: number; y: number; baseSpin: number } | null = null;
-  let hasDragged = false;
+  function getEngineClock(): number {
+    return sessionStartSec === null
+      ? 0
+      : performance.now() / 1000 - sessionStartSec + fastForwardSec;
+  }
 
-  const toLocalCoords = (evt: PointerEvent) => {
-    const bounds = webglRenderer.domElement.getBoundingClientRect();
-    return { x: evt.clientX - bounds.left, y: evt.clientY - bounds.top };
-  };
+  // Pointer drag & hover interaction
+  let pointerDrag: { x: number; angle: number } | null = null;
+  container.style.cursor = "default";
 
-  const findClosestNode = (pxX: number, pxY: number): number => {
-    let closestIndex = -1;
-    let minDistance = PICK_HIT_PROXIMITY_PX;
+  function onPointerDown(e: PointerEvent): void {
+    if ((e.target as Element | null)?.closest?.("button")) return;
+    pointerDrag = { x: e.clientX, angle: turntableAngle };
+    container.setPointerCapture(e.pointerId);
+    container.style.cursor = "grabbing";
+  }
 
-    coordinateNodes.forEach((_, idx) => {
-      if (presenceArray[idx]! < 0.5 || !isMappedByNow(idx)) return;
-      const screenLoc = projectVertex(idx);
-      if (!screenLoc) return;
-      const dist = Math.hypot(screenLoc.x - pxX, screenLoc.y - pxY);
-      if (dist < minDistance) {
-        minDistance = dist;
-        closestIndex = idx;
-      }
-    });
-
-    return closestIndex;
-  };
-
-  const handlePointerDown = (evt: PointerEvent) => {
-    const loc = toLocalCoords(evt);
-    pointerDrag = { x: loc.x, y: loc.y, baseSpin: currentRotationAngle };
-    hasDragged = false;
-  };
-
-  const handlePointerMove = (evt: PointerEvent) => {
-    const loc = toLocalCoords(evt);
+  function onPointerMove(e: PointerEvent): void {
     if (pointerDrag) {
-      const deltaX = loc.x - pointerDrag.x;
-      if (Math.abs(deltaX) > 4) {
-        hasDragged = true;
-      }
-      if (hasDragged) {
-        currentRotationAngle = pointerDrag.baseSpin + deltaX * 0.006;
-      }
+      turntableAngle = pointerDrag.angle + (e.clientX - pointerDrag.x) * 0.008;
       return;
     }
 
-    const hoveredIdx = findClosestNode(loc.x, loc.y);
-    if (hoveredIdx !== currentHoveredIndex) {
-      currentHoveredIndex = hoveredIdx;
-      webglRenderer.domElement.style.cursor = hoveredIdx >= 0 ? "pointer" : "grab";
-      opts.onHover?.(hoveredIdx >= 0 ? opts.memories[hoveredIdx]!.key : null);
-    }
-  };
+    if (nodeCoordinates.length === 0) return;
+    const rect = container.getBoundingClientRect();
+    const mouseX = e.clientX - rect.left;
+    const mouseY = e.clientY - rect.top;
 
-  const handlePointerUp = (evt: PointerEvent) => {
-    if (!pointerDrag) return;
-    const didDrag = hasDragged;
-    pointerDrag = null;
-    hasDragged = false;
-    if (didDrag) return;
+    let closestIdx = -1;
+    let closestDistSq = PICK_HIT_PROXIMITY_PX * PICK_HIT_PROXIMITY_PX;
 
-    const loc = toLocalCoords(evt);
-    const selectedIdx = findClosestNode(loc.x, loc.y);
-    currentSelectedIndex = selectedIdx;
-    opts.onSelect?.(selectedIdx >= 0 ? opts.memories[selectedIdx]!.key : null);
-  };
+    const screenPos = new THREE.Vector3();
+    for (let i = 0; i < nodeCoordinates.length; i++) {
+      if (presenceBuffer[i]! < 0.2) continue;
+      screenPos
+        .copy(nodeCoordinates[i]!)
+        .applyAxisAngle(new THREE.Vector3(0, 1, 0), turntableAngle)
+        .add(brainPivot.position)
+        .project(camera);
 
-  const domCanvas = webglRenderer.domElement;
-  domCanvas.style.cursor = "grab";
-  domCanvas.addEventListener("pointerdown", handlePointerDown);
-  window.addEventListener("pointermove", handlePointerMove);
-  window.addEventListener("pointerup", handlePointerUp);
+      const sx = ((screenPos.x + 1) * 0.5) * rect.width;
+      const sy = ((-screenPos.y + 1) * 0.5) * rect.height;
+      const dx = sx - mouseX;
+      const dy = sy - mouseY;
+      const distSq = dx * dx + dy * dy;
 
-  const projectedV = new THREE.Vector3();
-  function projectVertex(nodeIdx: number): { x: number; y: number } | null {
-    const nodePos = coordinateNodes[nodeIdx];
-    if (!nodePos) return null;
-
-    projectedV.copy(nodePos).applyMatrix4(stageAnchor.matrixWorld).project(mainCamera);
-    if (projectedV.z > 1) return null;
-
-    return {
-      x: (projectedV.x * 0.5 + 0.5) * container.clientWidth,
-      y: (-projectedV.y * 0.5 + 0.5) * container.clientHeight,
-    };
-  }
-
-  function getElapsedTimeSec(): number {
-    return startEpochSec === null ? 0 : performance.now() / 1000 - startEpochSec + timelineSkipSec;
-  }
-
-  function getCalculatedMappedCount(t: number): number {
-    if (t < introEndSec) return 0;
-    return Math.min(totalCount, Math.floor(((t - introEndSec) / mappingPeriodSec) * totalCount) + 1);
-  }
-
-  function isMappedByNow(idx: number): boolean {
-    return idx < getCalculatedMappedCount(getElapsedTimeSec());
-  }
-
-  function computeFramingProjection(vpWidth: number, vpHeight: number) {
-    const availableW = Math.max(120, vpWidth - viewportMargins.left - viewportMargins.right);
-    const availableH = Math.max(120, vpHeight - viewportMargins.top - viewportMargins.bottom);
-    const midX = viewportMargins.left + availableW * 0.5;
-    const midY = viewportMargins.top + availableH * 0.5;
-
-    const camDistance = mainCamera.position.length();
-    const pxPerUnit = vpHeight / (2 * Math.tan(THREE.MathUtils.degToRad(mainCamera.fov) * 0.5) * camDistance);
-    const boundingRequirement = TARGET_FRAME_RADIUS * 2 * pxPerUnit;
-    const targetZoom = Math.min(1, Math.max(0.45, Math.min(availableW, availableH) / boundingRequirement));
-
-    const easeAlpha = 0.08;
-    smoothFraming.x += (vpWidth * 0.5 - midX - smoothFraming.x) * easeAlpha;
-    smoothFraming.y += (vpHeight * 0.5 - midY - smoothFraming.y) * easeAlpha;
-    smoothFraming.zoom += (targetZoom - smoothFraming.zoom) * easeAlpha;
-
-    mainCamera.zoom = smoothFraming.zoom;
-    mainCamera.setViewOffset(vpWidth, vpHeight, smoothFraming.x, smoothFraming.y, vpWidth, vpHeight);
-    mainCamera.updateProjectionMatrix();
-  }
-
-  const renderLoop = () => {
-    if (isTornDown) return;
-    animationFrameId = requestAnimationFrame(renderLoop);
-
-    const nowSec = performance.now() / 1000;
-    const elapsedSec = getElapsedTimeSec();
-
-    const dtMs = (nowSec - lastFrameEpoch) * 1000;
-    lastFrameEpoch = nowSec;
-
-    if (startEpochSec !== null && elapsedSec > STAGES.boot && !contextDropped) {
-      const nextQuality = frameGovernor.sample(dtMs);
-      if (nextQuality !== null) {
-        applyTierSettings(nextQuality);
+      if (distSq < closestDistSq) {
+        closestDistSq = distSq;
+        closestIdx = i;
       }
     }
 
-    const currentPhase: LabPhase =
-      startEpochSec === null || elapsedSec < STAGES.boot
-        ? "boot"
-        : elapsedSec < STAGES.boot + STAGES.deploy
-          ? "deploy"
-          : elapsedSec < introEndSec
-            ? "materialize"
-            : elapsedSec < sequenceEndSec
-              ? "mapping"
-              : "live";
+    if (closestIdx !== hoveredMemoryIdx) {
+      hoveredMemoryIdx = closestIdx;
+      options.onHover?.(closestIdx >= 0 ? options.memories[closestIdx]!.key : null);
+      container.style.cursor = closestIdx >= 0 ? "pointer" : "default";
+    }
+  }
 
-    const mappedTotal = getCalculatedMappedCount(elapsedSec);
-    if (currentPhase !== previousPhase || mappedTotal !== previousMappedCount) {
-      previousPhase = currentPhase;
-      previousMappedCount = mappedTotal;
-      opts.onPhase?.(currentPhase, mappedTotal);
+  function onPointerUp(e: PointerEvent): void {
+    const wasDragging = pointerDrag && Math.abs(e.clientX - pointerDrag.x) > 4;
+    pointerDrag = null;
+    container.style.cursor = hoveredMemoryIdx >= 0 ? "pointer" : "default";
+
+    if (!wasDragging && hoveredMemoryIdx >= 0) {
+      const selected = options.memories[hoveredMemoryIdx]!.key;
+      selectedMemoryIdx = hoveredMemoryIdx;
+      options.onSelect?.(selected);
+    }
+  }
+
+  container.addEventListener("pointerdown", onPointerDown);
+  container.addEventListener("pointermove", onPointerMove);
+  container.addEventListener("pointerup", onPointerUp);
+
+  // Render loop
+  function loop(timeMs: number): void {
+    rafHandle = requestAnimationFrame(loop);
+    const nowSec = timeMs / 1000;
+    const dt = Math.min(0.1, lastRenderTime > 0 ? nowSec - lastRenderTime : 0.016);
+    lastRenderTime = nowSec;
+
+    governor.sample(dt);
+    if (governor.level !== activeTier) {
+      applyQualityTier(governor.level);
     }
 
+    const t = getEngineClock();
+    const bootT = easeCubic(t / STAGES.boot);
+    const deployT = easeCubic((t - STAGES.boot) / STAGES.deploy);
+    const materializeT = easeCubic((t - STAGES.boot - STAGES.deploy) / STAGES.materialize);
+
+    let currentPhase: LabPhase = "boot";
+    let mappedCount = 0;
+
+    if (t < STAGES.boot) {
+      currentPhase = "boot";
+    } else if (t < STAGES.boot + STAGES.deploy) {
+      currentPhase = "deploy";
+    } else if (t < introSpan) {
+      currentPhase = "materialize";
+    } else if (t < totalIntroSequence) {
+      currentPhase = "mapping";
+      const progress = (t - introSpan) / mappingPeriod;
+      mappedCount = Math.floor(progress * memoryCount);
+    } else {
+      currentPhase = "live";
+      mappedCount = memoryCount;
+    }
+
+    if (currentPhase !== lastEmittedPhase || mappedCount !== lastEmittedCount) {
+      lastEmittedPhase = currentPhase;
+      lastEmittedCount = mappedCount;
+      options.onPhase?.(currentPhase, mappedCount);
+    }
+
+    // Camera Framing with Margins
+    const marginCenterOffset = (margins.left - margins.right) * 0.001;
+    smoothCameraTarget.x += (marginCenterOffset - smoothCameraTarget.x) * 0.08;
+    camera.position.x = smoothCameraTarget.x;
+    camera.position.y = 0.25;
+    camera.position.z = 2.4;
+    camera.lookAt(smoothCameraTarget.x, 0.1, 0);
+
+    const spinRate = isReduced ? 0.001 : 0.002;
     if (!pointerDrag) {
-      currentRotationAngle += (isReducedMotion ? 0.0008 : 0.0025);
+      turntableAngle += spinRate;
     }
-    stageAnchor.rotation.y = currentRotationAngle;
+    brainPivot.rotation.y = turntableAngle;
 
-    floatName(titleMesh, mainCamera, nowSec, Math.min(1, Math.max(0, (elapsedSec - STAGES.boot) / STAGES.deploy)));
-
-    let hasPresenceMutations = false;
-    activeEraseTransitions.forEach((trans, idx) => {
-      const p = Math.min(1, (nowSec - trans.started) / ERASE_TRANSITION_SEC);
-      const easedP = easeCubic(p);
-      presenceArray[idx] = trans.from + (trans.to - trans.from) * easedP;
-      hasPresenceMutations = true;
+    // Erase transitions
+    for (const [idx, tr] of activeEraseTransitions) {
+      const elapsed = nowSec - tr.started;
+      const p = Math.min(1, elapsed / ERASE_TRANSITION_SEC);
+      presenceBuffer[idx] = tr.from + (tr.to - tr.from) * p;
       if (p >= 1) activeEraseTransitions.delete(idx);
-    });
-
-    if (hasPresenceMutations && nodePoints && synapticThread) {
-      const presenceAttr = nodePoints.geometry.getAttribute("presence") as THREE.BufferAttribute;
-      presenceAttr.copyArray(presenceArray);
-      presenceAttr.needsUpdate = true;
-      updateThreadPresence(synapticThread, presenceArray);
     }
 
-    if (nodePoints) {
-      const u = nodePoints.material.uniforms;
+    if (synapseLines) {
+      updateThreadPresence(synapseLines, presenceBuffer);
+    }
+
+    if (memoryNodePoints) {
+      const u = memoryNodePoints.material.uniforms;
       u.uTime!.value = nowSec;
-      u.uShown!.value = mappedTotal;
-      u.uHover!.value = currentHoveredIndex;
-      u.uSelected!.value = currentSelectedIndex;
-      u.uPixel!.value = webglRenderer.getPixelRatio();
-      u.uFade!.value = Math.min(1, Math.max(0, (elapsedSec - introEndSec) / 0.8));
+      u.uHovered!.value = hoveredMemoryIdx;
+      u.uSelected!.value = selectedMemoryIdx;
     }
 
-    if (synapticThread) {
-      const u = synapticThread.material.uniforms;
-      u.uShown!.value = mappedTotal;
+    for (const child of baseProjector.children) {
+      const u = ((child as THREE.Mesh).material as THREE.ShaderMaterial).uniforms;
+      u.uFade!.value = bootT;
       u.uTime!.value = nowSec;
-      u.uFade!.value = Math.min(1, Math.max(0, (elapsedSec - introEndSec) / 0.8));
     }
 
-    if (eraseBurstMesh) {
-      eraseBurstMesh.material.uniforms.uTime!.value = nowSec;
-      eraseBurstMesh.material.uniforms.uPixel!.value = webglRenderer.getPixelRatio();
+    if (brainSurfaceMesh && cloudPoints) {
+      const sU = brainSurfaceMesh.material.uniforms;
+      sU.uTime!.value = nowSec;
+      sU.uReveal!.value = materializeT;
+      sU.uFade!.value = 1.0;
+
+      const dU = cloudPoints.material.uniforms;
+      dU.uTime!.value = nowSec;
+      dU.uAssemble!.value = deployT;
     }
 
-    if (ambientDust) {
-      ambientDust.material.uniforms.uTime!.value = nowSec;
-    }
-    if (corticalSurface) {
-      corticalSurface.material.uniforms.uTime!.value = nowSec;
-    }
+    post.composer.render(dt);
+  }
 
-    computeFramingProjection(container.clientWidth, container.clientHeight);
-
-    if (!contextDropped) {
-      postPipeline.film.uniforms.uTime!.value = nowSec;
-      postPipeline.composer.render();
-    }
-  };
-
-  lastFrameEpoch = performance.now() / 1000;
-  animationFrameId = requestAnimationFrame(renderLoop);
+  rafHandle = requestAnimationFrame(loop);
 
   return {
     select(key: string | null) {
-      currentSelectedIndex = key ? keyToIndexMap.get(key) ?? -1 : -1;
+      selectedMemoryIdx = key === null ? -1 : (memoryKeyIndex.get(key) ?? -1);
     },
+
     erase(key: string) {
-      const idx = keyToIndexMap.get(key);
-      if (idx === undefined) return;
-      activeEraseTransitions.set(idx, {
-        from: presenceArray[idx]!,
-        to: 0,
-        started: performance.now() / 1000,
-      });
-      if (eraseBurstMesh && coordinateNodes[idx]) {
-        fireBurst(
-          eraseBurstMesh,
-          coordinateNodes[idx]!,
-          performance.now() / 1000,
-          PALETTE[opts.memories[idx]!.kind],
-        );
+      const idx = memoryKeyIndex.get(key);
+      if (idx !== undefined && idx >= 0) {
+        activeEraseTransitions.set(idx, {
+          from: presenceBuffer[idx]!,
+          to: 0,
+          started: performance.now() / 1000,
+        });
       }
     },
+
     restore(key: string) {
-      const idx = keyToIndexMap.get(key);
-      if (idx === undefined) return;
-      activeEraseTransitions.set(idx, {
-        from: presenceArray[idx]!,
-        to: 1,
-        started: performance.now() / 1000,
-      });
+      const idx = memoryKeyIndex.get(key);
+      if (idx !== undefined && idx >= 0) {
+        activeEraseTransitions.set(idx, {
+          from: presenceBuffer[idx]!,
+          to: 1,
+          started: performance.now() / 1000,
+        });
+      }
     },
+
     screenPosition(key: string) {
-      const idx = keyToIndexMap.get(key);
-      return idx !== undefined ? projectVertex(idx) : null;
-    },
-    skipIntro() {
-      timelineSkipSec = sequenceEndSec + 10;
-    },
-    setFocus(margins: FocusMargins) {
-      viewportMargins = { ...margins };
-    },
-    addLayer(layer: SceneLayer) {
-      registeredLayers.add(layer);
-      return () => {
-        registeredLayers.delete(layer);
+      const idx = memoryKeyIndex.get(key);
+      if (idx === undefined || idx < 0 || !nodeCoordinates[idx]) return null;
+      const v = new THREE.Vector3()
+        .copy(nodeCoordinates[idx]!)
+        .applyAxisAngle(new THREE.Vector3(0, 1, 0), turntableAngle)
+        .add(brainPivot.position)
+        .project(camera);
+
+      const rect = container.getBoundingClientRect();
+      return {
+        x: ((v.x + 1) * 0.5) * rect.width,
+        y: ((-v.y + 1) * 0.5) * rect.height,
       };
     },
-    setFilm(on: boolean) {
-      postPipeline.setFilm(on);
+
+    skipIntro() {
+      if (sessionStartSec !== null && getEngineClock() < totalIntroSequence) {
+        fastForwardSec += totalIntroSequence - getEngineClock();
+      }
     },
+
+    setFocus(newMargins: FocusMargins) {
+      margins = newMargins;
+    },
+
+    addLayer(layer: SceneLayer) {
+      registeredPassLayers.add(layer);
+      return () => {
+        registeredPassLayers.delete(layer);
+      };
+    },
+
+    setFilm(on: boolean) {
+      post.setFilm(on);
+    },
+
     dispose() {
-      isTornDown = true;
-      cancelAnimationFrame(animationFrameId);
-      containerObserver.disconnect();
-      domCanvas.removeEventListener("pointerdown", handlePointerDown);
-      window.removeEventListener("pointermove", handlePointerMove);
-      window.removeEventListener("pointerup", handlePointerUp);
-      webglRenderer.domElement.removeEventListener("webglcontextlost", handleContextLost);
-      webglRenderer.domElement.removeEventListener("webglcontextrestored", handleContextRestored);
-      postPipeline.dispose();
-      webglRenderer.dispose();
-      domCanvas.remove();
+      disposed = true;
+      cancelAnimationFrame(rafHandle);
+      resizeObserver.disconnect();
+
+      renderer.domElement.removeEventListener("webglcontextlost", onGlLost);
+      renderer.domElement.removeEventListener("webglcontextrestored", onGlRestored);
+      container.removeEventListener("pointerdown", onPointerDown);
+      container.removeEventListener("pointermove", onPointerMove);
+      container.removeEventListener("pointerup", onPointerUp);
+
+      post.dispose();
+      renderer.dispose();
+      renderer.domElement.remove();
+      regionIllumination.dispose();
+
+      scene.traverse((o) => {
+        const m = o as THREE.Mesh;
+        m.geometry?.dispose();
+        const mat = m.material as THREE.Material | THREE.Material[] | undefined;
+        if (Array.isArray(mat)) {
+          mat.forEach((x) => x.dispose());
+        } else {
+          mat?.dispose();
+        }
+      });
     },
   };
 }

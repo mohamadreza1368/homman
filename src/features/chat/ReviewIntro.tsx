@@ -1,86 +1,63 @@
 import { activeCase, reviewReadiness, useCaseStore } from "@/stores/caseStore";
 
-/**
- * Overview of patient case findings and visits prior to review synthesis.
- */
-export function ReviewIntro({ onAsk, disabled }: { onAsk: () => void; disabled: boolean }) {
-  const targetPatient = useCaseStore(activeCase);
-  const caseSymptoms = useCaseStore((state) => state.symptoms);
-  const pastVisits = useCaseStore((state) => state.visits);
-  const patientRecord = useCaseStore((state) => state.record);
+interface ReviewIntroProps {
+  onAsk: () => void;
+  disabled: boolean;
+}
 
-  if (!targetPatient) {
+/**
+ * Clinical Case Review Readiness Card.
+ * Displays patient status, documented findings count, and summary action.
+ */
+export function ReviewIntro({ onAsk, disabled }: ReviewIntroProps) {
+  const currentCase = useCaseStore(activeCase);
+  const symptoms = useCaseStore((s) => s.symptoms);
+  const visits = useCaseStore((s) => s.visits);
+  const record = useCaseStore((s) => s.record);
+
+  if (!currentCase) {
     return (
-      <div className="space-y-2 pt-6 text-center text-xs text-slate-500">
-        <p>No patient is open.</p>
-        <p className="text-slate-600">
-          A review is always about a case. Pick one above, or start a new
-          conversation.
-        </p>
+      <div className="p-6 text-center text-xs text-slate-500">
+        <p className="font-medium text-slate-400">پرونده بیماری انتخاب نشده است</p>
+        <p className="mt-1 text-slate-600">جهت سنتز و بررسی پرونده، ابتدا یک بیمار مجازی انتخاب کنید.</p>
       </div>
     );
   }
 
-  const analysisProfile = reviewReadiness(targetPatient, caseSymptoms, pastVisits, patientRecord);
-  const summaryInputs = [
-    analysisProfile.complaints > 0 &&
-      `${analysisProfile.complaints} ${analysisProfile.complaints === 1 ? "complaint" : "complaints"} marked on the body`,
-    !analysisProfile.bare && "the findings on the record",
-    analysisProfile.updates > 0 &&
-      `${analysisProfile.updates} later ${analysisProfile.updates === 1 ? "entry" : "entries"}`,
-    analysisProfile.visits > 0 && `${analysisProfile.visits} ${analysisProfile.visits === 1 ? "visit" : "visits"}`,
-  ].filter((item): item is string => typeof item === "string");
+  const readiness = reviewReadiness(currentCase, symptoms, visits, record);
+  const hasData = readiness.complaints > 0 || readiness.visits > 0 || !readiness.bare;
 
   return (
-    <div className="space-y-3 pt-6 text-center text-xs text-slate-500">
-      <p>Reading the file back on {targetPatient.title}.</p>
-      <p className="text-slate-600">
-        What was presented, what has been reasoned, and where the gaps are.
-        Nothing is written into the record.
+    <div className="mx-auto max-w-sm rounded-xl border border-slate-800 bg-slate-900/60 p-4 text-center text-xs text-slate-400 shadow-sm mt-4">
+      <div className="mb-2">
+        <span className="inline-block rounded-full bg-sky-500/10 px-2 py-0.5 text-[10px] font-medium text-sky-400 border border-sky-500/20">
+          مرور جامع پرونده (Clinical Synthesis)
+        </span>
+      </div>
+
+      <h3 className="text-sm font-semibold text-slate-200">
+        بررسی شواهد و سوابق {currentCase.title}
+      </h3>
+      <p className="mt-1 text-[11px] text-slate-500 leading-relaxed">
+        تحلیل جامع یافته‌های بالینی، شکایات ثبت‌شده و تشخیص‌های افتراقی بدون اعمال تغییر در پرونده بیمار.
       </p>
 
-      <div className="flex justify-center pt-1">
-        <button
-          type="button"
-          disabled={disabled}
-          onClick={onAsk}
-          className="rounded-full border border-slate-700 px-2.5 py-1 text-[11px] text-slate-300 transition hover:border-sky-600 hover:text-sky-200 disabled:opacity-30"
-        >
-          Summarise this case
-        </button>
-      </div>
+      {hasData && (
+        <div className="my-3 flex justify-center gap-3 border-y border-slate-800/80 py-2 text-[11px] text-slate-400">
+          {readiness.complaints > 0 && <span>{readiness.complaints} شکایت</span>}
+          {readiness.visits > 0 && <span>{readiness.visits} نوبت ویزیت</span>}
+          {readiness.updates > 0 && <span>{readiness.updates} ثبت بالینی</span>}
+        </div>
+      )}
 
-      <div className="mx-auto max-w-[19rem] space-y-1.5 pt-1 text-left text-[10px] leading-snug text-slate-600">
-        {summaryInputs.length > 0 && <p>It reads {summaryInputs.join(", ")}.</p>}
-
-        {analysisProfile.visits === 0 && (
-          <p className="text-amber-500/70">
-            No visit has been recorded yet, so there is no reasoning to review —
-            only what you have marked.
-          </p>
-        )}
-
-        {analysisProfile.bare && (
-          <p className="text-amber-500/70">
-            This case carries no findings, so the summary has the complaints and
-            the visits and nothing else to reason from. Add what is known from
-            the patient record above — the sealed answer stays sealed either
-            way.
-          </p>
-        )}
-
-        {analysisProfile.ungraded > 0 && (
-          <p>
-            The sealed answer stays sealed: {analysisProfile.ungraded} of {analysisProfile.visits}{" "}
-            {analysisProfile.visits === 1 ? "visit is" : "visits are"} ungraded, and so are
-            their verdicts. Grade them and a review may use both.
-          </p>
-        )}
-
-        {analysisProfile.visits > 0 && analysisProfile.ungraded === 0 && (
-          <p>Every visit is graded, so the sealed answer is included.</p>
-        )}
-      </div>
+      <button
+        type="button"
+        disabled={disabled}
+        onClick={onAsk}
+        className="mt-2 w-full rounded-lg bg-sky-600/90 py-1.5 px-3 text-xs font-medium text-white transition hover:bg-sky-500 disabled:opacity-40"
+      >
+        Summarise this case
+      </button>
     </div>
   );
 }

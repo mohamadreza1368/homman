@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { caseDigest, getStudySession, type CaseFile, type SessionDetail } from "@/lib/studyDb";
 import { matchesQuery, useCaseStore, visitLabel } from "@/stores/caseStore";
 import { askToConfirm } from "@/stores/confirmStore";
@@ -9,150 +9,164 @@ import { CollapsibleHeader } from "./CollapsibleHeader";
 import { buildCaseDocument } from "./printDocument";
 import { whenLabel } from "./whenLabel";
 
-export function VirtualPatientCasesSection({ open, onToggle }: { open: boolean; onToggle: () => void }) {
-  const registeredCases = useCaseStore((state) => state.cases);
-  const reloadCases = useCaseStore((state) => state.refresh);
-  const activeQuery = useStudyStore((state) => state.query);
+interface CasesSectionProps {
+  open: boolean;
+  onToggle: () => void;
+}
+
+/**
+ * Collapsible section displaying simulated virtual patient cases and history.
+ */
+export function VirtualPatientCasesSection({ open, onToggle }: CasesSectionProps) {
+  const patientCases = useCaseStore((s) => s.cases);
+  const reload = useCaseStore((s) => s.refresh);
+  const searchFilter = useStudyStore((s) => s.query);
 
   useEffect(() => {
-    void reloadCases();
-  }, [reloadCases]);
+    void reload();
+  }, [reload]);
 
-  if (registeredCases.length === 0) return null;
-  const filteredCases = registeredCases.filter((item) => matchesQuery(item, activeQuery));
+  if (patientCases.length === 0) return null;
+
+  const visibleCases = patientCases.filter((c) => matchesQuery(c, searchFilter));
 
   return (
-    <section>
+    <section className="space-y-2">
       <CollapsibleHeader
-        label="Virtual patients"
-        count={filteredCases.length}
+        label="بیماران مجازی (Virtual Patients)"
+        count={visibleCases.length}
         open={open}
         onToggle={onToggle}
       />
+
       {open && (
-        <>
-          {filteredCases.length === 0 && (
-            <p className="mt-2 text-[11px] text-slate-600">
-              No patient matches that. The notes and sessions below are narrowed too.
+        <div className="space-y-1.5 pt-1">
+          {visibleCases.length === 0 ? (
+            <p className="text-[11px] text-slate-500 italic p-2">
+              موردی منطبق با جستجو یافت نشد.
             </p>
+          ) : (
+            visibleCases.map((c) => <CaseRow key={c.id} entry={c} />)
           )}
-          <div className="mt-2 space-y-1">
-            {filteredCases.map((caseItem) => (
-              <CaseRow key={caseItem.id} entry={caseItem} />
-            ))}
-          </div>
-        </>
+        </div>
       )}
     </section>
   );
 }
 
-export function CaseRow({ entry }: { entry: CaseFile }) {
-  const dropCase = useCaseStore((state) => state.remove);
-  const currentCaseId = useCaseStore((state) => state.activeCaseId);
-  const filterByCase = useStudyStore((state) => state.caseFilter);
-  const setFilterByCase = useStudyStore((state) => state.setCaseFilter);
-  const isCaseFiltered = filterByCase === entry.id;
-  const openPrintSheet = usePrintStore((state) => state.show);
-  const [isProcessing, setIsProcessing] = useState(false);
+interface CaseRowProps {
+  entry: CaseFile;
+}
 
-  const isSelectedCase = entry.id === currentCaseId;
+export function CaseRow({ entry }: CaseRowProps) {
+  const activeCaseId = useCaseStore((s) => s.activeCaseId);
+  const removeCase = useCaseStore((s) => s.remove);
 
-  async function confirmAndDeleteCase() {
-    const isApproved = await askToConfirm({
-      title: "Delete this virtual patient?",
-      subject: entry.title,
-      body:
-        `The case goes, along with everything marked on the body — ` +
-        `${entry.visit_count === 1 ? "the visit" : `all ${entry.visit_count} visits`} ` +
-        "stay in your journal as ordinary sessions, with their transcripts and " +
-        "scores. The sealed answer goes with the case. It cannot be brought back.",
-      confirmLabel: "Delete patient",
-    });
-    if (isApproved) {
-      await dropCase(entry.id);
+  const selectedCaseFilter = useStudyStore((s) => s.caseFilter);
+  const setCaseFilter = useStudyStore((s) => s.setCaseFilter);
+  const openPrint = usePrintStore((s) => s.show);
+
+  const [isLoadingDigest, setIsLoadingDigest] = useState(false);
+
+  const isCurrentActive = entry.id === activeCaseId;
+  const isFilterActive = selectedCaseFilter === entry.id;
+
+  const handleToggleFilter = useCallback(() => {
+    if (isFilterActive) {
+      setCaseFilter(null);
+    } else {
+      setCaseFilter(entry.id);
     }
-  }
+  }, [entry.id, isFilterActive, setCaseFilter]);
 
-  async function handlePrintCase() {
-    setIsProcessing(true);
+  const handlePrintSummary = useCallback(async () => {
+    setIsLoadingDigest(true);
     try {
-      const caseRecord = await caseDigest(entry.id);
-      if (!caseRecord) {
-        useStudyStore.setState({ error: "That case is no longer in the journal." });
-        return;
+      const digest = await caseDigest(entry.id);
+      if (!digest) return;
+
+      const sessionMap = new Map<string, SessionDetail>();
+      for (const v of digest.visits) {
+        if (v.session_id) {
+          const detail = await getStudySession(v.session_id);
+          if (detail) sessionMap.set(v.session_id, detail);
+        }
       }
 
-      const sessionsDetailsMap = new Map<string, SessionDetail>();
-      const loadedDetails = await Promise.all(
-        caseRecord.visits.map((visit) =>
-          getStudySession(visit.session_id).catch(() => null),
-        ),
+      const allOrgans = useSceneStore.getState().organs;
+      const doc = buildCaseDocument(
+        digest,
+        sessionMap,
+        (id) => (allOrgans[id] ? organLabel(allOrgans[id]) : id),
       );
-      loadedDetails.forEach((res) => {
-        if (res) sessionsDetailsMap.set(res.session.id, res);
-      });
-
-      const sceneOrgans = useSceneStore.getState().organs;
-      openPrintSheet(
-        buildCaseDocument(caseRecord, sessionsDetailsMap, (organId) => {
-          const item = sceneOrgans[organId];
-          return item ? organLabel(item) : null;
-        }),
-      );
-    } catch {
-      useStudyStore.setState({ error: "Could not prepare that case for printing." });
+      openPrint(doc);
     } finally {
-      setIsProcessing(false);
+      setIsLoadingDigest(false);
     }
-  }
+  }, [entry.id, openPrint]);
+
+  const handleDelete = useCallback(async () => {
+    const approved = await askToConfirm({
+      title: "حذف پرونده بالینی",
+      subject: entry.title,
+      body: "تمامی سوابق گفتگو و پیشرفت این بیمار مجازی پاک خواهد شد. آیا مطمئن هستید؟",
+      confirmLabel: "حذف پرونده",
+    });
+
+    if (approved) {
+      await removeCase(entry.id);
+    }
+  }, [entry.id, entry.title, removeCase]);
 
   return (
     <div
-      className={`group flex items-start gap-2 rounded border px-2 py-1.5 ${
-        isSelectedCase
-          ? "border-sky-700/60 bg-sky-600/10"
-          : "border-slate-800 hover:border-slate-700"
+      className={`rounded-lg border p-2.5 transition-colors text-xs ${
+        isCurrentActive
+          ? "border-sky-500/50 bg-sky-950/20"
+          : "border-slate-800/80 bg-slate-900/40 hover:border-slate-700/70"
       }`}
     >
-      <button
-        type="button"
-        onClick={() => void setFilterByCase(isCaseFiltered ? null : entry.id)}
-        title={
-          isCaseFiltered
-            ? "Show every session again"
-            : "Show only this patient's visits below"
-        }
-        className="min-w-0 flex-1 text-left"
-      >
-        <p className="truncate text-[12px] text-slate-300">{entry.title}</p>
-        <p className="mt-0.5 flex flex-wrap items-center gap-1.5 text-[9px] text-slate-600">
-          <span className="rounded-full bg-slate-700/40 px-1 text-slate-400">
-            {entry.sex === "female" ? "female" : "male"}
-          </span>
-          {entry.age_years !== null && <span>{entry.age_years}y</span>}
-          <span>· {visitLabel(entry)}</span>
-          <span>· {whenLabel(entry.updated_at)}</span>
-          {isCaseFiltered && <span className="text-amber-400">· showing visits</span>}
-        </p>
-      </button>
-      <div className="flex shrink-0 flex-col items-end gap-1">
+      <div className="flex items-start justify-between gap-2">
+        <div>
+          <h4 className="font-medium text-slate-200">{entry.title}</h4>
+          <div className="mt-1 flex items-center gap-2 text-[10px] text-slate-400">
+            <span className="capitalize">{entry.profile}</span>
+            <span>•</span>
+            <span>{visitLabel(entry)}</span>
+            <span>•</span>
+            <span>{whenLabel(entry.updated_at)}</span>
+          </div>
+        </div>
+
         <button
           type="button"
-          onClick={() => void confirmAndDeleteCase()}
-          title="Delete this virtual patient"
-          className="text-[10px] text-slate-700 opacity-0 transition hover:text-rose-400 group-hover:opacity-100"
+          onClick={handleToggleFilter}
+          className={`rounded px-2 py-0.5 text-[10px] font-medium transition ${
+            isFilterActive
+              ? "bg-sky-500/20 text-sky-300 border border-sky-500/30"
+              : "text-slate-400 hover:text-slate-200 hover:bg-slate-800"
+          }`}
         >
-          ✕
+          {isFilterActive ? "فیلتر فعال" : "فیلتر جلسات"}
         </button>
+      </div>
+
+      <div className="mt-2.5 flex items-center justify-between border-t border-slate-800/50 pt-2 text-[10px] text-slate-500">
         <button
           type="button"
-          onClick={() => void handlePrintCase()}
-          disabled={isProcessing}
-          title="Print the whole history, or save it as a PDF — includes the sealed answer"
-          className="text-[10px] text-slate-700 opacity-0 transition hover:text-sky-300 disabled:opacity-30 group-hover:opacity-100"
+          disabled={isLoadingDigest}
+          onClick={handlePrintSummary}
+          className="hover:text-slate-300 disabled:opacity-40"
         >
-          ⎙
+          {isLoadingDigest ? "در حال دریافت خلاصه..." : "چاپ / خروجی پرونده"}
+        </button>
+
+        <button
+          type="button"
+          onClick={handleDelete}
+          className="text-rose-400/80 hover:text-rose-300"
+        >
+          حذف
         </button>
       </div>
     </div>

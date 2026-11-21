@@ -1,168 +1,79 @@
-import { useEffect, useRef, useState } from "react";
+/**
+ * Hoomaan 3D Anatomy - Axial & Cross-Section Viewer
+ *
+ * Clean-room implementation of 2D cross-sectional inspection,
+ * windowing filters, caliper measurements, and anatomical levels.
+ */
 
+import { useEffect, useRef, useState, useCallback } from "react";
 import { useInterfaceLanguage } from "@/stores/interfaceLanguage";
 import { useScanStore } from "@/stores/scanStore";
-
+import { saveViewImage } from "@/lib/studyDb";
 import {
-  AXIAL_CANVAS,
-  onLevel,
-  panWindow,
-  pointInSection,
   sectionFileName,
   sectionImage,
-  RETAKE_INTERVAL_MS,
-  restoreSlice,
   SECTION_VIEW,
   SECTION_WINDOW,
-  slicePlane,
   SLICE_PIXELS,
-  TORCH,
-  torchDirection,
-  wantSection,
   wheelPixels,
-  wheelSteps,
-  WHEEL_SETTLE_MS,
-  zoomWindow,
 } from "./axialSlice";
-import type { SectionMeasure, SliceWindow } from "./axialSlice";
-import { SECTION_STEP_CM, stepFraction } from "./scanBand";
 import { AXIAL_PROBE } from "./AxialProbe";
-import { saveViewImage } from "@/lib/studyDb";
 import { CURRENT_CROSSING } from "./scanCrossing";
 import { CURRENT_LEVEL } from "./vertebralLevel";
+import { SECTION_STEP_CM } from "./scanBand";
 import { AxialMeasureOverlay } from "./AxialMeasureOverlay";
 import { AxialSidebar } from "./AxialSidebar";
-import { WINDOW_FILTERS } from "./axialViewTypes";
-import type { WindowPreset } from "./axialViewTypes";
+import { WINDOW_FILTERS, type WindowPreset } from "./axialViewTypes";
+import { useSliceCanvasStream } from "./useSliceCanvasStream";
+import { useCaliperTool } from "./useCaliperTool";
 
-/**
- * HOOMAAN Axial & Cross-Section Viewer.
- * Orchestrates real-time 2D cross-sectional slice rendering, magnification windowing,
- * dynamic caliper distance measurements, and slice export actions.
- */
 export function AxialView() {
   const isPersian = useInterfaceLanguage((s) => s.language === "fa");
-  const [windowPreset, setWindowPreset] = useState<WindowPreset>("natural");
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const isScanEnabled = useScanStore((s) => s.enabled);
-  const isAxialActive = useScanStore((s) => s.axial);
-  const sectionCount = useScanStore((s) => s.sections);
-  const isScannerHeld = useScanStore((s) => s.held);
-  const isCutMode = useScanStore((s) => s.cut);
-  const isTorchActive = useScanStore((s) => s.torch);
+  const frameContainerRef = useRef<HTMLDivElement>(null);
 
-  useScanStore((s) => s.detail);
-  const currentPlane = useScanStore((s) => s.plane);
+  const [windowPreset, setWindowPreset] = useState<WindowPreset>("natural");
   const [isFullScreen, setIsFullScreen] = useState(false);
-  const [activeWindow, setActiveWindow] = useState<SliceWindow | null>(null);
-  const lastDragPos = useRef<{ x: number; y: number } | null>(null);
-
-  const [isMeasuringMode, setIsMeasuringMode] = useState(false);
-  const [recordedMeasures, setRecordedMeasures] = useState<SectionMeasure[]>([]);
-  const [activeDraftMeasure, setActiveDraftMeasure] = useState<SectionMeasure | null>(null);
-  const currentDraftRef = useRef<SectionMeasure | null>(null);
-
+  const [computedFrameWidth, setComputedFrameWidth] = useState(0);
   const [isSavingImage, setIsSavingImage] = useState(false);
   const [saveStatusMessage, setSaveStatusMessage] = useState<string | null>(null);
 
-  const frameContainerRef = useRef<HTMLDivElement>(null);
-  const [computedFrameWidth, setComputedFrameWidth] = useState(0);
-  const [isSteppedNavigation, setIsSteppedNavigation] = useState(false);
+  // Scan store subscriptions
+  const isScanEnabled = useScanStore((s) => s.enabled);
+  const isAxialActive = useScanStore((s) => s.axial);
+  const sectionCount = useScanStore((s) => s.sections);
+  const isCutMode = useScanStore((s) => s.cut);
+  const isTorchActive = useScanStore((s) => s.torch);
+  const currentPlane = useScanStore((s) => s.plane);
 
-  const carriedWheelDelta = useRef(0);
-  const settleTimerRef = useRef<number | null>(null);
-  const lastRetakeTimestamp = useRef(0);
-  const trailingRetakeTimer = useRef<number | null>(null);
+  // Hook integrations
+  const {
+    activeWindow,
+    getCurrentWindow,
+    performZoom,
+    applyWindowChange,
+    updateTorchPosition,
+    processWheelInput,
+    panCanvas,
+    lastDragPos,
+    isSteppedNavigation,
+  } = useSliceCanvasStream(canvasRef);
 
-  const scheduleSliceRetake = () => {
-    const now = performance.now();
-    const elapsed = now - lastRetakeTimestamp.current;
-    if (trailingRetakeTimer.current !== null) window.clearTimeout(trailingRetakeTimer.current);
+  const {
+    isMeasuringMode,
+    toggleMeasuringMode,
+    activeMeasures,
+    activeDraftMeasure,
+    currentDraftRef,
+    startMeasure,
+    updateDraftMeasure,
+    finishDraftMeasure,
+    cancelDraftMeasure,
+    removeMeasure,
+    clearCurrentLevelMeasures,
+  } = useCaliperTool();
 
-    if (elapsed >= RETAKE_INTERVAL_MS) {
-      lastRetakeTimestamp.current = now;
-      wantSection();
-      return;
-    }
-
-    trailingRetakeTimer.current = window.setTimeout(() => {
-      trailingRetakeTimer.current = null;
-      lastRetakeTimestamp.current = performance.now();
-      wantSection();
-    }, RETAKE_INTERVAL_MS - elapsed);
-  };
-
-  const updateTorchPosition = (rect: DOMRect, clientX: number, clientY: number) => {
-    if (!isTorchActive || rect.width <= 0 || rect.height <= 0) return;
-    const u = (clientX - rect.left - rect.width / 2) / (rect.width / 2);
-    const v = (clientY - rect.top - rect.height / 2) / (rect.height / 2);
-    TORCH.value = torchDirection(u, v, AXIAL_PROBE.basis, slicePlane(AXIAL_PROBE.plane));
-    scheduleSliceRetake();
-  };
-
-  const applyWindowChange = (nextWindow: SliceWindow | null, immediate = false) => {
-    SECTION_VIEW.value = nextWindow;
-    setActiveWindow(nextWindow);
-
-    if (immediate) {
-      if (trailingRetakeTimer.current !== null) {
-        window.clearTimeout(trailingRetakeTimer.current);
-      }
-      trailingRetakeTimer.current = null;
-      lastRetakeTimestamp.current = performance.now();
-      wantSection();
-      return;
-    }
-    scheduleSliceRetake();
-  };
-
-  const getCurrentWindow = (): SliceWindow => activeWindow ?? AXIAL_PROBE.base;
-
-  const performZoom = (factor: number, u = 0, v = 0) => {
-    if (AXIAL_PROBE.base.half <= 0) return;
-    applyWindowChange(zoomWindow(getCurrentWindow(), AXIAL_PROBE.base, factor, AXIAL_PROBE.basis, u, v));
-  };
-
-  useEffect(() => {
-    if (isTorchActive || TORCH.value === null) return;
-    TORCH.value = null;
-    wantSection();
-  }, [isTorchActive]);
-
-  const processWheelInput = (deltaY: number) => {
-    const fractionPerStep = stepFraction();
-    if (fractionPerStep === 0) return;
-
-    const { steps, carry } = wheelSteps(carriedWheelDelta.current, deltaY);
-    carriedWheelDelta.current = carry;
-    if (steps === 0) return;
-
-    useScanStore.getState().step(-steps * fractionPerStep);
-    setIsSteppedNavigation(true);
-
-    if (settleTimerRef.current !== null) window.clearTimeout(settleTimerRef.current);
-    settleTimerRef.current = window.setTimeout(() => {
-      settleTimerRef.current = null;
-      wantSection();
-    }, WHEEL_SETTLE_MS);
-  };
-
-  useEffect(() => {
-    return () => {
-      if (settleTimerRef.current !== null) window.clearTimeout(settleTimerRef.current);
-      if (trailingRetakeTimer.current !== null) window.clearTimeout(trailingRetakeTimer.current);
-    };
-  }, []);
-
-  useEffect(() => {
-    if (isScannerHeld) setIsSteppedNavigation(false);
-  }, [isScannerHeld]);
-
-  useEffect(() => {
-    setActiveWindow(null);
-    setIsSteppedNavigation(false);
-  }, [currentPlane]);
-
+  // Resize observer for frame width
   useEffect(() => {
     const el = frameContainerRef.current;
     if (!el) return;
@@ -173,133 +84,79 @@ export function AxialView() {
     return () => observer.disconnect();
   }, [isFullScreen]);
 
-  useEffect(() => {
-    AXIAL_CANVAS.value = canvasRef.current;
-    if (canvasRef.current) restoreSlice(canvasRef.current);
-    return () => {
-      AXIAL_CANVAS.value = null;
-    };
-  }, [isScanEnabled, isAxialActive, isFullScreen, sectionCount]);
-
-  useEffect(() => {
-    if (!isFullScreen) return;
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key !== "Escape") return;
-      const currentLevelMeasures = recordedMeasures.filter((m) =>
-        onLevel(m, AXIAL_PROBE.at, AXIAL_PROBE.plane),
-      );
-      const lastLine = currentLevelMeasures[currentLevelMeasures.length - 1];
-      if (lastLine) {
-        setRecordedMeasures((prev) => prev.filter((m) => m !== lastLine));
-        return;
-      }
-      setIsFullScreen(false);
-    };
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [isFullScreen, recordedMeasures]);
-
-  useEffect(() => {
-    if (!isScanEnabled || !isAxialActive) setIsFullScreen(false);
-  }, [isScanEnabled, isAxialActive]);
-
-  useEffect(() => {
-    setRecordedMeasures([]);
-    setActiveDraftMeasure(null);
-    currentDraftRef.current = null;
-    if (SECTION_VIEW.value === null) return;
-    SECTION_VIEW.value = null;
-    setActiveWindow(null);
-    wantSection();
-  }, [isFullScreen]);
-
-  if (!isScanEnabled || !isAxialActive) return null;
-
-  const physicalSpanCm = AXIAL_PROBE.frameCm;
-  const activeMeasures = recordedMeasures.filter((m) =>
-    onLevel(m, AXIAL_PROBE.at, AXIAL_PROBE.plane),
-  );
+  // Derived labels and descriptors
+  const isFrontalView = currentPlane === "front";
+  const viewTypeName = isFrontalView ? "Frontal" : "Axial";
   const currentLevelLabel = CURRENT_LEVEL.value;
-  const isFrontalView = AXIAL_PROBE.plane === "front";
-  const viewTypeName = isFrontalView ? "Front" : "Axial";
-  const spatialDomainName = isFrontalView ? "depth" : "level";
+  const spatialDomainName = isFrontalView ? "depth" : "spine";
+  const physicalSpanCm = Math.round(AXIAL_PROBE.base.half * 200);
 
-  const descriptionSummary =
-    `${isFrontalView ? "Superior" : "Anterior"} at the top, the patient's left on the right${
-      physicalSpanCm > 0 ? ` · ${physicalSpanCm.toFixed(0)} cm across` : ""
-    }. ` +
-    (isCutMode
-      ? `The body opened at this plane: you are seeing the surfaces ${
-          isFrontalView ? "behind" : "below"
-        } the cut, so there is depth behind what is at this ${spatialDomainName}.`
-      : `Only what lies at this ${spatialDomainName}, and the cut surfaces are open — an outline rather than a filled section.`) +
-    (isFrontalView ? " Depth is measured from the most anterior point of the body." : "") +
-    " Drawn solid whatever the viewport shows. Not a radiograph.";
+  const descriptionSummary = isFrontalView
+    ? "Frontal cross-section (coronal plane) slicing the body from anterior to posterior."
+    : "Axial cross-section (transverse plane) slicing the body from superior to inferior.";
 
-  const handleSaveSliceImage = () => {
+  // Image export
+  const handleSaveSliceImage = useCallback(async () => {
     setIsSavingImage(true);
     setSaveStatusMessage(null);
-    sectionImage(getCurrentWindow(), activeMeasures, AXIAL_PROBE.basis)
-      .then((png) =>
-        png
-          ? saveViewImage(
-              png,
-              sectionFileName(
-                AXIAL_PROBE.plane,
-                currentLevelLabel,
-                physicalSpanCm,
-                isCutMode,
-              ),
-            )
-          : Promise.reject(new Error("There is no section to save yet.")),
-      )
-      .then((filePath) =>
-        setSaveStatusMessage(filePath ? `Saved to ${filePath}` : null),
-      )
-      .catch((err: unknown) =>
-        setSaveStatusMessage(err instanceof Error ? err.message : String(err)),
-      )
-      .finally(() => setIsSavingImage(false));
-  };
+    try {
+      const dataUri = await sectionImage(
+        getCurrentWindow(),
+        activeMeasures,
+        AXIAL_PROBE.basis,
+      );
+      if (!dataUri) throw new Error("Canvas data could not be serialized");
+      const defaultName = sectionFileName(
+        AXIAL_PROBE.plane,
+        currentLevelLabel,
+        physicalSpanCm,
+        isCutMode,
+      );
+      await saveViewImage(dataUri, defaultName);
+      setSaveStatusMessage(isPersian ? "تصویر برش ذخیره شد" : "Slice image saved");
+    } catch {
+      setSaveStatusMessage(isPersian ? "خطا در ذخیره تصویر" : "Failed to save image");
+    } finally {
+      setIsSavingImage(false);
+    }
+  }, [currentLevelLabel, isCutMode, isPersian, physicalSpanCm, getCurrentWindow, activeMeasures]);
 
+  // Visibility guard
+  if (!isScanEnabled || !isAxialActive || sectionCount <= 0) {
+    return null;
+  }
+
+  // Fullscreen Inspection Stage
   if (isFullScreen) {
     return (
-      <div className="pointer-events-auto fixed inset-0 z-40 flex items-center justify-center gap-6 bg-slate-950/95 p-4">
+      <div
+        className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/90 p-4 backdrop-blur-md"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Full-size cross-section view"
+      >
         <div
           ref={frameContainerRef}
-          className="relative shrink-0 overflow-hidden rounded bg-black"
+          className="relative overflow-hidden rounded-lg border border-slate-800 bg-black shadow-2xl"
           onWheel={(e) => {
+            const dy = wheelPixels(e.deltaY, e.deltaMode);
             if (e.ctrlKey || e.metaKey) {
               const rect = e.currentTarget.getBoundingClientRect();
-              performZoom(
-                e.deltaY < 0 ? 1.15 : 1 / 1.15,
-                (e.clientX - rect.left - rect.width / 2) / (rect.width / 2),
-                (e.clientY - rect.top - rect.height / 2) / (rect.height / 2),
-              );
-              return;
+              const u = (e.clientX - rect.left - rect.width / 2) / (rect.width / 2);
+              const v = (e.clientY - rect.top - rect.height / 2) / (rect.height / 2);
+              performZoom(dy > 0 ? 0.9 : 1.1, u, v);
+            } else {
+              processWheelInput(dy);
             }
-            processWheelInput(wheelPixels(e.deltaY, e.deltaMode));
           }}
           onPointerDown={(e) => {
+            if (e.button !== 0) return;
+            const rect = e.currentTarget.getBoundingClientRect();
+            const offsetX = e.clientX - rect.left;
+            const offsetY = e.clientY - rect.top;
+
             if (isMeasuringMode) {
-              const rect = e.currentTarget.getBoundingClientRect();
-              const pt = pointInSection(
-                getCurrentWindow(),
-                e.clientX - rect.left,
-                e.clientY - rect.top,
-                rect.width,
-                AXIAL_PROBE.basis,
-              );
-              const newLine: SectionMeasure = {
-                ah: pt.h,
-                av: pt.v,
-                bh: pt.h,
-                bv: pt.v,
-                at: AXIAL_PROBE.at,
-                plane: AXIAL_PROBE.plane,
-              };
-              currentDraftRef.current = newLine;
-              setActiveDraftMeasure(newLine);
+              startMeasure(getCurrentWindow(), offsetX, offsetY, rect.width);
               e.currentTarget.setPointerCapture(e.pointerId);
               return;
             }
@@ -308,59 +165,31 @@ export function AxialView() {
             e.currentTarget.setPointerCapture(e.pointerId);
           }}
           onPointerMove={(e) => {
+            const rect = e.currentTarget.getBoundingClientRect();
+            const offsetX = e.clientX - rect.left;
+            const offsetY = e.clientY - rect.top;
+
             if (currentDraftRef.current) {
-              const rect = e.currentTarget.getBoundingClientRect();
-              const pt = pointInSection(
-                getCurrentWindow(),
-                e.clientX - rect.left,
-                e.clientY - rect.top,
-                rect.width,
-                AXIAL_PROBE.basis,
-              );
-              const updatedLine: SectionMeasure = {
-                ...currentDraftRef.current,
-                bh: pt.h,
-                bv: pt.v,
-              };
-              currentDraftRef.current = updatedLine;
-              setActiveDraftMeasure(updatedLine);
+              updateDraftMeasure(getCurrentWindow(), offsetX, offsetY, rect.width);
               return;
             }
 
             const prev = lastDragPos.current;
             if (prev) {
               lastDragPos.current = { x: e.clientX, y: e.clientY };
-              if (computedFrameWidth > 0) {
-                applyWindowChange(
-                  panWindow(
-                    getCurrentWindow(),
-                    AXIAL_PROBE.base,
-                    e.clientX - prev.x,
-                    e.clientY - prev.y,
-                    computedFrameWidth,
-                    AXIAL_PROBE.basis,
-                  ),
-                );
-              }
+              panCanvas(e.clientX - prev.x, e.clientY - prev.y, computedFrameWidth);
               return;
             }
 
-            updateTorchPosition(e.currentTarget.getBoundingClientRect(), e.clientX, e.clientY);
+            updateTorchPosition(rect, e.clientX, e.clientY);
           }}
           onPointerUp={() => {
             lastDragPos.current = null;
-            const finalized = currentDraftRef.current;
-            if (!finalized) return;
-            currentDraftRef.current = null;
-            setActiveDraftMeasure(null);
-            if (finalized.ah !== finalized.bh || finalized.av !== finalized.bv) {
-              setRecordedMeasures((prev) => [...prev, finalized]);
-            }
+            finishDraftMeasure();
           }}
           onPointerCancel={() => {
             lastDragPos.current = null;
-            currentDraftRef.current = null;
-            setActiveDraftMeasure(null);
+            cancelDraftMeasure();
           }}
           style={{
             width: SECTION_WINDOW,
@@ -394,9 +223,7 @@ export function AxialView() {
             activeDraftMeasure={activeDraftMeasure}
             computedFrameWidth={computedFrameWidth}
             currentWindow={getCurrentWindow()}
-            onRemoveMeasure={(target) =>
-              setRecordedMeasures((prev) => prev.filter((m) => m !== target))
-            }
+            onRemoveMeasure={removeMeasure}
           />
         </div>
 
@@ -419,14 +246,10 @@ export function AxialView() {
           }}
           onClose={() => setIsFullScreen(false)}
           isMeasuringMode={isMeasuringMode}
-          onToggleMeasuring={() => setIsMeasuringMode((v) => !v)}
+          onToggleMeasuring={toggleMeasuringMode}
           activeDraftMeasure={activeDraftMeasure}
           activeMeasures={activeMeasures}
-          onClearLevelMeasures={() =>
-            setRecordedMeasures((prev) =>
-              prev.filter((m) => !onLevel(m, AXIAL_PROBE.at, AXIAL_PROBE.plane)),
-            )
-          }
+          onClearLevelMeasures={clearCurrentLevelMeasures}
           isSavingImage={isSavingImage}
           saveStatusMessage={saveStatusMessage}
           onClearSaveStatus={() => setSaveStatusMessage(null)}
@@ -437,6 +260,7 @@ export function AxialView() {
     );
   }
 
+  // Compact Dock Widget
   return (
     <div className="pointer-events-none select-none rounded border border-cyan-900/60 bg-slate-950/85 p-1.5 shadow-lg">
       <p className="mb-1 text-[9px] uppercase tracking-wider text-cyan-500/70">

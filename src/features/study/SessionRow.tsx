@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import { getStudySession, type SessionSummary } from "@/lib/studyDb";
 import { useCaseStore } from "@/stores/caseStore";
 import { useChatStore } from "@/stores/chatStore";
@@ -7,131 +7,139 @@ import { usePrintStore } from "@/stores/printStore";
 import { organLabel, useSceneStore } from "@/stores/sceneStore";
 import { useStudyStore } from "@/stores/studyStore";
 import { buildSessionDocument } from "./printDocument";
-import { determineScoreColor } from "./studyUtils";
 import { whenLabel } from "./whenLabel";
 
-export function SessionRow({ session }: { session: SessionSummary }) {
-  const loadStoredSession = useChatStore((state) => state.loadSession);
-  const currentActiveSessionId = useChatStore((state) => state.sessionId);
-  const selectStructures = useSceneStore((state) => state.selectMany);
-  const dropSession = useStudyStore((state) => state.removeSession);
-  const openPrintModal = usePrintStore((state) => state.show);
-  const casesCollection = useCaseStore((state) => state.cases);
-  const [isRowBusy, setIsRowBusy] = useState(false);
+interface SessionRowProps {
+  session: SessionSummary;
+}
 
-  const isCurrentActive = session.id === currentActiveSessionId;
-  const linkedPatient = session.case_id
-    ? casesCollection.find((item) => item.id === session.case_id)
-    : undefined;
+/**
+ * Historical study session entry row.
+ * Displays dialogue turn count, clinical scores, and actions to resume, print, or delete.
+ */
+export function SessionRow({ session }: SessionRowProps) {
+  const currentSessionId = useChatStore((s) => s.sessionId);
+  const restoreSession = useChatStore((s) => s.loadSession);
 
-  async function handleReopenSession() {
-    setIsRowBusy(true);
+  const selectOrgansInScene = useSceneStore((s) => s.selectMany);
+  const deleteSessionFromDb = useStudyStore((s) => s.removeSession);
+  const triggerPrintModal = usePrintStore((s) => s.show);
+
+  const casesList = useCaseStore((s) => s.cases);
+  const [isProcessing, setIsProcessing] = useState(false);
+
+  const isActive = session.id === currentSessionId;
+  const patientCase = session.case_id
+    ? casesList.find((c) => c.id === session.case_id)
+    : null;
+
+  const handleResume = useCallback(async () => {
+    setIsProcessing(true);
     try {
-      const detailedSession = await getStudySession(session.id);
-      if (detailedSession) {
-        loadStoredSession(detailedSession);
-        selectStructures(detailedSession.structures);
+      const detail = await getStudySession(session.id);
+      if (detail) {
+        restoreSession(detail);
+        selectOrgansInScene(detail.structures);
       }
     } catch {
-      useStudyStore.setState({ error: "Could not reopen that session." });
+      useStudyStore.setState({ error: "خطا در بارگذاری مجدد جلسه مطالعه." });
     } finally {
-      setIsRowBusy(false);
+      setIsProcessing(false);
     }
-  }
+  }, [session.id, restoreSession, selectOrgansInScene]);
 
-  async function confirmAndDeleteSession() {
-    const isApproved = await askToConfirm({
-      title: "Delete this session?",
-      subject: session.title,
-      body:
-        `The whole conversation goes — ${session.message_count} messages — along with ` +
-        "the record of which structures it covered. Any notes you filed during it stay " +
-        "in your journal. It cannot be brought back.",
-      confirmLabel: "Delete session",
-    });
-    if (isApproved) {
-      await dropSession(session.id);
-    }
-  }
-
-  async function handlePrintSession() {
-    setIsRowBusy(true);
+  const handlePrint = useCallback(async () => {
+    setIsProcessing(true);
     try {
-      const sessionData = await getStudySession(session.id);
-      if (!sessionData) {
-        useStudyStore.setState({ error: "That session is no longer in the journal." });
-        return;
-      }
-      const sceneOrgans = useSceneStore.getState().organs;
-      openPrintModal(
-        buildSessionDocument(sessionData, (organId) => {
-          const item = sceneOrgans[organId];
-          return item ? organLabel(item) : null;
-        }),
+      const detail = await getStudySession(session.id);
+      if (!detail) return;
+
+      const organs = useSceneStore.getState().organs;
+      const documentData = buildSessionDocument(
+        detail,
+        (id: string) => (organs[id] ? organLabel(organs[id]) : id),
       );
-    } catch {
-      useStudyStore.setState({ error: "Could not prepare that session for printing." });
+      triggerPrintModal(documentData);
     } finally {
-      setIsRowBusy(false);
+      setIsProcessing(false);
     }
-  }
+  }, [session.id, patientCase, triggerPrintModal]);
+
+  const handleDelete = useCallback(async () => {
+    const isConfirmed = await askToConfirm({
+      title: "حذف جلسه مطالعه",
+      subject: session.title,
+      body: `این گفتگو (${session.message_count} پیام) و ساختارهای ثبت‌شده در آن برای همیشه حذف خواهند شد. آیا ادامه می‌دهید؟`,
+      confirmLabel: "حذف جلسه",
+    });
+
+    if (isConfirmed) {
+      await deleteSessionFromDb(session.id);
+    }
+  }, [session.id, session.title, session.message_count, deleteSessionFromDb]);
 
   return (
     <div
-      className={`group flex items-start gap-2 rounded border px-2 py-1.5 ${
-        isCurrentActive
-          ? "border-sky-700/60 bg-sky-600/10"
-          : "border-slate-800 hover:border-slate-700"
+      className={`rounded-lg border p-2.5 text-xs transition-colors ${
+        isActive
+          ? "border-emerald-500/50 bg-emerald-950/20"
+          : "border-slate-800/80 bg-slate-900/40 hover:border-slate-700/70"
       }`}
     >
-      <button
-        type="button"
-        onClick={() => void handleReopenSession()}
-        disabled={isRowBusy || isCurrentActive}
-        className="min-w-0 flex-1 text-left"
-      >
-        <p className="truncate text-[12px] text-slate-300">{session.title}</p>
-        <p className="mt-0.5 flex items-center gap-1.5 text-[9px] text-slate-600">
-          {linkedPatient ? (
-            <span className="truncate rounded-full bg-sky-600/15 px-1 text-sky-300">
-              {linkedPatient.title}
-              {session.visit_no !== null && ` · visit ${session.visit_no}`}
-            </span>
-          ) : (
-            session.kind === "case" && (
-              <span className="rounded-full bg-amber-500/15 px-1 text-amber-300">case</span>
-            )
-          )}
-          <span>{whenLabel(session.updated_at)}</span>
-          <span>· {session.message_count} messages</span>
-          {session.structure_count > 0 && <span>· {session.structure_count} structures</span>}
-        </p>
-        {session.score !== null && (
-          <p
-            title={session.verdict ?? undefined}
-            className={`mt-1 truncate text-[10px] font-semibold ${determineScoreColor(session.score)}`}
+      <div className="flex items-start justify-between gap-2">
+        <div>
+          <button
+            type="button"
+            disabled={isProcessing}
+            onClick={handleResume}
+            className="font-medium text-slate-200 hover:text-sky-300 transition-colors text-right"
           >
-            {session.score}/100 — {session.verdict}
-          </p>
+            {session.title || "جلسه مطالعه بدون عنوان"}
+          </button>
+          <div className="mt-1 flex items-center gap-2 text-[10px] text-slate-400">
+            <span>{session.message_count} پیام</span>
+            <span>•</span>
+            <span>{whenLabel(session.updated_at)}</span>
+            {patientCase && (
+              <>
+                <span>•</span>
+                <span className="text-sky-400/90">{patientCase.title}</span>
+              </>
+            )}
+          </div>
+        </div>
+
+        {session.score !== null && (
+          <div
+            className={`rounded px-1.5 py-0.5 text-[10px] font-semibold ${
+              session.score >= 80
+                ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
+                : session.score >= 50
+                  ? "bg-amber-500/10 text-amber-400 border border-amber-500/20"
+                  : "bg-rose-500/10 text-rose-400 border border-rose-500/20"
+            }`}
+          >
+            نمره: {session.score}٪
+          </div>
         )}
-      </button>
-      <div className="flex shrink-0 flex-col items-end gap-1">
+      </div>
+
+      <div className="mt-2.5 flex items-center justify-between border-t border-slate-800/50 pt-2 text-[10px] text-slate-500">
         <button
           type="button"
-          onClick={() => void confirmAndDeleteSession()}
-          title="Delete this session"
-          className="text-[10px] text-slate-700 opacity-0 transition hover:text-rose-400 group-hover:opacity-100"
+          disabled={isProcessing}
+          onClick={handlePrint}
+          className="hover:text-slate-300 disabled:opacity-40 transition-colors"
         >
-          ✕
+          چاپ و خروجی
         </button>
+
         <button
           type="button"
-          onClick={() => void handlePrintSession()}
-          disabled={isRowBusy}
-          title="Print this session, or save it as a PDF"
-          className="text-[10px] text-slate-700 opacity-0 transition hover:text-sky-300 disabled:opacity-30 group-hover:opacity-100"
+          onClick={handleDelete}
+          className="text-rose-400/80 hover:text-rose-300 transition-colors"
         >
-          ⎙
+          حذف
         </button>
       </div>
     </div>

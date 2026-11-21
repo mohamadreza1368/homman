@@ -1,15 +1,18 @@
 import { memo, useCallback, useEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
+import type { ThreeEvent } from "@react-three/fiber";
 
+import type { ManifestOrgan } from "@/lib/schemas";
 import { GHOST_CLICK_THROUGH, type PathologyOverlay } from "@/stores/sceneStore";
-import { reportClick } from "./depthStack";
+import { useHeartStore } from "@/stores/heartStore";
+
 import { pressTravelled } from "./dragGuard";
+import { reportClick } from "./depthStack";
 import { shouldSuppressClick } from "./areaSelect";
 import { coverageColour } from "./coverage";
 import { registerCarry } from "./breathCarry";
 import { BREATH_ROLE, breathData, breathOnBeforeCompile } from "./breathing";
-import { scanColour, type BodyTone } from "./scan";
-import { FACING, scanBandMaterialProps, scanRangeAlong, STANDING } from "./scanBand";
+import { type BodyTone } from "./scan";
 import {
   beatChamber,
   heartbeatOnBeforeCompile,
@@ -18,9 +21,6 @@ import {
   registerBeating,
 } from "./heartbeat";
 import { flowMaterial, isFlowSeed, registerFlowing, vesselFlow } from "./bloodFlow";
-import { useHeartStore } from "@/stores/heartStore";
-import { probeGlow, reportDepthStack, stackFromCrossings } from "./depthStack";
-import type { ManifestOrgan } from "@/lib/schemas";
 import {
   tissueColour,
   tissueDepthBias,
@@ -29,37 +29,7 @@ import {
   tissueRoughness,
 } from "./palette";
 
-/**
- * HOOMAAN Anatomical Organ Mesh Component.
- * High-performance memoized mesh node rendering individual anatomical structures.
- * Integrates dynamic tissue palettes, respiratory and cardiac shader compilation,
- * vessel haemodynamic illumination, occlusion silhouettes, and raycasted probe hits.
- */
-
-const AMBER = new THREE.Color("#e8a33d");
-const CRIMSON = new THREE.Color("#c62828");
-const SELECTED = new THREE.Color("#00a8e8");
-const PROBE_LIGHT = new THREE.Color("#ffe8c4");
-const LIT_LIGHT = new THREE.Color("#35e07a");
-
-const LIT_FLOOR = 0.22;
-const LIT_RANGE = 0.75;
-const OCCLUDED_FLOOR = 0.16;
-const OCCLUDED_RANGE = 0.34;
-const LIT_MIN_OPACITY = 0.92;
-const SELECTED_MIN_OPACITY = 0.55;
-
-const NO_RAYCAST = () => null;
-const DEFAULT_RAYCAST = THREE.Mesh.prototype.raycast;
-
-function pathologyColour(tissue: THREE.Color, severity: number): THREE.Color {
-  const clamped = Math.min(Math.max(severity, 0), 1);
-  return clamped <= 0.5
-    ? tissue.clone().lerp(AMBER, clamped * 2)
-    : AMBER.clone().lerp(CRIMSON, (clamped - 0.5) * 2);
-}
-
-interface OrganMeshProps {
+export interface OrganMeshProps {
   organ: ManifestOrgan;
   geometry: THREE.BufferGeometry;
   matrix: THREE.Matrix4;
@@ -84,332 +54,275 @@ interface OrganMeshProps {
   onRegister?: (organId: string, mesh: THREE.Mesh | null, base: THREE.Matrix4) => void;
 }
 
+// Clean-Room Visual Constants
+const ACCENT_SELECT = new THREE.Color("#00a8e8");
+const WARN_PATHOLOGY = new THREE.Color("#e8a33d");
+const CRIT_PATHOLOGY = new THREE.Color("#c62828");
+const GLOW_LIT = new THREE.Color("#35e07a");
+const DEPTH_PROBE = new THREE.Color("#ffe8c4");
+
+/**
+ * Calculates blended surface diffuse color considering base tissue, pathology,
+ * active selection highlights, and spatial study coverage.
+ */
+function resolveSurfaceTint(
+  organ: ManifestOrgan,
+  _tone: BodyTone,
+  selected: boolean,
+  hovered: boolean,
+  overlay: PathologyOverlay | undefined,
+  probeDepth: number | undefined,
+  litGlow: number | undefined,
+  coverageTouches: number | undefined,
+  coverageBusiest: number | undefined,
+): THREE.Color {
+  const base = tissueColour(organ).clone();
+
+  if (overlay) {
+    const sev = Math.min(Math.max(overlay.severity, 0), 1);
+    const pathologyTint =
+      sev <= 0.5
+        ? base.clone().lerp(WARN_PATHOLOGY, sev * 2)
+        : WARN_PATHOLOGY.clone().lerp(CRIT_PATHOLOGY, (sev - 0.5) * 2);
+    base.copy(pathologyTint);
+  }
+
+  if (coverageTouches !== undefined && coverageBusiest !== undefined && coverageBusiest > 0) {
+    const heatColor = coverageColour(coverageTouches, coverageBusiest);
+    base.lerp(heatColor, 0.65);
+  }
+
+  if (selected) {
+    base.lerp(ACCENT_SELECT, 0.7);
+  } else if (hovered) {
+    base.offsetHSL(0, 0.05, 0.15);
+  }
+
+  if (litGlow !== undefined && litGlow > 0) {
+    base.lerp(GLOW_LIT, Math.min(litGlow, 1) * 0.8);
+  } else if (probeDepth !== undefined) {
+    base.lerp(DEPTH_PROBE, Math.max(0.2, 1 - probeDepth * 0.15));
+  }
+
+  return base;
+}
+
 export const OrganMesh = memo(function OrganMesh({
   organ,
   geometry,
   matrix,
   visible,
-  opacity: layerOpacity,
+  opacity,
   hovered,
   selected,
   overlay,
   coverageTouches,
   coverageBusiest,
   probeDepth,
-  litGlow: litGlowProp,
+  litGlow,
   tone,
-  scanBandEnabled = false,
   worldBox,
   clippingPlanes,
   onHover,
   onSelect,
   onStudy,
-  onProbe,
   onContextMenu,
   onRegister,
 }: OrganMeshProps) {
-  const meshRef = useRef<THREE.Mesh | null>(null);
-  const registerCallback = useCallback(
-    (mesh: THREE.Mesh | null) => {
-      meshRef.current = mesh;
-      onRegister?.(organ.organ_id, mesh, matrix);
-    },
-    [onRegister, organ.organ_id, matrix],
-  );
+  const meshRef = useRef<THREE.Mesh>(null);
 
-  const userData = useMemo(() => ({ organId: organ.organ_id }), [organ.organ_id]);
-  const litGlow = litGlowProp ?? 0;
-
-  const opacity = Math.max(
-    layerOpacity * tissueOpacity(organ),
-    litGlow > 0 ? LIT_MIN_OPACITY : 0,
-    selected ? SELECTED_MIN_OPACITY : 0,
-  );
-  const clickThrough = opacity < GHOST_CLICK_THROUGH;
-  const ghosted = opacity < 1;
-  const depthBias = tissueDepthBias(organ);
-
-  const materialRef = useRef<THREE.MeshStandardMaterial>(null);
-  const scanMaterialRef = useRef<THREE.MeshStandardMaterial>(null);
-  const beatMaterialRef = useRef<THREE.MeshStandardMaterial>(null);
-
+  // Sync transformation with world matrix
   useEffect(() => {
-    if (materialRef.current) materialRef.current.needsUpdate = true;
-    if (scanMaterialRef.current) scanMaterialRef.current.needsUpdate = true;
-    if (beatMaterialRef.current) beatMaterialRef.current.needsUpdate = true;
-  }, [ghosted]);
+    const mesh = meshRef.current;
+    if (!mesh) return;
+    mesh.matrix.copy(matrix);
+    mesh.matrixAutoUpdate = false;
+    mesh.matrixWorldNeedsUpdate = true;
+    onRegister?.(organ.organ_id, mesh, matrix);
 
+    return () => {
+      onRegister?.(organ.organ_id, null, matrix);
+    };
+  }, [organ.organ_id, matrix, onRegister]);
+
+  // Cardiac chamber bindings
   const chamber = useMemo(() => beatChamber(organ), [organ]);
+  const isHeartBeating = useHeartStore((s) => chamber !== null && s.enabled);
+
+  // Respiratory deformations
   const breath = useMemo(
     () => breathData(organ, worldBox, chamber !== null),
     [organ, worldBox, chamber],
   );
 
-  const carryPart = useMemo(() => {
+  const respiratoryPart = useMemo(() => {
     if (breath.breathRole === BREATH_ROLE.viscera) return "carrier" as const;
     if (breath.breathRole === BREATH_ROLE.heart) return "heart" as const;
     if (breath.breathRole !== BREATH_ROLE.vessel) return null;
-    const lowerName = organ.name_en.toLowerCase();
-    if (lowerName.includes("aorta")) return "anchor" as const;
-    return lowerName.includes("vena cava") ? ("vena cava" as const) : ("vessel" as const);
-  }, [breath, organ.name_en]);
+    const name = organ.name_en.toLowerCase();
+    if (name.includes("aorta")) return "anchor" as const;
+    return name.includes("vena cava") ? ("vena cava" as const) : ("vessel" as const);
+  }, [breath.breathRole, organ.name_en]);
 
   useEffect(() => {
-    const meshNode = meshRef.current;
-    if (!meshNode || carryPart === null) return;
-    return registerCarry(organ.organ_id, { mesh: meshNode, part: carryPart });
-  }, [carryPart, organ.organ_id]);
+    const node = meshRef.current;
+    if (!node || respiratoryPart === null) return;
+    return registerCarry(organ.organ_id, { mesh: node, part: respiratoryPart });
+  }, [organ.organ_id, respiratoryPart]);
 
-  const isBeatingActive = useHeartStore((s) => chamber !== null && s.enabled);
-  const beatUserData = useMemo(() => {
-    if (chamber === null) return null;
+  // Cardiac heartbeat registration
+  useEffect(() => {
+    const node = meshRef.current;
+    if (!isHeartBeating || !node || chamber === null) return;
+
     if (!geometry.boundingBox) geometry.computeBoundingBox();
-    const ctr = geometry.boundingBox?.getCenter(new THREE.Vector3()) ?? new THREE.Vector3();
-    return {
-      ...breath,
-      organId: organ.organ_id,
-      beatAtrium: isAtrium(chamber) ? 1 : 0,
-      beatLeft: chamber.startsWith("left") ? 1 : 0,
-      beatCentre: { value: ctr },
-    };
-  }, [chamber, geometry, organ.organ_id, breath]);
+    const center = geometry.boundingBox?.getCenter(new THREE.Vector3()) ?? new THREE.Vector3();
 
-  useEffect(() => {
-    const meshNode = meshRef.current;
-    if (!isBeatingActive || !meshNode || chamber === null || !beatUserData) return;
     return registerBeating(organ.organ_id, {
-      mesh: meshNode,
+      mesh: node,
       chamber,
       wall: isChamberWall(organ),
-      centre: beatUserData.beatCentre,
+      centre: { value: center },
     });
-  }, [isBeatingActive, chamber, beatUserData, organ]);
+  }, [chamber, geometry, isHeartBeating, organ]);
 
+  // Blood flow registration
   const flowKind = useMemo(() => vesselFlow(organ), [organ]);
-  const isFlowEnabled = useHeartStore((s) => flowKind !== null && s.enabled);
-  const isFlowing = isFlowEnabled && visible && layerOpacity < 1;
-  const flowMat = isFlowing && flowKind ? flowMaterial(flowKind) : null;
+  const isFlowSeedOrgan = useMemo(
+    () => (flowKind ? isFlowSeed(flowKind, organ) : false),
+    [flowKind, organ],
+  );
 
   useEffect(() => {
-    if (flowMat) flowMat.clippingPlanes = clippingPlanes;
-  }, [flowMat, clippingPlanes]);
-
-  useEffect(() => {
-    const meshNode = meshRef.current;
-    if (!isFlowing || !meshNode || flowKind === null) return;
+    const node = meshRef.current;
+    if (!node || !flowKind) return;
     return registerFlowing(organ.organ_id, {
-      mesh: meshNode,
+      mesh: node,
       kind: flowKind,
-      seed: isFlowSeed(flowKind, organ),
+      seed: isFlowSeedOrgan,
     });
-  }, [isFlowing, flowKind, organ]);
+  }, [organ.organ_id, flowKind, isFlowSeedOrgan]);
 
-  const { color, emissive, emissiveIntensity } = useMemo(() => {
-    const baseTissue =
-      coverageTouches !== undefined && coverageBusiest !== undefined
-        ? coverageColour(coverageTouches, coverageBusiest)
-        : scanColour(tissueColour(organ), tone);
-    const resolvedBase = overlay ? pathologyColour(baseTissue, overlay.severity) : baseTissue;
+  // Dynamic mesh standard material
+  const material = useMemo(() => {
+    const isGhost = opacity < GHOST_CLICK_THROUGH;
+    const finalAlpha = Math.max(0, Math.min(1, opacity * tissueOpacity(organ)));
 
-    if (overlay) {
-      return {
-        color: resolvedBase,
-        emissive: resolvedBase,
-        emissiveIntensity: 0.15 + overlay.severity * 0.35,
+    const mat = flowKind
+      ? flowMaterial(flowKind)
+      : new THREE.MeshStandardMaterial({
+          roughness: tissueRoughness(organ.system),
+          metalness: tissueMetalness(organ.system),
+          transparent: finalAlpha < 0.999,
+          opacity: finalAlpha,
+          depthWrite: !isGhost,
+          clippingPlanes: clippingPlanes.length > 0 ? clippingPlanes : null,
+          clipShadows: true,
+        });
+
+    if (tissueDepthBias(organ) !== 0) {
+      mat.polygonOffset = true;
+      mat.polygonOffsetFactor = tissueDepthBias(organ);
+      mat.polygonOffsetUnits = tissueDepthBias(organ);
+    }
+
+    if (chamber !== null) {
+      mat.userData = {
+        ...breath,
+        organId: organ.organ_id,
+        beatAtrium: isAtrium(chamber) ? 1 : 0,
+        beatLeft: chamber.startsWith("left") ? 1 : 0,
+        beatCentre: { value: new THREE.Vector3() },
       };
+      mat.onBeforeCompile = heartbeatOnBeforeCompile;
+    } else if (breath.breathRole !== BREATH_ROLE.none) {
+      mat.userData = { ...breath };
+      mat.onBeforeCompile = breathOnBeforeCompile;
     }
-    if (litGlow > 0) {
-      return {
-        color: resolvedBase.clone().lerp(LIT_LIGHT, 0.45),
-        emissive: LIT_LIGHT,
-        emissiveIntensity: LIT_FLOOR + litGlow * LIT_RANGE,
-      };
-    }
-    if (selected) {
-      return {
-        color: resolvedBase.clone().lerp(SELECTED, 0.5),
-        emissive: SELECTED,
-        emissiveIntensity: 0.14,
-      };
-    }
-    if (hovered) {
-      return {
-        color: resolvedBase.clone().lerp(SELECTED, 0.24),
-        emissive: SELECTED,
-        emissiveIntensity: 0.07,
-      };
-    }
-    if (probeDepth !== undefined) {
-      const g = probeGlow(probeDepth);
-      if (g > 0) {
-        return {
-          color: resolvedBase,
-          emissive: PROBE_LIGHT,
-          emissiveIntensity: 0.08 + g * 0.5,
-        };
-      }
-    }
-    return { color: resolvedBase, emissive: baseTissue, emissiveIntensity: 0 };
+
+    return mat;
+  }, [organ, opacity, clippingPlanes, chamber, breath, flowKind]);
+
+  // Color updates
+  useEffect(() => {
+    if (!material) return;
+    const color = resolveSurfaceTint(
+      organ,
+      tone,
+      selected,
+      hovered,
+      overlay,
+      probeDepth,
+      litGlow,
+      coverageTouches,
+      coverageBusiest,
+    );
+    material.color.copy(color);
   }, [
+    material,
     organ,
-    hovered,
+    tone,
     selected,
+    hovered,
     overlay,
-    coverageTouches,
-    coverageBusiest,
     probeDepth,
     litGlow,
-    tone,
+    coverageTouches,
+    coverageBusiest,
   ]);
 
-  const scanSpan = useMemo((): readonly [number, number] | undefined => {
-    if (!scanBandEnabled || !worldBox) return undefined;
-    const { from, to } = scanRangeAlong(
-      [worldBox.min.x, worldBox.min.y, worldBox.min.z],
-      [worldBox.max.x, worldBox.max.y, worldBox.max.z],
-      STANDING,
-    );
-    return [from, to];
-  }, [scanBandEnabled, worldBox]);
+  // Interaction handlers
+  const handleClick = useCallback(
+    (e: ThreeEvent<MouseEvent>) => {
+      e.stopPropagation();
+      if (pressTravelled() || shouldSuppressClick()) return;
 
-  const scanSpanFront = useMemo((): readonly [number, number] | undefined => {
-    if (!scanBandEnabled || !worldBox) return undefined;
-    const { from, to } = scanRangeAlong(
-      [worldBox.min.x, worldBox.min.y, worldBox.min.z],
-      [worldBox.max.x, worldBox.max.y, worldBox.max.z],
-      FACING,
-    );
-    return [from, to];
-  }, [scanBandEnabled, worldBox]);
+      reportClick();
 
-  const revealColour = useMemo((): readonly [number, number, number] | undefined => {
-    if (!scanBandEnabled) return undefined;
-    const baseColor =
-      coverageTouches !== undefined && coverageBusiest !== undefined
-        ? coverageColour(coverageTouches, coverageBusiest)
-        : tissueColour(organ);
-    const visibleCol = overlay ? pathologyColour(baseColor, overlay.severity) : baseColor;
-    return [visibleCol.r, visibleCol.g, visibleCol.b];
-  }, [scanBandEnabled, organ, overlay, coverageTouches, coverageBusiest]);
+      if (e.nativeEvent.altKey) {
+        onStudy(organ.organ_id, e.nativeEvent.shiftKey);
+      } else {
+        onSelect(organ.organ_id, e.nativeEvent.shiftKey);
+      }
+    },
+    [organ.organ_id, onSelect, onStudy],
+  );
 
-  const scanProps = useMemo(() => {
-    if (!scanBandEnabled) return null;
-    const props = scanBandMaterialProps(true, scanSpan, revealColour, scanSpanFront);
-    const own = (props as { userData?: object }).userData;
-    return { ...props, userData: { ...own, ...breath } };
-  }, [scanBandEnabled, scanSpan, revealColour, scanSpanFront, breath]);
+  const handlePointerOver = useCallback(
+    (e: ThreeEvent<PointerEvent>) => {
+      e.stopPropagation();
+      onHover(organ.organ_id);
+    },
+    [organ.organ_id, onHover],
+  );
 
-  const surfaceProps = {
-    color,
-    emissive,
-    emissiveIntensity,
-    roughness: tissueRoughness(organ.system),
-    metalness: tissueMetalness(organ.system),
-    transparent: ghosted,
-    opacity,
-    depthWrite: !ghosted,
-    polygonOffset: depthBias !== 0,
-    polygonOffsetFactor: depthBias,
-    polygonOffsetUnits: depthBias,
-    clippingPlanes,
-    side: clippingPlanes.length > 0 ? THREE.DoubleSide : THREE.FrontSide,
-  };
+  const handlePointerOut = useCallback(
+    (e: ThreeEvent<PointerEvent>) => {
+      e.stopPropagation();
+      onHover(null);
+    },
+    [onHover],
+  );
+
+  const handleContextMenu = useCallback(
+    (e: ThreeEvent<MouseEvent>) => {
+      e.stopPropagation();
+      onContextMenu(organ.organ_id, e.clientX, e.clientY);
+    },
+    [organ.organ_id, onContextMenu],
+  );
+
+  if (!visible) return null;
 
   return (
     <mesh
-      ref={registerCallback}
+      ref={meshRef}
       geometry={geometry}
-      matrix={matrix}
-      matrixAutoUpdate={false}
-      visible={visible}
-      userData={userData}
-      raycast={visible ? DEFAULT_RAYCAST : NO_RAYCAST}
-      onPointerMove={(e) => {
-        e.stopPropagation();
-        reportDepthStack();
-        onProbe(stackFromCrossings(e.intersections));
-      }}
-      onPointerOver={(e) => {
-        if (clickThrough) return;
-        e.stopPropagation();
-        onHover(organ.organ_id);
-      }}
-      onPointerOut={(e) => {
-        if (clickThrough) return;
-        e.stopPropagation();
-        onHover(null);
-      }}
-      onClick={(e) => {
-        if (clickThrough) return;
-        e.stopPropagation();
-        if (shouldSuppressClick()) return;
-        if (pressTravelled()) return;
-        reportClick();
-        onSelect(organ.organ_id, e.ctrlKey || e.metaKey);
-      }}
-      onContextMenu={(e) => {
-        e.stopPropagation();
-        onContextMenu(organ.organ_id, e.clientX, e.clientY);
-      }}
-      onDoubleClick={(e) => {
-        e.stopPropagation();
-        const isAdditive = e.shiftKey || e.ctrlKey || e.metaKey;
-        onStudy(organ.organ_id, isAdditive);
-      }}
-    >
-      <meshStandardMaterial
-        ref={materialRef}
-        {...surfaceProps}
-        onBeforeCompile={breathOnBeforeCompile}
-        userData={breath}
-      />
-
-      {scanBandEnabled && (
-        <meshStandardMaterial
-          ref={scanMaterialRef}
-          {...surfaceProps}
-          {...scanProps}
-        />
-      )}
-
-      {isBeatingActive && beatUserData && (
-        <meshStandardMaterial
-          key={scanBandEnabled ? "beat-over-scan" : "beat"}
-          ref={beatMaterialRef}
-          {...surfaceProps}
-          onBeforeCompile={heartbeatOnBeforeCompile}
-          userData={beatUserData}
-        />
-      )}
-
-      {flowMat && (
-        <mesh
-          geometry={geometry}
-          material={flowMat}
-          raycast={NO_RAYCAST}
-          renderOrder={3}
-        />
-      )}
-
-      {litGlow > 0 && (
-        <mesh
-          geometry={geometry}
-          raycast={NO_RAYCAST}
-          renderOrder={4}
-        >
-          <meshBasicMaterial
-            onBeforeCompile={breathOnBeforeCompile}
-            userData={breath}
-            color={LIT_LIGHT}
-            transparent
-            opacity={OCCLUDED_FLOOR + litGlow * OCCLUDED_RANGE}
-            depthFunc={THREE.GreaterDepth}
-            depthWrite={false}
-            toneMapped={false}
-            clippingPlanes={clippingPlanes}
-          />
-        </mesh>
-      )}
-    </mesh>
+      material={material}
+      onClick={handleClick}
+      onPointerOver={handlePointerOver}
+      onPointerOut={handlePointerOut}
+      onContextMenu={handleContextMenu}
+    />
   );
 });

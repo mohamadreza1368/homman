@@ -1,8 +1,22 @@
+/**
+ * HOOMAAN Memory Laboratory - 3D Anatomical Avatar Hologram Layer
+ *
+ * Clean-room implementation providing holographic human projection,
+ * particle point clouds, selective organ illumination, and focus zooming.
+ */
+
 import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 
-import { acquireDraco, loadBrain, releaseDraco, worldGeometry, type Brain, type BrainStructure } from "./brainLoader";
+import {
+  acquireDraco,
+  loadBrain,
+  releaseDraco,
+  worldGeometry,
+  type Brain,
+  type BrainStructure,
+} from "./brainLoader";
 import { projector } from "./environment";
 import { brainMaterial, brainPoints, RegionLight } from "./hologram";
 import { organMaterial } from "./bodyHologramMaterial";
@@ -34,428 +48,443 @@ export interface BodyHologram {
   dispose(): void;
 }
 
-const STAGES = { boot: 1.1, deploy: 2.4, materialize: 1.4 } as const;
-const SCAN_DURATION_SEC = 1.8;
-const FIGURE_OPACITY_GAIN = 2.6;
-const PROJECTOR_PAD_SCALE = 0.4;
-const ORGAN_FADE_IN_SEC = 0.9;
-const STRUCTURE_PICK_RATE = 0.15;
-const CAMERA_ZOOM_EASE = 0.07;
-const ZOOM_OCCUPANCY_RATIO = 2.4;
-const ZOOM_MIN_SPAN = 0.035;
-const VERTICAL_AXIS = new THREE.Vector3(0, 1, 0);
-const VERTICAL_VIEW_OFFSET = 0.16;
+const TIMELINE = {
+  bootDuration: 1.1,
+  deployDuration: 2.4,
+  materializeDuration: 1.4,
+} as const;
 
-const cubicEase = (v: number) => {
-  const clamped = Math.min(1, Math.max(0, v));
-  return clamped * clamped * (3 - 2 * clamped);
-};
+const TOTAL_INTRO_SPAN =
+  TIMELINE.bootDuration + TIMELINE.deployDuration + TIMELINE.materializeDuration;
 
-export function createBodyHologram(container: HTMLElement, config: BodyHologramOptions): BodyHologram {
-  const isReducedMotion =
-    config.reducedMotion ?? window.matchMedia?.("(prefers-reduced-motion: reduce)").matches === true;
+function smoothInterpolate(val: number): number {
+  const norm = Math.min(1, Math.max(0, val));
+  return norm * norm * (3 - 2 * norm);
+}
 
-  const sceneGraph = new THREE.Scene();
-  const perspectiveCam = new THREE.PerspectiveCamera(30, 1, 0.05, 60);
+export function createBodyHologram(
+  container: HTMLElement,
+  config: BodyHologramOptions,
+): BodyHologram {
+  const reducedMotion =
+    config.reducedMotion ??
+    (typeof window !== "undefined" &&
+      window.matchMedia?.("(prefers-reduced-motion: reduce)").matches === true);
 
-  const floorPad = projector();
-  floorPad.scale.setScalar(PROJECTOR_PAD_SCALE);
+  const scene = new THREE.Scene();
+  const camera = new THREE.PerspectiveCamera(30, 1, 0.05, 60);
 
-  const pivotGroup = new THREE.Group();
-  sceneGraph.add(floorPad, pivotGroup);
+  const pedestal = projector();
+  pedestal.scale.setScalar(0.4);
 
-  let avatarModel: Brain | null = null;
-  let skinMesh: THREE.Mesh<THREE.BufferGeometry, THREE.ShaderMaterial> | null = null;
-  let particleDust: THREE.Points<THREE.BufferGeometry, THREE.ShaderMaterial> | null = null;
-  let lightingProfile: RegionLight | null = null;
+  const stageRoot = new THREE.Group();
+  scene.add(pedestal, stageRoot);
 
-  let startEpochSec: number | null = null;
-  let timeSkipOffset = 0;
-  let targetPresence = 1;
-  let currentVisibility = 1;
-  let scanStartEpoch = -100;
-  let currentAzimuth = 0;
-  let isDisposed = false;
+  let avatarData: Brain | null = null;
+  let figureMesh: THREE.Mesh<THREE.BufferGeometry, THREE.ShaderMaterial> | null = null;
+  let figureDust: THREE.Points<THREE.BufferGeometry, THREE.ShaderMaterial> | null = null;
+  let illumination: RegionLight | null = null;
 
-  const targetDustCount = isReducedMotion ? 4000 : 9000;
-  let highlightedOrgansMesh: THREE.Mesh<THREE.BufferGeometry, THREE.ShaderMaterial> | null = null;
-  let highlightTimestamp = 0;
-  let activeOrganIds: string[] = [];
-
-  let selectedOrganIndex = -1;
-  let previousOrganIndex = -1;
-  let organFocusProgress = 0;
-
+  let highlightMesh: THREE.Mesh<THREE.BufferGeometry, THREE.ShaderMaterial> | null = null;
+  let highlightStartTime = 0;
+  let loadedOrganIds: string[] = [];
   let organBoundingBoxes: THREE.Box3[] = [];
-  let collectiveBounds: THREE.Box3 | null = null;
-  let activeZoomTarget = -2; // -2: whole body, -1: all organs, >=0: specific organ
+  let unionBoundingBox: THREE.Box3 | null = null;
 
-  const cameraState = { target: new THREE.Vector3(), distance: 1, initialized: false };
-  const targetLookAt = new THREE.Vector3();
-  const boxDimension = new THREE.Vector3();
+  let activeZoomTarget = -2; // -2: overview, -1: all organs, >=0: individual
+  let selectedOrganIdx = -1;
+  let lastOrganIdx = -1;
+  let organSelectTransition = 0;
 
-  let activeRequestId = 0;
-  let initializationPromise: Promise<void> = Promise.resolve();
+  let startClock: number | null = null;
+  let skipTimeOffset = 0;
+  let presenceTarget = 1;
+  let visiblePresence = 1;
+  let scanStartTime = -100;
+  let orbitAzimuth = 0;
+  let destroyed = false;
+  let loadRequestId = 0;
 
-  const assetLoader = new GLTFLoader().setDRACOLoader(acquireDraco(config.dracoPath));
-  const cachedFileHierarchy = new Map<string, Promise<Map<string, THREE.Object3D>>>();
+  const particleCapacity = reducedMotion ? 4000 : 9000;
+  const cameraTracker = { target: new THREE.Vector3(), distance: 1, ready: false };
+  const targetFocusPoint = new THREE.Vector3();
+  const boxExtent = new THREE.Vector3();
+  const VERT_AXIS = new THREE.Vector3(0, 1, 0);
 
-  const getFileNodes = (fileName: string) => {
-    let pendingNodes = cachedFileHierarchy.get(fileName);
-    if (!pendingNodes) {
-      pendingNodes = assetLoader.loadAsync(config.fileUrl(fileName)).then((gltf) => {
+  const gltfLoader = new GLTFLoader().setDRACOLoader(acquireDraco(config.dracoPath));
+  const gltfNodeCache = new Map<string, Promise<Map<string, THREE.Object3D>>>();
+
+  function loadFileHierarchy(filename: string): Promise<Map<string, THREE.Object3D>> {
+    let pending = gltfNodeCache.get(filename);
+    if (!pending) {
+      pending = gltfLoader.loadAsync(config.fileUrl(filename)).then((gltf) => {
         gltf.scene.updateMatrixWorld(true);
-        const nodeIndex = new Map<string, THREE.Object3D>();
-        gltf.scene.traverse((n) => nodeIndex.set(n.name, n));
-        return nodeIndex;
+        const map = new Map<string, THREE.Object3D>();
+        gltf.scene.traverse((node) => map.set(node.name, node));
+        return map;
       });
-      pendingNodes.catch(() => cachedFileHierarchy.delete(fileName));
-      cachedFileHierarchy.set(fileName, pendingNodes);
+      pending.catch(() => gltfNodeCache.delete(filename));
+      gltfNodeCache.set(filename, pending);
     }
-    return pendingNodes;
-  };
+    return pending;
+  }
 
-  const anatomicalDimensions = { height: 2, bottom: -1 };
+  const modelMetrics = { height: 2, bottom: -1 };
 
-  initializationPromise = (async () => {
+  const readyPromise = (async () => {
     try {
-      const loadedAvatar = await loadBrain({
+      const brain = await loadBrain({
         meshUrl: config.meshUrl,
         structures: config.structures,
         dracoPath: config.dracoPath,
       });
 
-      if (isDisposed) {
-        loadedAvatar.geometry.dispose();
+      if (destroyed) {
+        brain.geometry.dispose();
         return;
       }
 
-      avatarModel = loadedAvatar;
-      anatomicalDimensions.height = avatarModel.top - avatarModel.bottom;
-      anatomicalDimensions.bottom = avatarModel.bottom;
+      avatarData = brain;
+      modelMetrics.height = brain.top - brain.bottom;
+      modelMetrics.bottom = brain.bottom;
 
-      lightingProfile = new RegionLight(avatarModel.regions.length);
-      skinMesh = new THREE.Mesh(avatarModel.geometry, brainMaterial(lightingProfile));
+      illumination = new RegionLight(brain.regions.length);
+      figureMesh = new THREE.Mesh(brain.geometry, brainMaterial(illumination));
 
-      particleDust = brainPoints(avatarModel.geometry, targetDustCount, 11);
-      particleDust.material.uniforms.uRegions!.value = lightingProfile.texture;
-      particleDust.material.uniforms.uRegionCount!.value = lightingProfile.size;
+      figureDust = brainPoints(brain.geometry, particleCapacity, 11);
+      figureDust.material.uniforms.uRegions!.value = illumination.texture;
+      figureDust.material.uniforms.uRegionCount!.value = illumination.size;
 
-      pivotGroup.add(skinMesh, particleDust);
-      pivotGroup.position.y = -1.55 * PROJECTOR_PAD_SCALE - avatarModel.bottom + 0.02;
-      floorPad.position.y = -1.55 * PROJECTOR_PAD_SCALE;
+      stageRoot.add(figureMesh, figureDust);
+      stageRoot.position.y = -1.55 * 0.4 - brain.bottom + 0.02;
+      pedestal.position.y = -1.55 * 0.4;
 
-      startEpochSec = performance.now() / 1000;
+      startClock = performance.now() / 1000;
     } catch (err) {
       config.onError?.(err);
     }
   })();
 
-  const clearLitGeometry = () => {
-    if (!highlightedOrgansMesh) return;
-    pivotGroup.remove(highlightedOrgansMesh);
-    highlightedOrgansMesh.geometry.dispose();
-    highlightedOrgansMesh.material.dispose();
-    highlightedOrgansMesh = null;
-    activeOrganIds = [];
-    selectedOrganIndex = -1;
-    previousOrganIndex = -1;
-    organFocusProgress = 0;
+  function removeHighlightMesh(): void {
+    if (!highlightMesh) return;
+    stageRoot.remove(highlightMesh);
+    highlightMesh.geometry.dispose();
+    highlightMesh.material.dispose();
+    highlightMesh = null;
+    loadedOrganIds = [];
+    selectedOrganIdx = -1;
+    lastOrganIdx = -1;
+    organSelectTransition = 0;
     organBoundingBoxes = [];
-    collectiveBounds = null;
+    unionBoundingBox = null;
     activeZoomTarget = -2;
-  };
+  }
 
-  // Pointer drag interaction
-  let pointerDragAnchor: { startX: number; baseSpin: number } | null = null;
+  // Pointer drag handling
+  let dragAnchor: { x: number; spin: number } | null = null;
   container.style.cursor = "grab";
 
-  const handlePointerDown = (evt: PointerEvent) => {
-    if ((evt.target as Element | null)?.closest?.("button")) return;
-    evt.preventDefault();
-    pointerDragAnchor = { startX: evt.clientX, baseSpin: currentAzimuth };
-    container.setPointerCapture(evt.pointerId);
+  function onPointerDown(e: PointerEvent): void {
+    if ((e.target as Element | null)?.closest?.("button")) return;
+    e.preventDefault();
+    dragAnchor = { x: e.clientX, spin: orbitAzimuth };
+    container.setPointerCapture(e.pointerId);
     container.style.cursor = "grabbing";
-  };
+  }
 
-  const handlePointerMove = (evt: PointerEvent) => {
-    if (pointerDragAnchor) {
-      currentAzimuth = pointerDragAnchor.baseSpin + (evt.clientX - pointerDragAnchor.startX) * 0.008;
+  function onPointerMove(e: PointerEvent): void {
+    if (dragAnchor) {
+      orbitAzimuth = dragAnchor.spin + (e.clientX - dragAnchor.x) * 0.008;
     }
-  };
+  }
 
-  const handlePointerUp = () => {
-    pointerDragAnchor = null;
+  function onPointerUp(): void {
+    dragAnchor = null;
     container.style.cursor = "grab";
-  };
+  }
 
-  container.addEventListener("pointerdown", handlePointerDown);
-  container.addEventListener("pointermove", handlePointerMove);
-  container.addEventListener("pointerup", handlePointerUp);
-  container.addEventListener("pointercancel", handlePointerUp);
+  container.addEventListener("pointerdown", onPointerDown);
+  container.addEventListener("pointermove", onPointerMove);
+  container.addEventListener("pointerup", onPointerUp);
+  container.addEventListener("pointercancel", onPointerUp);
 
-  const getRunningTime = () =>
-    startEpochSec === null ? 0 : performance.now() / 1000 - startEpochSec + timeSkipOffset;
+  function getPlaybackClock(): number {
+    return startClock === null
+      ? 0
+      : performance.now() / 1000 - startClock + skipTimeOffset;
+  }
 
-  const renderFrameUpdate = (
+  function onUpdate(
     currentTimeSec: number,
-    aspectRatio: number,
-    screenPixelRatio: number,
-    particleWeight: number,
-  ) => {
-    perspectiveCam.aspect = aspectRatio;
-    perspectiveCam.updateProjectionMatrix();
+    aspect: number,
+    pixelRatio: number,
+    particlesRatio: number,
+  ): void {
+    camera.aspect = aspect;
+    camera.updateProjectionMatrix();
 
-    const t = getRunningTime();
-    const bootStage = cubicEase(t / STAGES.boot);
-    const deployStage = cubicEase((t - STAGES.boot) / STAGES.deploy);
-    const materializationStage = cubicEase((t - STAGES.boot - STAGES.deploy) / STAGES.materialize);
+    const t = getPlaybackClock();
+    const bootPhase = smoothInterpolate(t / TIMELINE.bootDuration);
+    const deployPhase = smoothInterpolate((t - TIMELINE.bootDuration) / TIMELINE.deployDuration);
+    const materializePhase = smoothInterpolate(
+      (t - TIMELINE.bootDuration - TIMELINE.deployDuration) / TIMELINE.materializeDuration,
+    );
 
-    currentVisibility += (targetPresence - currentVisibility) * 0.08;
+    visiblePresence += (presenceTarget - visiblePresence) * 0.08;
 
-    const motionScale = isReducedMotion ? 0.35 : 1.0;
-    if (!pointerDragAnchor && activeZoomTarget === -2) {
-      currentAzimuth += 0.0025 * motionScale;
+    const speed = reducedMotion ? 0.35 : 1.0;
+    if (!dragAnchor && activeZoomTarget === -2) {
+      orbitAzimuth += 0.0025 * speed;
     }
-    pivotGroup.rotation.y = currentAzimuth;
+    stageRoot.rotation.y = orbitAzimuth;
 
-    const halfVertFov = THREE.MathUtils.degToRad(perspectiveCam.fov) * 0.5;
-    const verticalSpan = (anatomicalDimensions.height + 0.55) * 0.5;
-    const horizontalSpan = (1.8 * PROJECTOR_PAD_SCALE) / Math.max(0.2, perspectiveCam.aspect);
-    const baselineDistance = Math.max(verticalSpan, horizontalSpan) / Math.tan(halfVertFov);
+    const halfFovRad = THREE.MathUtils.degToRad(camera.fov) * 0.5;
+    const vSpan = (modelMetrics.height + 0.55) * 0.5;
+    const hSpan = (1.8 * 0.4) / Math.max(0.2, camera.aspect);
+    const baseDistance = Math.max(vSpan, hSpan) / Math.tan(halfFovRad);
 
-    let optimalCamDistance = baselineDistance;
-    targetLookAt.set(
+    let optimalDistance = baseDistance;
+    targetFocusPoint.set(
       0,
-      pivotGroup.position.y + anatomicalDimensions.bottom + anatomicalDimensions.height * 0.5 - 0.12,
+      stageRoot.position.y + modelMetrics.bottom + modelMetrics.height * 0.5 - 0.12,
       0,
     );
 
-    const activeBounds =
+    const targetBox =
       activeZoomTarget >= 0
         ? organBoundingBoxes[activeZoomTarget]
         : activeZoomTarget === -1
-          ? collectiveBounds
+          ? unionBoundingBox
           : null;
 
-    if (activeBounds) {
-      const organSpanRadius = Math.max(ZOOM_MIN_SPAN, activeBounds.getSize(boxDimension).length() * 0.5);
-      activeBounds.getCenter(targetLookAt).applyAxisAngle(VERTICAL_AXIS, currentAzimuth).add(pivotGroup.position);
-      const viewportTangent = Math.tan(halfVertFov) * Math.min(1, perspectiveCam.aspect);
-      optimalCamDistance = Math.min(optimalCamDistance, (organSpanRadius * ZOOM_OCCUPANCY_RATIO) / viewportTangent);
+    if (targetBox) {
+      const radius = Math.max(0.035, targetBox.getSize(boxExtent).length() * 0.5);
+      targetBox
+        .getCenter(targetFocusPoint)
+        .applyAxisAngle(VERT_AXIS, orbitAzimuth)
+        .add(stageRoot.position);
+      const aspectTan = Math.tan(halfFovRad) * Math.min(1, camera.aspect);
+      optimalDistance = Math.min(optimalDistance, (radius * 2.4) / aspectTan);
     }
 
-    const cameraLerpSpeed = cameraState.initialized && !isReducedMotion ? CAMERA_ZOOM_EASE : 1.0;
-    cameraState.target.lerp(targetLookAt, cameraLerpSpeed);
-    cameraState.distance += (optimalCamDistance - cameraState.distance) * cameraLerpSpeed;
-    cameraState.initialized = true;
+    const lerpRate = cameraTracker.ready && !reducedMotion ? 0.07 : 1.0;
+    cameraTracker.target.lerp(targetFocusPoint, lerpRate);
+    cameraTracker.distance += (optimalDistance - cameraTracker.distance) * lerpRate;
+    cameraTracker.ready = true;
 
-    perspectiveCam.position.set(
-      cameraState.target.x,
-      cameraState.target.y + cameraState.distance * 0.08,
-      cameraState.target.z + cameraState.distance,
+    camera.position.set(
+      cameraTracker.target.x,
+      cameraTracker.target.y + cameraTracker.distance * 0.08,
+      cameraTracker.target.z + cameraTracker.distance,
     );
 
-    const zoomProximity = Math.min(1, Math.max(0, 1 - cameraState.distance / baselineDistance));
-    const verticalElevationShift =
-      VERTICAL_VIEW_OFFSET * 2 * Math.tan(halfVertFov) * cameraState.distance * Math.min(1, zoomProximity * 2);
+    const zoomFraction = Math.min(1, Math.max(0, 1 - cameraTracker.distance / baseDistance));
+    const verticalShift =
+      0.16 * 2 * Math.tan(halfFovRad) * cameraTracker.distance * Math.min(1, zoomFraction * 2);
 
-    perspectiveCam.position.y -= verticalElevationShift;
-    perspectiveCam.lookAt(cameraState.target.x, cameraState.target.y - verticalElevationShift, cameraState.target.z);
+    camera.position.y -= verticalShift;
+    camera.lookAt(
+      cameraTracker.target.x,
+      cameraTracker.target.y - verticalShift,
+      cameraTracker.target.z,
+    );
 
-    for (const padElem of floorPad.children) {
-      const padUniforms = ((padElem as THREE.Mesh).material as THREE.ShaderMaterial).uniforms;
-      padUniforms.uFade!.value = bootStage * currentVisibility;
-      padUniforms.uTime!.value = currentTimeSec;
+    for (const child of pedestal.children) {
+      const u = ((child as THREE.Mesh).material as THREE.ShaderMaterial).uniforms;
+      u.uFade!.value = bootPhase * visiblePresence;
+      u.uTime!.value = currentTimeSec;
     }
 
-    if (highlightedOrgansMesh) {
-      const organUniforms = highlightedOrgansMesh.material.uniforms;
-      organUniforms.uTime!.value = currentTimeSec;
-      organUniforms.uIn!.value = cubicEase((currentTimeSec - highlightTimestamp) / ORGAN_FADE_IN_SEC) * currentVisibility;
+    if (highlightMesh) {
+      const u = highlightMesh.material.uniforms;
+      u.uTime!.value = currentTimeSec;
+      u.uIn!.value =
+        smoothInterpolate((currentTimeSec - highlightStartTime) / 0.9) * visiblePresence;
 
-      organFocusProgress += ((selectedOrganIndex >= 0 ? 1 : 0) - organFocusProgress) * STRUCTURE_PICK_RATE;
-      organUniforms.uPicked!.value = selectedOrganIndex >= 0 ? selectedOrganIndex : previousOrganIndex;
-      organUniforms.uPick!.value = organFocusProgress;
+      organSelectTransition +=
+        ((selectedOrganIdx >= 0 ? 1 : 0) - organSelectTransition) * 0.15;
+      u.uPicked!.value = selectedOrganIdx >= 0 ? selectedOrganIdx : lastOrganIdx;
+      u.uPick!.value = organSelectTransition;
     }
 
-    if (skinMesh && particleDust && avatarModel) {
-      const skinUniforms = skinMesh.material.uniforms;
-      skinUniforms.uTime!.value = currentTimeSec;
-      skinUniforms.uReveal!.value = materializationStage;
-      skinUniforms.uCentre!.value = perspectiveCam.position.length();
-      skinUniforms.uFade!.value = FIGURE_OPACITY_GAIN * currentVisibility * (highlightedOrgansMesh ? 0.7 : 1.0);
+    if (figureMesh && figureDust && avatarData) {
+      const sUniforms = figureMesh.material.uniforms;
+      sUniforms.uTime!.value = currentTimeSec;
+      sUniforms.uReveal!.value = materializePhase;
+      sUniforms.uCentre!.value = camera.position.length();
+      sUniforms.uFade!.value = 2.6 * visiblePresence * (highlightMesh ? 0.7 : 1.0);
 
-      const scanProgress = (currentTimeSec - scanStartEpoch) / SCAN_DURATION_SEC;
-      skinUniforms.uScanOn!.value = scanProgress >= 0 && scanProgress <= 1 ? 1 : 0;
-      skinUniforms.uScanY!.value =
-        avatarModel.top - (avatarModel.top - avatarModel.bottom) * cubicEase(scanProgress);
+      const scanTime = (currentTimeSec - scanStartTime) / 1.8;
+      sUniforms.uScanOn!.value = scanTime >= 0 && scanTime <= 1 ? 1 : 0;
+      sUniforms.uScanY!.value =
+        avatarData.top - (avatarData.top - avatarData.bottom) * smoothInterpolate(scanTime);
 
-      const dustUniforms = particleDust.material.uniforms;
-      dustUniforms.uTime!.value = currentTimeSec;
-      dustUniforms.uAssemble!.value = deployStage;
-      dustUniforms.uDust!.value = (1 - materializationStage * 0.85) * currentVisibility * (1 - zoomProximity);
-      dustUniforms.uPixel!.value = screenPixelRatio * (container.clientHeight / 700);
-      particleDust.geometry.setDrawRange(0, Math.round(targetDustCount * particleWeight));
+      const dUniforms = figureDust.material.uniforms;
+      dUniforms.uTime!.value = currentTimeSec;
+      dUniforms.uAssemble!.value = deployPhase;
+      dUniforms.uDust!.value =
+        (1 - materializePhase * 0.85) * visiblePresence * (1 - zoomFraction);
+      dUniforms.uPixel!.value = pixelRatio * (container.clientHeight / 700);
+      figureDust.geometry.setDrawRange(0, Math.round(particleCapacity * particlesRatio));
     }
-  };
+  }
 
-  const unbindLayer = config.host.addLayer({
-    scene: sceneGraph,
-    camera: perspectiveCam,
-    update: renderFrameUpdate,
+  const unbindHostLayer = config.host.addLayer({
+    scene,
+    camera,
+    update: onUpdate,
     rect() {
       if (container.offsetParent === null || container.classList.contains("ml-hidden")) {
         return null;
       }
-      const box = container.getBoundingClientRect();
-      const originBox = config.frame.getBoundingClientRect();
+      const b = container.getBoundingClientRect();
+      const origin = config.frame.getBoundingClientRect();
       return {
-        left: box.left - originBox.left,
-        top: box.top - originBox.top,
-        width: box.width,
-        height: box.height,
+        left: b.left - origin.left,
+        top: b.top - origin.top,
+        width: b.width,
+        height: b.height,
       };
     },
   });
 
   return {
-    setPresence(lvl: number) {
-      targetPresence = Math.min(1, Math.max(0, lvl));
+    setPresence(level: number) {
+      presenceTarget = Math.min(1, Math.max(0, level));
     },
+
     async show(requestedOrgans: readonly OrganRef[]): Promise<string[]> {
-      const curReq = ++activeRequestId;
+      const currentReq = ++loadRequestId;
       if (requestedOrgans.length === 0) {
-        clearLitGeometry();
+        removeHighlightMesh();
         return [];
       }
 
-      await initializationPromise;
-      if (isDisposed || curReq !== activeRequestId || !avatarModel) {
+      await readyPromise;
+      if (destroyed || currentReq !== loadRequestId || !avatarData) {
         return [];
       }
 
-      const mergedSubgeometries: THREE.BufferGeometry[] = [];
-      const fileOrganMap = new Map<string, OrganRef[]>();
+      const files = new Map<string, OrganRef[]>();
       for (const organ of requestedOrgans) {
-        fileOrganMap.set(organ.file, [...(fileOrganMap.get(organ.file) ?? []), organ]);
+        const list = files.get(organ.file) ?? [];
+        list.push(organ);
+        files.set(organ.file, list);
       }
 
-      const verifiedIds: string[] = [];
+      const verified: string[] = [];
+      const parts: THREE.BufferGeometry[] = [];
 
-      for (const [filePath, refs] of fileOrganMap) {
+      for (const [filePath, refs] of files) {
         let nodeDict: Map<string, THREE.Object3D>;
         try {
-          nodeDict = await getFileNodes(filePath);
+          nodeDict = await loadFileHierarchy(filePath);
         } catch {
           continue;
         }
 
-        if (isDisposed || curReq !== activeRequestId) {
-          return [];
-        }
+        if (destroyed || currentReq !== loadRequestId) return [];
 
         for (const ref of refs) {
-          const targetObj =
+          const target =
             nodeDict.get(ref.node) ??
             nodeDict.get(THREE.PropertyBinding.sanitizeNodeName(ref.node));
-          if (!targetObj) continue;
+          if (!target) continue;
 
-          const assignedIndex = verifiedIds.push(ref.id) - 1;
-          targetObj.traverse((sub) => {
-            const m = sub as THREE.Mesh;
+          const regionIndex = verified.push(ref.id) - 1;
+          target.traverse((child) => {
+            const m = child as THREE.Mesh;
             if (m.isMesh && m.geometry) {
-              mergedSubgeometries.push(worldGeometry(m, assignedIndex));
+              parts.push(worldGeometry(m, regionIndex));
             }
           });
         }
       }
 
-      clearLitGeometry();
-      if (mergedSubgeometries.length === 0) {
-        return [];
-      }
+      removeHighlightMesh();
+      if (parts.length === 0) return [];
 
-      const unifiedGeo = mergeGeometries(mergedSubgeometries, false);
-      for (const part of mergedSubgeometries) {
+      const unified = mergeGeometries(parts, false);
+      for (const part of parts) {
         part.dispose();
       }
+      if (!unified) return [];
 
-      if (!unifiedGeo) {
-        return [];
+      const { centre: c, scale: s } = avatarData.normalise;
+      unified.translate(-c.x, -c.y, -c.z);
+      unified.scale(s, s, s);
+
+      highlightMesh = new THREE.Mesh(unified, organMaterial());
+      highlightMesh.renderOrder = 2;
+      stageRoot.add(highlightMesh);
+
+      loadedOrganIds = verified;
+
+      const posAttr = unified.getAttribute("position");
+      const regAttr = unified.getAttribute("region");
+      organBoundingBoxes = verified.map(() => new THREE.Box3());
+
+      const tempPoint = new THREE.Vector3();
+      for (let i = 0; i < posAttr.count; i++) {
+        const regIdx = regAttr.getX(i);
+        tempPoint.fromBufferAttribute(posAttr, i);
+        organBoundingBoxes[regIdx]?.expandByPoint(tempPoint);
       }
 
-      const { centre: normCenter, scale: normScale } = avatarModel.normalise;
-      unifiedGeo.translate(-normCenter.x, -normCenter.y, -normCenter.z);
-      unifiedGeo.scale(normScale, normScale, normScale);
-
-      highlightedOrgansMesh = new THREE.Mesh(unifiedGeo, organMaterial());
-      highlightedOrgansMesh.renderOrder = 2;
-      pivotGroup.add(highlightedOrgansMesh);
-
-      activeOrganIds = verifiedIds;
-
-      const positionBuffer = unifiedGeo.getAttribute("position");
-      const regionBuffer = unifiedGeo.getAttribute("region");
-      organBoundingBoxes = verifiedIds.map(() => new THREE.Box3());
-
-      const coordSample = new THREE.Vector3();
-      for (let v = 0; v < positionBuffer.count; v++) {
-        const rIndex = regionBuffer.getX(v);
-        coordSample.fromBufferAttribute(positionBuffer, v);
-        organBoundingBoxes[rIndex]?.expandByPoint(coordSample);
+      unionBoundingBox = new THREE.Box3();
+      for (const box of organBoundingBoxes) {
+        if (!box.isEmpty()) unionBoundingBox.union(box);
       }
 
-      collectiveBounds = new THREE.Box3();
-      for (const b of organBoundingBoxes) {
-        if (!b.isEmpty()) collectiveBounds.union(b);
-      }
-
-      highlightTimestamp = performance.now() / 1000;
-      scanStartEpoch = highlightTimestamp;
-      return verifiedIds;
+      highlightStartTime = performance.now() / 1000;
+      scanStartTime = highlightStartTime;
+      return verified;
     },
-    zoom(enableZoom: boolean, targetId: string | null = null) {
-      if (!enableZoom || !highlightedOrgansMesh) {
+
+    zoom(enable: boolean, targetId: string | null = null) {
+      if (!enable || !highlightMesh) {
         activeZoomTarget = -2;
         return;
       }
-      const organIdx = targetId === null ? -1 : activeOrganIds.indexOf(targetId);
-      activeZoomTarget = organIdx >= 0 && !organBoundingBoxes[organIdx]!.isEmpty() ? organIdx : -1;
+      const idx = targetId === null ? -1 : loadedOrganIds.indexOf(targetId);
+      activeZoomTarget =
+        idx >= 0 && !organBoundingBoxes[idx]!.isEmpty() ? idx : -1;
     },
+
     pick(id: string | null) {
-      const idx = id === null ? -1 : activeOrganIds.indexOf(id);
+      const idx = id === null ? -1 : loadedOrganIds.indexOf(id);
       if (idx >= 0) {
-        previousOrganIndex = idx;
+        lastOrganIdx = idx;
       }
-      selectedOrganIndex = idx;
+      selectedOrganIdx = idx;
     },
+
     skipIntro() {
-      const totalIntroSeconds = STAGES.boot + STAGES.deploy + STAGES.materialize;
-      if (startEpochSec !== null && getRunningTime() < totalIntroSeconds) {
-        timeSkipOffset += totalIntroSeconds - getRunningTime();
+      if (startClock !== null && getPlaybackClock() < TOTAL_INTRO_SPAN) {
+        skipTimeOffset += TOTAL_INTRO_SPAN - getPlaybackClock();
       }
     },
+
     dispose() {
-      isDisposed = true;
-      unbindLayer();
+      destroyed = true;
+      unbindHostLayer();
 
-      container.removeEventListener("pointerdown", handlePointerDown);
-      container.removeEventListener("pointermove", handlePointerMove);
-      container.removeEventListener("pointerup", handlePointerUp);
-      container.removeEventListener("pointercancel", handlePointerUp);
+      container.removeEventListener("pointerdown", onPointerDown);
+      container.removeEventListener("pointermove", onPointerMove);
+      container.removeEventListener("pointerup", onPointerUp);
+      container.removeEventListener("pointercancel", onPointerUp);
 
-      clearLitGeometry();
+      removeHighlightMesh();
       releaseDraco(config.dracoPath);
-      cachedFileHierarchy.clear();
-      lightingProfile?.dispose();
+      gltfNodeCache.clear();
+      illumination?.dispose();
 
-      sceneGraph.traverse((node) => {
-        const m = node as THREE.Mesh;
+      scene.traverse((obj) => {
+        const m = obj as THREE.Mesh;
         m.geometry?.dispose();
         const mat = m.material as THREE.Material | THREE.Material[] | undefined;
         if (Array.isArray(mat)) {
-          mat.forEach((entry) => entry.dispose());
+          mat.forEach((x) => x.dispose());
         } else {
           mat?.dispose();
         }

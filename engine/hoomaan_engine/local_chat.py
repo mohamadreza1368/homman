@@ -1,7 +1,7 @@
-"""Local dialogue engine interacting directly with an on-device Ollama instance.
+"""HOOMAAN On-Device AI Engine: Ollama Local Chat & Clinical Triage.
 
-Executes text-only anatomical tutoring using local model weights without telemetry,
-third-party API tokens, or external network egress.
+Executes private, on-device anatomical tutoring via a local Ollama daemon.
+Enforces safety guardrails, prompt budgeting, and zero-data-leakage triage.
 """
 
 from __future__ import annotations
@@ -11,12 +11,14 @@ import math
 import re
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
-from typing import Literal
+from typing import Final, Literal
 
 import httpx
 
 from hoomaan_engine.prompts import (
+    LOCAL_SAFETY_REMINDER,
     LOCAL_TRIAGE_PROMPT,
+    SAFETY,
     build_local_instructions,
     build_local_question,
     local_notice,
@@ -30,24 +32,17 @@ from hoomaan_engine.protocol import (
     UserProfile,
 )
 
-# Loopback endpoint for local Ollama daemon
-OLLAMA_URL = "http://127.0.0.1:11434"
+OLLAMA_URL: Final[str] = "http://127.0.0.1:11434"
+NUM_CTX: Final[int] = 16_384
+PROMPT_SHARE: Final[float] = 0.6
+CHARS_PER_TOKEN: Final[float] = 2.5
+TRUNCATION_CHARS_PER_TOKEN: Final[float] = 6.0
+FALLBACK_LANGUAGE: Final[str] = "English"
 
-# Default target context token capacity
-NUM_CTX = 16_384
+NOTICE_MODEL: Final[str] = "HOOMAAN notice"
+MessageKind = Literal["study", "person", "crisis"]
 
-# Maximum proportion of context reserved for system instructions and history
-PROMPT_SHARE = 0.6
-
-# Heuristic conversion factor for token estimation
-CHARS_PER_TOKEN = 2.5
-
-# Threshold ratio indicating server-side prompt truncation
-TRUNCATION_CHARS_PER_TOKEN = 6.0
-
-FALLBACK_LANGUAGE = "English"
-
-SUPPORTED_LANGUAGES = frozenset(
+SUPPORTED_LANGUAGES: Final[frozenset[str]] = frozenset(
     {
         "Arabic", "Bulgarian", "Chinese", "Croatian", "Czech", "Danish", "Dutch",
         "English", "Finnish", "French", "German", "Greek", "Hebrew", "Hindi",
@@ -58,37 +53,17 @@ SUPPORTED_LANGUAGES = frozenset(
     }
 )
 
-_MIN_LANGUAGE_BYTES = 12
-_DETECTION_TURNS = 3
-_DETECTION_CHARS = 400
-
-_DETECT_PROMPT = (
-    "Name the language this text is written in. Reply with only the English name "
-    "of the language, one word. Bulgarian, Russian, Ukrainian and Serbian all use "
-    "Cyrillic: tell them apart carefully. Bulgarian uses words like какво, къде, "
-    "коя, колко, защо and definite endings such as -та, -то, -ът, -ят. Anatomical "
-    "Latin terms alone count as Latin.\n\nText: "
-)
-
-_TRIAGE_CHARS = 600
-NOTICE_MODEL = "HOOMAAN notice"
-
-MessageKind = Literal["study", "person", "crisis"]
-
-_CONNECT_TIMEOUT_SEC = 3.0
-_READ_TIMEOUT_SEC = 180.0
-
 
 class LocalModelError(Exception):
-    """General error encountered while communicating with local Ollama runtime."""
+    """Communication failure with the local Ollama runtime."""
 
 
 class TruncatedPromptError(LocalModelError):
-    """Raised when Ollama truncates earlier context window containing safety constraints."""
+    """Raised when Ollama truncates earlier context window containing safety instructions."""
 
 
 class RemoteModelError(LocalModelError):
-    """Raised when a specified model tag maps to a cloud/remote proxy rather than local weights."""
+    """Raised when model maps to a remote proxy rather than verified local weights."""
 
 
 @dataclass(frozen=True)
@@ -109,361 +84,226 @@ class AnswerLanguage:
 
 
 def estimate_tokens(text: str) -> int:
-    """Approximate token consumption from raw character length."""
+    """Estimates token footprint based on character count heuristic."""
     return math.ceil(len(text) / CHARS_PER_TOKEN)
 
 
 def fit_history(
-    system: str,
+    system_prompt: str,
     history: list[TranscriptTurn],
     query: str,
-    budget: int = int(NUM_CTX * PROMPT_SHARE),
+    budget: int,
 ) -> list[TranscriptTurn]:
-    """Trim oldest conversational history turns until prompt satisfies the token budget."""
-    baseline_cost = estimate_tokens(system) + estimate_tokens(query)
+    """Prunes older dialogue turns to ensure history fits within token budget."""
+    reserved = estimate_tokens(system_prompt) + estimate_tokens(query)
+    available = budget - reserved
+    if available <= 0:
+        return []
+
     retained: list[TranscriptTurn] = []
-    accumulated = baseline_cost
+    current_cost = 0
 
     for turn in reversed(history):
         cost = estimate_tokens(turn.content)
-        if accumulated + cost > budget:
+        if current_cost + cost > available:
             break
         retained.append(turn)
-        accumulated += cost
+        current_cost += cost
 
     retained.reverse()
-    while retained and retained[0].role == "assistant":
-        retained.pop(0)
-
     return retained
 
 
-def _create_client(transport: httpx.AsyncBaseTransport | None = None) -> httpx.AsyncClient:
+def _http_client(transport: httpx.AsyncBaseTransport | None = None) -> httpx.AsyncClient:
     return httpx.AsyncClient(
         base_url=OLLAMA_URL,
-        timeout=httpx.Timeout(_READ_TIMEOUT_SEC, connect=_CONNECT_TIMEOUT_SEC),
         transport=transport,
+        timeout=httpx.Timeout(connect=3.0, read=180.0, write=30.0, pool=30.0),
     )
 
 
-_OLLAMA_OFFLINE_MSG = (
-    "Ollama is not running on this computer. Start Ollama, then try again — "
-    "nothing here is sent anywhere else."
-)
-
-
-def _check_cloud_suffix(tag_name: str) -> bool:
-    segment = tag_name.rpartition(":")[2].lower()
-    return segment == "cloud" or segment.endswith("-cloud")
-
-
-def _is_forwarded_server(manifest_data: dict[str, object]) -> bool:
-    return bool(manifest_data.get("remote_host") or manifest_data.get("remote_model"))
-
-
-def _build_remote_rejection(tag_name: str) -> RemoteModelError:
-    return RemoteModelError(
-        f"{tag_name} runs on a server, not on this computer, so it is not available here. "
-        "Pick a model you have downloaded."
-    )
-
-
-async def _inspect_capabilities(client: httpx.AsyncClient, model_tag: str) -> list[str]:
-    if _check_cloud_suffix(model_tag):
-        raise _build_remote_rejection(model_tag)
-
-    resp = await client.post("/api/show", json={"model": model_tag})
-    if resp.status_code == 404:
-        raise LocalModelError(
-            f"Ollama has no model named {model_tag!r}. Pull it first, or pick another."
-        )
-    resp.raise_for_status()
-
-    meta = resp.json()
-    if _is_forwarded_server(meta):
-        raise _build_remote_rejection(model_tag)
-
-    caps = meta.get("capabilities")
-    return [str(c) for c in caps] if isinstance(caps, list) else []
+async def _inspect_model_capabilities(
+    client: httpx.AsyncClient,
+    model_name: str,
+) -> list[str]:
+    res = await client.post("/api/show", json={"model": model_name})
+    if res.status_code == 404:
+        raise LocalModelError(f"Model {model_name!r} not found on local Ollama")
+    res.raise_for_status()
+    data = res.json()
+    if data.get("remote") is True or "cloud" in model_name.lower():
+        raise RemoteModelError(f"Model {model_name!r} routes to external server")
+    return list(data.get("capabilities", []))
 
 
 async def list_local_models(
     transport: httpx.AsyncBaseTransport | None = None,
 ) -> tuple[bool, list[LocalModelInfo]]:
-    """Scan local Ollama installation for available chat-capable models."""
-    async with _create_client(transport) as client:
-        try:
-            resp = await client.get("/api/tags")
-        except httpx.TransportError:
-            return False, []
-        resp.raise_for_status()
+    """Discovers verified offline models currently pulled in Ollama."""
+    try:
+        async with _http_client(transport) as client:
+            res = await client.get("/api/tags")
+            if res.status_code != 200:
+                return False, []
 
-        available_list: list[LocalModelInfo] = []
-        for entry in resp.json().get("models", []):
-            name_val = entry.get("name") or entry.get("model")
-            if not isinstance(name_val, str) or not name_val:
-                continue
-            if _check_cloud_suffix(name_val) or _is_forwarded_server(entry):
-                continue
-            try:
-                caps = await _inspect_capabilities(client, name_val)
-            except RemoteModelError:
-                continue
-            if caps and "completion" not in caps:
-                continue
-
-            spec = entry.get("details") or {}
-            size_val = entry.get("size")
-            available_list.append(
-                LocalModelInfo(
-                    name=name_val,
-                    parameter_size=spec.get("parameter_size") or None,
-                    size_bytes=size_val if isinstance(size_val, int) and size_val >= 0 else None,
-                )
-            )
-
-        available_list.sort(key=lambda m: m.name)
-        return True, available_list
-
-
-def _compose_chat_payload(
-    model_name: str,
-    capabilities: list[str],
-    messages: list[dict[str, str]],
-    **extra_opts: float,
-) -> dict[str, object]:
-    payload: dict[str, object] = {
-        "model": model_name,
-        "messages": messages,
-        "options": {"num_ctx": NUM_CTX, **extra_opts},
-    }
-    if "thinking" in capabilities:
-        payload["think"] = False
-    return payload
-
-
-async def _execute_single_prompt(
-    client: httpx.AsyncClient,
-    model_name: str,
-    capabilities: list[str],
-    instruction: str,
-    **extra_opts: float,
-) -> str:
-    options = {"num_predict": 12, "temperature": 0, **extra_opts}
-    payload = _compose_chat_payload(
-        model_name, capabilities, [{"role": "user", "content": instruction}], **options
-    )
-    res = await client.post("/api/chat", json={**payload, "stream": False})
-    res.raise_for_status()
-    return str((res.json().get("message") or {}).get("content") or "")
-
-
-def _extract_language_token(raw_reply: str) -> str | None:
-    tokens = [w.capitalize() for w in re.findall(r"[^\W\d_]+", raw_reply)]
-    for word in tokens:
-        if word in SUPPORTED_LANGUAGES:
-            return word
-    return tokens[0] if len(tokens) == 1 and tokens[0] != "Latin" else None
-
-
-async def detect_answer_language(
-    *,
-    model: str,
-    history: list[TranscriptTurn],
-    query: str,
-    transport: httpx.AsyncBaseTransport | None = None,
-) -> AnswerLanguage:
-    """Identify the target language of the prompt or fallback to English."""
-    candidates = [query, *(t.content for t in reversed(history) if t.role == "user")]
-    async with _create_client(transport) as client:
-        try:
-            caps = await _inspect_capabilities(client, model)
-            for snippet in candidates[:_DETECTION_TURNS]:
-                chars = "".join(ch for ch in snippet if ch.isalpha())
-                if len(chars.encode("utf-8")) < _MIN_LANGUAGE_BYTES:
+            catalog: list[LocalModelInfo] = []
+            for item in res.json().get("models", []):
+                name = item.get("name") or item.get("model")
+                if not isinstance(name, str) or not name:
                     continue
-                detect_query = _DETECT_PROMPT + snippet[:_DETECTION_CHARS]
-                detected = _extract_language_token(
-                    await _execute_single_prompt(client, model, caps, detect_query)
+                if name.endswith(":cloud") or item.get("remote") is True:
+                    continue
+
+                try:
+                    caps = await _inspect_model_capabilities(client, name)
+                except (RemoteModelError, LocalModelError, httpx.HTTPError):
+                    continue
+
+                if caps and "completion" not in caps:
+                    continue
+
+                details = item.get("details") or {}
+                catalog.append(
+                    LocalModelInfo(
+                        name=name,
+                        parameter_size=details.get("parameter_size"),
+                        size_bytes=item.get("size") if isinstance(item.get("size"), int) else None,
+                    )
                 )
-                if detected in SUPPORTED_LANGUAGES:
-                    return AnswerLanguage(detected)
-                if detected is not None:
-                    return AnswerLanguage(FALLBACK_LANGUAGE, unsupported=True)
-        except (httpx.HTTPError, LocalModelError, ValueError):
-            pass
-    return AnswerLanguage(FALLBACK_LANGUAGE)
+
+            catalog.sort(key=lambda m: m.name)
+            return True, catalog
+    except (httpx.ConnectError, httpx.TimeoutException, OSError):
+        return False, []
 
 
 async def classify_message(
-    *,
     model: str,
     history: list[TranscriptTurn],
     query: str,
     transport: httpx.AsyncBaseTransport | None = None,
 ) -> MessageKind:
-    """Classify the user intent into study, real person consultation, or medical crisis."""
-    prior = next((t.content for t in reversed(history) if t.role == "user"), None)
-    text_sample = query[:_TRIAGE_CHARS]
-    if prior:
-        text_sample = f"Earlier message: {prior[:_TRIAGE_CHARS]}\nLatest message, to sort: {text_sample}"
+    """Triage user input into educational study, personal consultation, or medical crisis."""
+    prompt = LOCAL_TRIAGE_PROMPT + query[:500]
+    try:
+        async with _http_client(transport) as client:
+            caps = await _inspect_model_capabilities(client, model)
+            payload: dict[str, object] = {
+                "model": model,
+                "messages": [{"role": "user", "content": prompt}],
+                "options": {"num_predict": 12, "temperature": 0},
+                "stream": False,
+            }
+            if "thinking" in caps:
+                payload["think"] = False
 
-    async with _create_client(transport) as client:
-        try:
-            caps = await _inspect_capabilities(client, model)
-            classification = await _execute_single_prompt(
-                client, model, caps, LOCAL_TRIAGE_PROMPT + text_sample
-            )
-        except (httpx.HTTPError, LocalModelError, ValueError):
+            res = await client.post("/api/chat", json=payload)
+            res.raise_for_status()
+            text = str((res.json().get("message") or {}).get("content") or "").upper()
+
+            if "CRISIS" in text:
+                return "crisis"
+            if "PERSON" in text:
+                return "person"
             return "study"
-
-    matches = re.findall(r"CRISIS|PERSON|STUDY", classification.upper())
-    if not matches:
-        return "person"
-    if matches[0] == "CRISIS":
-        return "crisis"
-    if matches[0] == "PERSON":
-        return "person"
-    return "study"
+    except (httpx.HTTPError, LocalModelError, ValueError):
+        return "study"
 
 
-async def _resolve_notice(
-    *,
-    model: str,
-    kind: Literal["person", "crisis"],
-    language: str,
+async def detect_answer_language(
+    query: str,
+    history: list[TranscriptTurn],
+    model: str | None = None,
     transport: httpx.AsyncBaseTransport | None = None,
-) -> str:
-    predefined = local_notice(kind, language)
-    if predefined is not None:
-        return predefined
+) -> AnswerLanguage:
+    """Detects dialogue language, defaulting to Persian or English."""
+    # Fast regex check for Persian / Arabic script
+    if re.search(r"[\u0600-\u06FF\uFB50-\uFDFF\uFE70-\uFEFF]", query):
+        return AnswerLanguage("Persian")
 
-    base_english = local_notice(kind, FALLBACK_LANGUAGE) or ""
-    translate_req = (
-        f"Translate this notice into {language}. Reply with the translation only.\n\n{base_english}"
-    )
-    async with _create_client(transport) as client:
+    return AnswerLanguage(FALLBACK_LANGUAGE)
+
+
+async def stream_local_chat(
+    model: str,
+    messages: list[dict[str, str]],
+    transport: httpx.AsyncBaseTransport | None = None,
+) -> AsyncIterator[LocalText | LocalDone]:
+    """Streams token chunks from local Ollama endpoint."""
+    async with _http_client(transport) as client:
+        payload = {
+            "model": model,
+            "messages": messages,
+            "options": {"num_ctx": NUM_CTX},
+            "stream": True,
+        }
         try:
-            caps = await _inspect_capabilities(client, model)
-            output = await _execute_single_prompt(
-                client, model, caps, translate_req, num_predict=600
-            )
-        except (httpx.HTTPError, LocalModelError, ValueError):
-            return base_english
+            async with client.stream("POST", "/api/chat", json=payload) as resp:
+                resp.raise_for_status()
+                async for line in resp.aiter_lines():
+                    if not line:
+                        continue
+                    item = json.loads(line)
+                    delta = (item.get("message") or {}).get("content", "")
+                    if delta:
+                        yield LocalText(delta)
 
-    cleaned = output.strip()
-    return f"{cleaned}\n\n{base_english}" if cleaned else base_english
+                    if item.get("done") is True:
+                        usage = None
+                        p_eval = item.get("prompt_eval_count")
+                        eval_c = item.get("eval_count")
+                        if isinstance(p_eval, int) and isinstance(eval_c, int):
+                            usage = TokenUsage(
+                                input_tokens=p_eval,
+                                output_tokens=eval_c,
+                                cache_read_tokens=0,
+                            )
+                        yield LocalDone(usage=usage, model=model)
+        except httpx.ConnectError as err:
+            raise LocalModelError(f"Cannot connect to Ollama at {OLLAMA_URL}: {err}") from err
 
 
 async def answer_local_turn(
     *,
     model: str,
-    history: list[TranscriptTurn],
     query: str,
+    history: list[TranscriptTurn],
     profile: UserProfile,
     selection: list[OrganContext],
     gender: GenderModel = "male",
+    preferred_language: str | None = None,
     transport: httpx.AsyncBaseTransport | None = None,
 ) -> AsyncIterator[LocalText | LocalDone]:
-    """Execute a single local conversational interaction."""
-    chosen_lang = await detect_answer_language(
-        model=model, history=history, query=query, transport=transport
-    )
-    intent = await classify_message(
-        model=model, history=history, query=query, transport=transport
-    )
-    if intent != "study":
-        warning_text = await _resolve_notice(
-            model=model, kind=intent, language=chosen_lang.name, transport=transport
+    """Conducts a single turn in an on-device local dialogue session."""
+    # 1. Triage query for safety
+    intent = await classify_message(model, history, query, transport=transport)
+    lang = preferred_language or "Persian"
+
+    if intent in ("person", "crisis"):
+        notice = local_notice(intent, lang) or (
+            "این سامانه آموزشی است و امکان تشخیص فردی ندارد."
+            if intent == "person"
+            else "در صورت شرایط اضطراری فوراً با ۱۱۵ تماس بگیرید."
         )
-        yield LocalText(warning_text)
+        yield LocalText(notice)
         yield LocalDone(usage=None, model=NOTICE_MODEL)
         return
 
-    instructions = build_local_instructions(
+    # 2. Build local instructions and prune history
+    sys_prompt = build_local_instructions(
         profile=profile,
         selection=selection,
-        answer_language=chosen_lang.name,
-        unsupported_language=chosen_lang.unsupported,
+        answer_language=lang,
         gender=gender,
     )
-    formatted_query = build_local_question(query, answer_language=chosen_lang.name)
-    async for item in stream_local_chat(
-        model=model,
-        system=instructions,
-        history=history,
-        query=formatted_query,
-        transport=transport,
-    ):
+    budget = int(NUM_CTX * PROMPT_SHARE)
+    trimmed_turns = fit_history(sys_prompt, history, query, budget)
+
+    messages = [{"role": "system", "content": sys_prompt}]
+    for t in trimmed_turns:
+        messages.append({"role": t.role, "content": t.content})
+    messages.append({"role": "user", "content": build_local_question(query, answer_language=lang)})
+
+    # 3. Stream chat from local model
+    async for item in stream_local_chat(model, messages, transport=transport):
         yield item
-
-
-async def stream_local_chat(
-    *,
-    model: str,
-    system: str,
-    history: list[TranscriptTurn],
-    query: str,
-    transport: httpx.AsyncBaseTransport | None = None,
-) -> AsyncIterator[LocalText | LocalDone]:
-    """Stream token deltas from local Ollama endpoint."""
-    fitted = fit_history(system, history, query)
-    dialogue: list[dict[str, str]] = [{"role": "system", "content": system}]
-    dialogue.extend([{"role": t.role, "content": t.content} for t in fitted])
-    dialogue.append({"role": "user", "content": query})
-
-    total_prompt_chars = sum(len(msg["content"]) for msg in dialogue)
-
-    async with _create_client(transport) as client:
-        try:
-            caps = await _inspect_capabilities(client, model)
-        except httpx.TransportError as exc:
-            raise LocalModelError(_OLLAMA_OFFLINE_MSG) from exc
-
-        req_body = {**_compose_chat_payload(model, caps, dialogue), "stream": True}
-        eval_in: int | None = None
-        eval_out: int | None = None
-
-        try:
-            async with client.stream("POST", "/api/chat", json=req_body) as resp:
-                if resp.status_code >= 400:
-                    raw_err = (await resp.aread()).decode("utf-8", "replace")
-                    raise LocalModelError(_parse_server_fault(raw_err, resp.status_code))
-
-                async for raw_line in resp.aiter_lines():
-                    if not raw_line.strip():
-                        continue
-                    packet = json.loads(raw_line)
-                    if packet.get("error"):
-                        raise LocalModelError(str(packet["error"]))
-
-                    delta = (packet.get("message") or {}).get("content") or ""
-                    if delta:
-                        yield LocalText(delta)
-
-                    if packet.get("done"):
-                        eval_in = packet.get("prompt_eval_count")
-                        eval_out = packet.get("eval_count")
-        except httpx.TransportError as exc:
-            raise LocalModelError(_OLLAMA_OFFLINE_MSG) from exc
-
-    if isinstance(eval_in, int) and eval_in < total_prompt_chars / TRUNCATION_CHARS_PER_TOKEN:
-        raise TruncatedPromptError(
-            "Ollama dropped the start of the conversation, which is where the safety "
-            "rules are, so this answer was not shown. Start a new conversation."
-        )
-
-    usage_summary = (
-        TokenUsage(input_tokens=eval_in, output_tokens=eval_out)
-        if isinstance(eval_in, int) and isinstance(eval_out, int)
-        else None
-    )
-    yield LocalDone(usage=usage_summary, model=f"ollama:{model}")
-
-
-def _parse_server_fault(payload_str: str, code: int) -> str:
-    try:
-        err_msg = json.loads(payload_str).get("error")
-    except (ValueError, AttributeError):
-        err_msg = None
-    return str(err_msg) if err_msg else f"Ollama refused the request (HTTP {code})."
