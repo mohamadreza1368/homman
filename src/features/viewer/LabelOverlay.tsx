@@ -40,6 +40,7 @@ export function LabelOverlay({ panel = FULL_CANVAS }: { panel?: LabelPanel } = {
   const containerRef = useRef<HTMLDivElement>(null);
   const labelDomNodes = useRef(new Map<string, HTMLSpanElement>());
   const svgLineNodes = useRef(new Map<string, SVGLineElement>());
+  const svgDotNodes = useRef(new Map<string, SVGCircleElement>());
 
   const targetItems = useMemo(
     () => labelTargets(organMap, selectedIds, isolatedIds, isLabelsActive),
@@ -102,6 +103,13 @@ export function LabelOverlay({ panel = FULL_CANVAS }: { panel?: LabelPanel } = {
           lineElem.setAttribute("x2", String(entry.labelX));
           lineElem.setAttribute("y2", String(entry.labelY));
         }
+
+        const dotElem = svgDotNodes.current.get(entry.id);
+        if (dotElem) {
+          dotElem.style.display = "";
+          dotElem.setAttribute("cx", String(entry.x));
+          dotElem.setAttribute("cy", String(entry.y));
+        }
       }
 
       for (const [id, node] of labelDomNodes.current) {
@@ -109,6 +117,9 @@ export function LabelOverlay({ panel = FULL_CANVAS }: { panel?: LabelPanel } = {
       }
       for (const [id, line] of svgLineNodes.current) {
         if (!visibleSet.has(id)) line.style.display = "none";
+      }
+      for (const [id, dot] of svgDotNodes.current) {
+        if (!visibleSet.has(id)) dot.style.display = "none";
       }
     };
 
@@ -122,16 +133,29 @@ export function LabelOverlay({ panel = FULL_CANVAS }: { panel?: LabelPanel } = {
     <div ref={containerRef} className="pointer-events-none absolute inset-0 overflow-hidden">
       <svg className="absolute inset-0 h-full w-full">
         {targetItems.map((target) => (
-          <line
-            key={target.id}
-            ref={(node) => {
-              if (node) svgLineNodes.current.set(target.id, node);
-              else svgLineNodes.current.delete(target.id);
-            }}
-            stroke={currentTheme.leader}
-            strokeWidth={1}
-            style={{ display: "none" }}
-          />
+          <g key={target.id}>
+            <line
+              ref={(node) => {
+                if (node) svgLineNodes.current.set(target.id, node);
+                else svgLineNodes.current.delete(target.id);
+              }}
+              stroke={currentTheme.leader}
+              strokeWidth={1.5}
+              strokeDasharray="3 3"
+              style={{ display: "none" }}
+            />
+            <circle
+              ref={(node) => {
+                if (node) svgDotNodes.current.set(target.id, node);
+                else svgDotNodes.current.delete(target.id);
+              }}
+              r={3.5}
+              fill="#2dd4bf"
+              stroke="#0f172a"
+              strokeWidth={1.5}
+              style={{ display: "none" }}
+            />
+          </g>
         ))}
       </svg>
 

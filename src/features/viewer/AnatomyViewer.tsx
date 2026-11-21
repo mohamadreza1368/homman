@@ -6,6 +6,7 @@ import { loadManifest } from "@/lib/manifest";
 import type { AnatomyManifest } from "@/lib/schemas";
 import { organLabel, organSubtitle, useSceneStore } from "@/stores/sceneStore";
 import { useStudyViewsStore } from "@/stores/studyViewsStore";
+import { usePhysiologyStore } from "@/stores/physiologyStore";
 import { readStoredView, sanitiseViewPreferences } from "@/stores/viewPreferences";
 
 import { AnatomyScene } from "./AnatomyScene";
@@ -86,6 +87,7 @@ export function AnatomyViewer({ paused = false }: { paused?: boolean } = {}) {
   const studyViewsWanted = useStudyViewsStore((s) => s.wanted);
   const activeViews = useStudyViewsStore((s) => s.active);
   const isMultiViewSplit = studyViewsWanted && (isolatedOrganIds?.length ?? 0) > 0;
+  const physiologyActive = usePhysiologyStore((s) => s.active);
 
   const [manifest, setLocalManifest] = useState<AnatomyManifest | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -187,8 +189,12 @@ export function AnatomyViewer({ paused = false }: { paused?: boolean } = {}) {
         <RenderStatsPanel />
         <ScanReadout />
         <ScanControls />
-        <HeartControls />
-        <BreathControls />
+        {physiologyActive && (
+          <>
+            <HeartControls />
+            <BreathControls />
+          </>
+        )}
         <AxialView />
         {isMultiViewSplit && <ClosedViews />}
         <StudyViewsToggle />

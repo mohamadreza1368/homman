@@ -91,7 +91,7 @@ export function layoutLabels(
 
   const grouped: Record<"left" | "right", LabelAnchor[]> = { left: [], right: [] };
   for (const a of visible) {
-    const side = a.x <= centerX ? "left" : "right";
+    const side = visible.length === 1 ? (a.x < width / 2 ? "left" : "right") : (a.x <= centerX ? "left" : "right");
     if (grouped[side].length < maxCapacity) {
       grouped[side].push(a);
     }
@@ -106,16 +106,18 @@ export function layoutLabels(
   const leftBound = Math.min(margin + leftMaxW, width - margin);
   const rightBound = Math.max(width - margin - rightMaxW, margin);
 
-  const leftColumnX = clamp(minX - gap, leftBound, width - margin);
-  const rightColumnX = clamp(maxX + gap, margin, rightBound);
-
   const placed: Record<"left" | "right", PlacedLabel[]> = { left: [], right: [] };
   for (const side of ["left", "right"] as const) {
     for (const a of grouped[side]) {
+      const labelX =
+        side === "left"
+          ? clamp(a.x - gap, leftBound, width - margin)
+          : clamp(a.x + gap, margin, rightBound);
+
       placed[side].push({
         ...a,
         side,
-        labelX: side === "left" ? leftColumnX : rightColumnX,
+        labelX,
         labelY: a.y,
       });
     }

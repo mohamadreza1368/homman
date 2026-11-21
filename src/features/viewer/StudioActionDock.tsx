@@ -22,6 +22,7 @@ import { useHeartStore } from "@/stores/heartStore";
 import { useBreathStore } from "@/stores/breathStore";
 import { useScanStore } from "@/stores/scanStore";
 import { useStudyViewsStore } from "@/stores/studyViewsStore";
+import { usePhysiologyStore } from "@/stores/physiologyStore";
 
 import {
   DOLLY_IN,
@@ -86,6 +87,8 @@ export function StudioActionDock() {
   const toggleBreath = useBreathStore((s) => s.toggle);
   const scanEnabled = useScanStore((s) => s.enabled);
   const toggleScan = useScanStore((s) => s.toggle);
+  const physioActive = usePhysiologyStore((s) => s.active);
+  const setPhysioActive = usePhysiologyStore((s) => s.setActive);
 
   // Study views
   const wantedStudyViews = useStudyViewsStore((s) => s.wanted);
@@ -132,18 +135,27 @@ export function StudioActionDock() {
     setActiveTab("physio");
     setMinimized(false);
 
-    // Direct physiological simulation feedback:
-    if (!heartEnabled && !breathEnabled && !scanEnabled) {
+    if (!physioActive) {
+      // Turn ON physiology mode: show heartbeat and breathing controls simultaneously
+      setPhysioActive(true);
       if (!isGlass) {
         glassBody();
       }
-      toggleHeart();
-    } else if (heartEnabled && !breathEnabled) {
-      toggleBreath();
-    } else if (heartEnabled && breathEnabled) {
-      toggleHeart();
+      if (!heartEnabled) {
+        toggleHeart();
+      }
+      if (!breathEnabled) {
+        toggleBreath();
+      }
     } else {
-      toggleHeart();
+      // Turn OFF physiology mode: hide buttons and stop simulations
+      setPhysioActive(false);
+      if (heartEnabled) {
+        toggleHeart();
+      }
+      if (breathEnabled) {
+        toggleBreath();
+      }
     }
   };
 
@@ -208,7 +220,7 @@ export function StudioActionDock() {
             onClick={handlePhysioClick}
             icon={<Activity className={`h-3.5 w-3.5 ${heartEnabled ? "animate-pulse text-rose-400" : ""}`} />}
             label={fa ? "فیزیولوژی" : "Physio"}
-            badge={heartEnabled || breathEnabled || scanEnabled}
+            badge={physioActive || heartEnabled || breathEnabled || scanEnabled}
           />
           <TabButton
             active={activeTab === "studio" && !minimized}

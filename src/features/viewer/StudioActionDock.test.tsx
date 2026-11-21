@@ -6,6 +6,7 @@ import { useInterfaceLanguage } from "@/stores/interfaceLanguage";
 import { useHeartStore } from "@/stores/heartStore";
 import { useBreathStore } from "@/stores/breathStore";
 import { useScanStore } from "@/stores/scanStore";
+import { usePhysiologyStore } from "@/stores/physiologyStore";
 import { StudioActionDock } from "./StudioActionDock";
 
 describe("StudioActionDock", () => {
@@ -14,6 +15,7 @@ describe("StudioActionDock", () => {
     useHeartStore.setState({ enabled: false, sound: false, rhythm: "normal", toggle: vi.fn() });
     useBreathStore.setState({ enabled: false, toggle: vi.fn() });
     useScanStore.setState({ enabled: false, toggle: vi.fn() });
+    usePhysiologyStore.setState({ active: false });
     useSceneStore.setState({
       fitView: vi.fn(),
       orientView: vi.fn(),
@@ -65,9 +67,26 @@ describe("StudioActionDock", () => {
     fireEvent.click(physioTab);
 
     expect(toggleHeartSpy).toHaveBeenCalled();
+    expect(usePhysiologyStore.getState().active).toBe(true);
     expect(screen.getByRole("button", { name: "Heartbeat" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Breathing" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Scanner" })).toBeTruthy();
+  });
+
+  it("toggles physiology mode off on second click", () => {
+    const toggleHeartSpy = vi.fn();
+    const toggleBreathSpy = vi.fn();
+    useHeartStore.setState({ enabled: true, toggle: toggleHeartSpy });
+    useBreathStore.setState({ enabled: true, toggle: toggleBreathSpy });
+    usePhysiologyStore.setState({ active: true });
+
+    render(<StudioActionDock />);
+    const physioTab = screen.getByRole("button", { name: "Physio" });
+    fireEvent.click(physioTab);
+
+    expect(usePhysiologyStore.getState().active).toBe(false);
+    expect(toggleHeartSpy).toHaveBeenCalled();
+    expect(toggleBreathSpy).toHaveBeenCalled();
   });
 
   it("switches to Studio tab and controls lighting presets", () => {

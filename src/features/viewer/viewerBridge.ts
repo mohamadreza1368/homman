@@ -59,6 +59,7 @@ export function projectToScreen(
   width: number,
   height: number,
 ): ScreenPoint {
+  camera.updateMatrixWorld(true);
   tmpVec.copy(point).applyMatrix4(camera.matrixWorldInverse);
   const behind = tmpVec.z > 0;
   tmpVec.applyMatrix4(camera.projectionMatrix);
