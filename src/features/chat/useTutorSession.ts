@@ -7,8 +7,6 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSceneCommands } from "@/features/viewer/useSceneCommands";
-import { CURRENT_CROSSING } from "@/features/viewer/scanCrossing";
-import { CURRENT_LEVEL } from "@/features/viewer/vertebralLevel";
 import {
   askAgent,
   cancelRequest,
@@ -32,20 +30,15 @@ import type {
 import { useCaseStore, virtualPatientContext } from "@/stores/caseStore";
 import { completeHistory, useChatStore } from "@/stores/chatStore";
 import { useModelStore } from "@/stores/modelStore";
-import { useBreathStore } from "@/stores/breathStore";
-import { useHeartStore } from "@/stores/heartStore";
-import { useScanStore } from "@/stores/scanStore";
-import { groupNames, organLabel, useSceneStore } from "@/stores/sceneStore";
+import { organLabel, useSceneStore } from "@/stores/sceneStore";
 import { useStudyStore } from "@/stores/studyStore";
 import { useUsageStore } from "@/stores/usageStore";
 import { useInterfaceLanguage } from "@/stores/interfaceLanguage";
 import { isCustomApiConfigured, useCustomApiConfig } from "@/stores/customApiConfig";
-import { breathAim } from "./breathContext";
-import { heartAim } from "./heartContext";
-import { scannerAim } from "./scannerContext";
 import { useAimHint } from "./aimHint";
 import { useSessionPreferences } from "./useSessionPreferences";
 import { runCustomChatStream } from "./useCustomStreamRunner";
+import { useAnatomyContextBuilder } from "./useAnatomyContextBuilder";
 
 function currentTurnScope(): TurnScope {
   const chatState = useChatStore.getState();
@@ -72,21 +65,28 @@ export function useTutorSession() {
   const customReady = isCustomApiConfigured({ baseUrl: customBaseUrl, model: customModel });
   const customAbortRef = useRef<AbortController | null>(null);
 
-  const scanEnabled = useScanStore((state) => state.enabled);
-  const scanPinned = useScanStore((state) => state.pinned);
-  const scanPlane = useScanStore((state) => state.plane);
-
-  const heartEnabled = useHeartStore((state) => state.enabled);
-  const heartRhythm = useHeartStore((state) => state.rhythm);
-  const heartSound = useHeartStore((state) => state.sound);
-
-  const breathEnabled = useBreathStore((state) => state.enabled);
-  const breathPattern = useBreathStore((state) => state.pattern);
   const { learned: aimHintLearned, retire: retireAimHint } = useAimHint();
 
   const chatMessages = useChatStore((state) => state.messages);
   const pendingRequestId = useChatStore((state) => state.pendingRequestId);
   const mode = useChatStore((state) => state.mode);
+
+  const {
+    visibleStructures,
+    selectableGroups,
+    getScannerContext,
+    activeHeartAim,
+    activeBreathAim,
+    activeSystemsSet,
+  } = useAnatomyContextBuilder({
+    loadedOrgans,
+    selectedOrganIds,
+    isolatedOrganIds,
+    hiddenSystems,
+    mode,
+    aimHintLearned,
+    isPersian,
+  });
   const startTurn = useChatStore((state) => state.startTurn);
   const appendDelta = useChatStore((state) => state.appendDelta);
   const noteTool = useChatStore((state) => state.noteTool);
@@ -316,52 +316,9 @@ export function useTutorSession() {
     ),
   });
 
-  const visibleStructures = useMemo(
-    () => Object.values(loadedOrgans).filter((organ) => !hiddenSystems.includes(organ.system)),
-    [loadedOrgans, hiddenSystems],
-  );
-  const selectableGroups = useMemo(() => groupNames(visibleStructures), [visibleStructures]);
   const isHistoryCompacted = useMemo(() => completeHistory(chatMessages).length > 100, [chatMessages]);
   const chatReady = customReady || engineReady;
   const canSend = chatReady && draft.trim().length > 0 && !pendingRequestId && !preparing;
-
-  const getScannerContext = useCallback(
-    () =>
-      scannerAim({
-        enabled: scanEnabled,
-        still: scanPinned || useScanStore.getState().held,
-        plane: scanPlane,
-        mode,
-        selected: selectedOrganIds.length,
-        level: CURRENT_LEVEL.value,
-        organIds: CURRENT_CROSSING.value.organIds,
-        total: CURRENT_CROSSING.value.total,
-        organ: (id) => {
-          const item = loadedOrgans[id];
-          return item
-            ? { organ_id: item.organ_id, ta2_latin: item.ta2_latin, name_en: item.name_en, system: item.system }
-            : null;
-        },
-      }),
-    [loadedOrgans, mode, scanEnabled, scanPinned, scanPlane, selectedOrganIds.length],
-  );
-
-  const activeHeartAim = useMemo(
-    () => heartAim({ enabled: heartEnabled, mode, rhythm: heartRhythm, sound: heartSound }),
-    [heartEnabled, heartRhythm, heartSound, mode],
-  );
-
-  const activeBreathAim = useMemo(
-    () =>
-      breathAim({
-        enabled: breathEnabled,
-        mode,
-        pattern: breathPattern,
-        heartEnabled,
-        rhythm: heartRhythm,
-      }),
-    [breathEnabled, breathPattern, heartEnabled, heartRhythm, mode],
-  );
 
   const handleSendQuery = useCallback(
     async (explicitText?: string) => {
@@ -533,11 +490,6 @@ export function useTutorSession() {
     customAbortRef.current = null;
     turns.invalidate(useChatStore.getState().pendingRequestId);
   }, [turns]);
-
-  const activeSystemsSet = useMemo(
-    () => new Set(visibleStructures.map((organ) => organ.system)),
-    [visibleStructures],
-  );
 
   return {
     isPersian,
