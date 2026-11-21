@@ -11,8 +11,7 @@ import { useStudyStore } from "@/stores/studyStore";
 
 import "./memoryLab.css";
 import { EraseQueue, RESTORE_WINDOW_S } from "./eraseQueue";
-import { calloutPlacement, freeMargins, studiedRowsFor, type Box } from "./layout";
-import { stepMemory } from "./memories";
+import { freeMargins, studiedRowsFor, type Box } from "./layout";
 import { studiedIds, studiedOrgans, type StudiedOrgan } from "./studied";
 import {
   CLASSIFICATION_TITLES,
@@ -30,6 +29,9 @@ import { MemoryReader } from "./MemoryReader";
 import { MemoryTimeline as Timeline } from "./MemoryTimeline";
 import { useMemoryDataLoader } from "./useMemoryDataLoader";
 import { useHologramLabScene } from "./useHologramLabScene";
+import { StudiedOrgansPanel } from "./StudiedOrgansPanel";
+import { useMemoryCallout } from "./useMemoryCallout";
+import { useMemoryHotkeys } from "./useMemoryHotkeys";
 
 export function MemoryLab({ onClose }: { onClose: () => void }) {
   const containerRootRef = useRef<HTMLDivElement>(null);
@@ -98,105 +100,113 @@ export function MemoryLab({ onClose }: { onClose: () => void }) {
     avatarContainerRef,
     memoryList,
     onHoverMemory: setHoveredMemoryKey,
-    onSelectMemory: setSelectedMemoryKey,
+    onSelectMemory: (key) => selectMemoryItem(key),
     onError: setDisplayErrorMessage,
   });
 
+  const availableLiveMemories = useMemo(() => {
+    if (!memoryList) return [];
+    return memoryList.filter((item) => !erasedKeysSet.has(item.key));
+  }, [memoryList, erasedKeysSet]);
+
   const memoryLookupMap = useMemo(
-    () => new Map((memoryList ?? []).map((m) => [m.key, m])),
+    () => new Map(memoryList?.map((m) => [m.key, m])),
     [memoryList],
   );
 
-  const availableLiveMemories = useMemo(
-    () => (memoryList ?? []).filter((m) => !erasedKeysSet.has(m.key)),
-    [memoryList, erasedKeysSet],
-  );
+  const activeHighlightedOrgan = hoveredOrganNode ?? pinnedOrganNode;
 
-  // Extended load and graphics context recovery timers
+  // Slow initial loading detection timer
   useEffect(() => {
-    setIsSlowInitialLoad(false);
-    if (!memoryList || memoryList.length === 0 || currentHoloPhase !== "boot" || isSoftwareOnlyFallback) {
+    if (currentHoloPhase !== "boot") {
+      setIsSlowInitialLoad(false);
       return;
     }
-    const timer = window.setTimeout(() => setIsSlowInitialLoad(true), EXTENDED_LOAD_WARNING_DELAY_MS);
+    const timer = window.setTimeout(
+      () => setIsSlowInitialLoad(true),
+      EXTENDED_LOAD_WARNING_DELAY_MS,
+    );
     return () => window.clearTimeout(timer);
-  }, [memoryList, currentHoloPhase, isSoftwareOnlyFallback]);
+  }, [currentHoloPhase]);
 
-  useEffect(() => {
-    if (!hardwareGraphicsStatus?.lost) return;
-    const timer = window.setTimeout(() => {
-      setDisplayErrorMessage(
-        "The graphics card reset and the hologram did not come back. Your memories are safe — try again.",
-      );
-    }, CONTEXT_RESTORE_TIMEOUT_MS);
-    return () => window.clearTimeout(timer);
-  }, [hardwareGraphicsStatus?.lost, setDisplayErrorMessage]);
-
-  // Organ correlation for active memory inspection
-  useEffect(() => {
-    const recognizedIdSet = new Set(anatomicalAtlas.map((item) => item.organ_id));
-    const extractedOrgans =
-      activeInspection?.state === "session"
-        ? studiedIds(
-            activeInspection.detail.structures,
-            activeInspection.detail.messages
-              .filter((msg) => msg.role === "assistant")
-              .map((msg) => msg.content),
-            (id) => recognizedIdSet.has(id),
-          )
-        : activeInspection?.state === "note"
-          ? studiedIds(
-              activeInspection.note.organ_id ? [activeInspection.note.organ_id] : [],
-              [activeInspection.note.body],
-              (id) => recognizedIdSet.has(id),
-            )
-          : [];
-
-    const resolvedOrganProfiles = studiedOrgans(extractedOrgans, anatomicalAtlas);
-    const figureAvatar = avatarInstanceRef.current;
-
-    if (!figureAvatar || resolvedOrganProfiles.length === 0) {
-      void figureAvatar?.show([]);
-      setAssociatedOrganList([]);
-      return;
-    }
-
-    let isOutdated = false;
-    setAssociatedOrganList(null);
-
-    void figureAvatar.show(resolvedOrganProfiles).then((verifiedMeshIds) => {
-      if (isOutdated) return;
-      const verifiedSet = new Set(verifiedMeshIds);
-      setAssociatedOrganList(resolvedOrganProfiles.filter((item) => verifiedSet.has(item.id)));
-    });
-
-    return () => {
-      isOutdated = true;
-    };
-  }, [activeInspection, anatomicalAtlas, avatarInstanceRef]);
-
+  // Sync studied organs from active inspection
   useEffect(() => {
     setPinnedOrganNode(null);
     setHoveredOrganNode(null);
     setIsAllOrgansUnfolded(false);
     setIsOrganCameraZoomed(false);
-  }, [associatedOrganList]);
+
+    if (!selectedMemoryKey || !activeInspection) {
+      setAssociatedOrganList([]);
+      return;
+    }
+
+    if (activeInspection.state === "loading") {
+      setAssociatedOrganList(null);
+      const timer = window.setTimeout(() => {
+        setAssociatedOrganList((prev) => (prev === null ? [] : prev));
+      }, CONTEXT_RESTORE_TIMEOUT_MS);
+      return () => window.clearTimeout(timer);
+    }
+
+    if (activeInspection.state === "note") {
+      const organ = anatomicalAtlas.find((item) => item.organ_id === activeInspection.note.organ_id);
+      setAssociatedOrganList(
+        organ
+          ? [
+              {
+                id: organ.organ_id,
+                name: organ.name_en,
+                file: organ.mesh_file,
+                node: organ.node,
+              },
+            ]
+          : [],
+      );
+      return;
+    }
+
+    if (activeInspection.state === "session") {
+      const atlasSet = new Set(anatomicalAtlas.map((item) => item.organ_id));
+      const ids = studiedIds(
+        activeInspection.detail.structures,
+        activeInspection.detail.messages.map((m) => m.content),
+        (id) => atlasSet.has(id),
+      );
+      setAssociatedOrganList(anatomicalAtlas.length > 0 ? studiedOrgans(ids, anatomicalAtlas) : []);
+    }
+  }, [selectedMemoryKey, activeInspection, anatomicalAtlas]);
+
+  // Project studied organs onto the 3D avatar hologram
+  useEffect(() => {
+    const avatar = avatarInstanceRef.current;
+    if (!avatar) return;
+
+    if (!associatedOrganList || associatedOrganList.length === 0) {
+      void avatar.show([]);
+      return;
+    }
+
+    const payload = associatedOrganList.map((item) => ({
+      id: item.id,
+      node: item.node,
+      file: item.file,
+    }));
+    void avatar.show(payload);
+  }, [associatedOrganList, avatarInstanceRef]);
+
+  useEffect(() => {
+    avatarInstanceRef.current?.pick(activeHighlightedOrgan);
+  }, [activeHighlightedOrgan, avatarInstanceRef]);
 
   useEffect(() => {
     avatarInstanceRef.current?.zoom(isOrganCameraZoomed, pinnedOrganNode);
   }, [isOrganCameraZoomed, pinnedOrganNode, avatarInstanceRef]);
 
-  const activeHighlightedOrgan = hoveredOrganNode ?? pinnedOrganNode;
-  useEffect(() => {
-    avatarInstanceRef.current?.pick(activeHighlightedOrgan);
-  }, [activeHighlightedOrgan, avatarInstanceRef]);
-
   const handleOrganHover = useCallback(
-    (id: string | null) => {
-      setHoveredOrganNode(id);
-      if (id) {
-        audioSynthRef.current?.hover("case");
-      }
+    (organId: string | null) => {
+      setHoveredOrganNode(organId);
+      if (organId) audioSynthRef.current?.hover("note");
     },
     [audioSynthRef],
   );
@@ -403,56 +413,15 @@ export function MemoryLab({ onClose }: { onClose: () => void }) {
   // Floating memory pointer callout alignment
   const activeFocusKey = isExpandedReader ? null : (hoveredMemoryKey ?? selectedMemoryKey);
 
-  useEffect(() => {
-    let animId = 0;
-    const alignCallout = () => {
-      animId = requestAnimationFrame(alignCallout);
-      const calloutEl = calloutTagRef.current;
-      if (!calloutEl) return;
-
-      const screenPos = activeFocusKey
-        ? sceneInstanceRef.current?.screenPosition(activeFocusKey)
-        : null;
-      if (!screenPos) {
-        calloutEl.style.opacity = "0";
-        return;
-      }
-
-      calloutEl.style.opacity = "1";
-      calloutEl.style.transform = `translate(${screenPos.x}px, ${screenPos.y}px)`;
-
-      const tagContainer = calloutEl.querySelector<HTMLElement>(".ml-tag");
-      const hostFrame = containerRootRef.current?.getBoundingClientRect();
-      if (!tagContainer || !hostFrame) return;
-
-      const getLateralPanelBounds = (panel: HTMLElement | null): DOMRect | null => {
-        if (!panel || panel.offsetParent === null) return null;
-        if (panel.classList.contains("ml-hidden") || panel.classList.contains("ml-wide")) return null;
-        const rect = panel.getBoundingClientRect();
-        return rect.width < hostFrame.width * 0.55 ? rect : null;
-      };
-
-      let minLeftBound = 0;
-      for (const p of [avatarContainerRef.current, leftPanelRef.current]) {
-        const bounds = getLateralPanelBounds(p);
-        if (bounds) {
-          minLeftBound = Math.max(minLeftBound, bounds.right - hostFrame.left);
-        }
-      }
-
-      const readerBounds = getLateralPanelBounds(rightPanelRef.current);
-      const maxRightBound = readerBounds ? readerBounds.left - hostFrame.left : hostFrame.width;
-      const naturalTagWidth =
-        Math.max(...[...tagContainer.children].map((child) => child.scrollWidth)) + 32;
-
-      const placement = calloutPlacement(screenPos.x, naturalTagWidth, minLeftBound, maxRightBound);
-      calloutEl.classList.toggle("ml-flip", placement.side === "left");
-      tagContainer.style.maxWidth = `${placement.maxWidth}px`;
-    };
-
-    animId = requestAnimationFrame(alignCallout);
-    return () => cancelAnimationFrame(animId);
-  }, [activeFocusKey, sceneInstanceRef]);
+  useMemoryCallout({
+    calloutTagRef,
+    containerRootRef,
+    avatarContainerRef,
+    leftPanelRef,
+    rightPanelRef,
+    sceneInstanceRef,
+    activeFocusKey,
+  });
 
   // Global hotkeys
   const activeKeysList = useMemo(
@@ -460,76 +429,19 @@ export function MemoryLab({ onClose }: { onClose: () => void }) {
     [availableLiveMemories],
   );
 
-  useEffect(() => {
-    const handleGlobalKeyDown = (evt: KeyboardEvent) => {
-      if (evt.ctrlKey || evt.altKey || evt.metaKey) return;
-
-      if (isHelpGuideVisible) {
-        if (evt.key === "Escape" || evt.key === "?") {
-          setIsHelpGuideVisible(false);
-        }
-        return;
-      }
-
-      if (evt.key === "?") {
-        setIsHelpGuideVisible(true);
-        return;
-      }
-
-      const targetTag = (evt.target as HTMLElement | null)?.closest?.(
-        "input, textarea, select, [contenteditable='true']",
-      );
-
-      if (
-        (evt.key === "ArrowLeft" || evt.key === "ArrowRight") &&
-        !targetTag &&
-        currentHoloPhase === "live" &&
-        !evt.repeat
-      ) {
-        const nextKey = stepMemory(activeKeysList, selectedMemoryKey, evt.key === "ArrowLeft" ? -1 : 1);
-        if (nextKey && nextKey !== selectedMemoryKey) {
-          selectMemoryItem(nextKey);
-        }
-        evt.preventDefault();
-        return;
-      }
-
-      if (
-        evt.key === "Enter" &&
-        selectedMemoryKey &&
-        !targetTag &&
-        !(evt.target as HTMLElement | null)?.closest?.("button, a")
-      ) {
-        setIsExpandedReader((w) => !w);
-        evt.preventDefault();
-        return;
-      }
-
-      if (evt.key === "Escape") {
-        if (isExpandedReader) {
-          setIsExpandedReader(false);
-        } else if (selectedMemoryKey) {
-          selectMemoryItem(null);
-        } else if (isRailNavOpen) {
-          setIsRailNavOpen(false);
-        } else {
-          handleLabDismissal();
-        }
-      }
-    };
-
-    window.addEventListener("keydown", handleGlobalKeyDown);
-    return () => window.removeEventListener("keydown", handleGlobalKeyDown);
-  }, [
-    activeKeysList,
-    currentHoloPhase,
-    handleLabDismissal,
-    isExpandedReader,
+  useMemoryHotkeys({
     isHelpGuideVisible,
-    isRailNavOpen,
-    selectMemoryItem,
+    setIsHelpGuideVisible,
+    isExpandedReader,
+    setIsExpandedReader,
     selectedMemoryKey,
-  ]);
+    selectMemoryItem,
+    isRailNavOpen,
+    setIsRailNavOpen,
+    handleLabDismissal,
+    currentHoloPhase,
+    activeKeysList,
+  });
 
   const totalRegisteredMemories = memoryList?.length ?? 0;
   const isIntroSequenceActive = currentHoloPhase !== "live" && !isSoftwareOnlyFallback;
@@ -557,79 +469,23 @@ export function MemoryLab({ onClose }: { onClose: () => void }) {
         ref={avatarContainerRef}
         className={`ml-body ${totalRegisteredMemories > 0 && !isSoftwareOnlyFallback ? "" : "ml-hidden"}`}
       >
-        {inspectedMemoryRecord && associatedOrganList !== null && associatedOrganList.length > 0 && (
-          <div className="ml-studied" aria-live="polite">
-            <span>STUDIED IN THIS MEMORY</span>
-            <div className={`ml-studied-list ${isAllOrgansUnfolded ? "ml-all" : ""}`}>
-              {(isAllOrgansUnfolded
-                ? associatedOrganList
-                : associatedOrganList.slice(0, visibleOrganRowCount)
-              ).map((organ) => (
-                <button
-                  type="button"
-                  key={organ.id}
-                  className={organ.id === activeHighlightedOrgan ? "ml-on" : ""}
-                  aria-pressed={organ.id === pinnedOrganNode}
-                  title={
-                    organ.id === pinnedOrganNode
-                      ? "Show them all again"
-                      : "Show it alone in the figure"
-                  }
-                  onPointerEnter={() => handleOrganHover(organ.id)}
-                  onPointerLeave={() => setHoveredOrganNode(null)}
-                  onFocus={() => handleOrganHover(organ.id)}
-                  onBlur={() => setHoveredOrganNode(null)}
-                  onClick={() =>
-                    setPinnedOrganNode((prev) => (prev === organ.id ? null : organ.id))
-                  }
-                >
-                  {organ.name}
-                </button>
-              ))}
-            </div>
-
-            <div className="ml-studied-tools">
-              {associatedOrganList.length > visibleOrganRowCount && (
-                <button
-                  type="button"
-                  className="ml-tool"
-                  aria-expanded={isAllOrgansUnfolded}
-                  onClick={() => setIsAllOrgansUnfolded((all) => !all)}
-                >
-                  {isAllOrgansUnfolded
-                    ? "SHOW FEWER"
-                    : `+${associatedOrganList.length - visibleOrganRowCount} MORE`}
-                </button>
-              )}
-              <button
-                type="button"
-                className="ml-tool"
-                aria-pressed={isOrganCameraZoomed}
-                title={
-                  isOrganCameraZoomed
-                    ? "Back to the whole figure"
-                    : pinnedOrganNode
-                      ? "Move in on the chosen structure"
-                      : "Move in on what was studied — click a name first to go to that one"
-                }
-                onClick={() => {
-                  if (!isOrganCameraZoomed) {
-                    setIsAllOrgansUnfolded(false);
-                  }
-                  setIsOrganCameraZoomed(!isOrganCameraZoomed);
-                }}
-              >
-                {isOrganCameraZoomed ? "⊖ WHOLE BODY" : "⊕ ZOOM IN"}
-              </button>
-            </div>
-          </div>
-        )}
-
-        {inspectedMemoryRecord && associatedOrganList === null && (
-          <div className="ml-studied">
-            <span>LOCATING…</span>
-          </div>
-        )}
+        <StudiedOrgansPanel
+          associatedOrganList={inspectedMemoryRecord ? associatedOrganList : []}
+          activeHighlightedOrgan={activeHighlightedOrgan}
+          pinnedOrganNode={pinnedOrganNode}
+          isAllOrgansUnfolded={isAllOrgansUnfolded}
+          visibleOrganRowCount={visibleOrganRowCount}
+          isOrganCameraZoomed={isOrganCameraZoomed}
+          onOrganHover={handleOrganHover}
+          onOrganPin={(id) => setPinnedOrganNode((prev) => (prev === id ? null : id))}
+          onToggleUnfold={() => setIsAllOrgansUnfolded((all) => !all)}
+          onToggleZoom={() => {
+            if (!isOrganCameraZoomed) {
+              setIsAllOrgansUnfolded(false);
+            }
+            setIsOrganCameraZoomed(!isOrganCameraZoomed);
+          }}
+        />
       </div>
 
       <div className="ml-hud">

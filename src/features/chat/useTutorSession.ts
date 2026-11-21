@@ -25,15 +25,12 @@ import {
 } from "./turnRegistry";
 import type {
   AiProvider,
-  Language,
   ModelInfo,
   SceneCommand,
   TokenUsage,
-  UserProfile,
 } from "@/lib/schemas";
 import { useCaseStore, virtualPatientContext } from "@/stores/caseStore";
 import { completeHistory, useChatStore } from "@/stores/chatStore";
-import { chatPreferences, patchChatPreferences } from "@/stores/chatPreferences";
 import { useModelStore } from "@/stores/modelStore";
 import { useBreathStore } from "@/stores/breathStore";
 import { useHeartStore } from "@/stores/heartStore";
@@ -43,11 +40,12 @@ import { useStudyStore } from "@/stores/studyStore";
 import { useUsageStore } from "@/stores/usageStore";
 import { useInterfaceLanguage } from "@/stores/interfaceLanguage";
 import { isCustomApiConfigured, useCustomApiConfig } from "@/stores/customApiConfig";
-import { buildCustomSystemPrompt, streamCustomChat } from "./customApiClient";
 import { breathAim } from "./breathContext";
 import { heartAim } from "./heartContext";
 import { scannerAim } from "./scannerContext";
 import { useAimHint } from "./aimHint";
+import { useSessionPreferences } from "./useSessionPreferences";
+import { runCustomChatStream } from "./useCustomStreamRunner";
 
 function currentTurnScope(): TurnScope {
   const chatState = useChatStore.getState();
@@ -67,7 +65,6 @@ export function useTutorSession() {
   const isolatedOrganIds = useSceneStore((state) => state.isolatedOrganIds);
   const hiddenSystems = useSceneStore((state) => state.hiddenSystems);
   const genderModel = useSceneStore((state) => state.genderModel);
-  const executeSceneCommand = useSceneStore((state) => state.applyCommand);
 
   const customBaseUrl = useCustomApiConfig((state) => state.baseUrl);
   const customApiKey = useCustomApiConfig((state) => state.apiKey);
@@ -102,14 +99,22 @@ export function useTutorSession() {
   const receiveModels = useModelStore((state) => state.receiveModels);
   const failCheck = useModelStore((state) => state.failCheck);
 
-  const initialPreferences = chatPreferences();
-  const [provider, setProvider] = useState<AiProvider>(initialPreferences.provider);
-  const [profile, setProfile] = useState<UserProfile>(initialPreferences.profile);
-  const [language, setLanguage] = useState<Language>(initialPreferences.language);
-  const [spokenLimit, setSpokenLimit] = useState(initialPreferences.spokenLimit);
-  const [spokenSpeed, setSpokenSpeed] = useState(initialPreferences.spokenSpeed);
-  const [spokenVolume, setSpokenVolume] = useState(initialPreferences.spokenVolume);
-  const [selectedModel, setSelectedModel] = useState<string | null>(null);
+  const {
+    provider,
+    setProvider,
+    profile,
+    setProfile,
+    language,
+    setLanguage,
+    spokenLimit,
+    setSpokenLimit,
+    spokenSpeed,
+    setSpokenSpeed,
+    spokenVolume,
+    setSpokenVolume,
+    selectedModel,
+    setSelectedModel,
+  } = useSessionPreferences();
 
   const [engineReady, setEngineReady] = useState(false);
   const [transportError, setTransportError] = useState<string | null>(null);
@@ -148,8 +153,7 @@ export function useTutorSession() {
     const registeredGrade = verdictRef.current.get(requestId);
     verdictRef.current.delete(requestId);
 
-    if (!recordedTurn) return;
-    if (turnContext.mode === "review") return;
+    if (!recordedTurn || turnContext.mode === "review") return;
 
     const studyState = useStudyStore.getState();
     const { profile: targetProfile, language: targetLanguage } = turnContext;
@@ -185,11 +189,9 @@ export function useTutorSession() {
   const recordSpend = useCallback(
     (spendContext: Readonly<SpendContext>, usage: TokenUsage | null, modelName: string | null) => {
       if (!usage || !modelName) return;
-      const { provider: activeProvider } = spendContext;
-
       void useUsageStore.getState().record({
         session_id: spendContext.sessionId,
-        provider: activeProvider,
+        provider: spendContext.provider,
         model: modelName,
         input_tokens: usage.input_tokens,
         output_tokens: usage.output_tokens,
@@ -206,10 +208,7 @@ export function useTutorSession() {
     }
     setEngineReady(false);
     setTransportError(
-      `This build of HOOMAAN speaks protocol ${PROTOCOL_VERSION}, but the ` +
-        `engine bundled with it speaks ${protocolVersion}. That is a broken ` +
-        `installation rather than anything you did — reinstall from a single ` +
-        `release, and if it persists please report it.`,
+      `This build of HOOMAAN speaks protocol ${PROTOCOL_VERSION}, but the engine speaks ${protocolVersion}. Reinstall from a single release.`,
     );
   }, []);
 
@@ -316,10 +315,6 @@ export function useTutorSession() {
       [failTurn, failCheck, turns],
     ),
   });
-
-  useEffect(() => {
-    patchChatPreferences({ provider, profile, language, spokenLimit, spokenSpeed, spokenVolume });
-  }, [provider, profile, language, spokenLimit, spokenSpeed, spokenVolume]);
 
   const visibleStructures = useMemo(
     () => Object.values(loadedOrgans).filter((organ) => !hiddenSystems.includes(organ.system)),
@@ -448,39 +443,24 @@ export function useTutorSession() {
           const streamAbortController = new AbortController();
           customAbortRef.current = streamAbortController;
 
-          const streamResult = await streamCustomChat({
+          const streamResult = await runCustomChatStream({
+            newTurnId,
+            rawQuery,
             baseUrl: customBaseUrl,
             apiKey: customApiKey,
             model: customModel,
-            systemPrompt: buildCustomSystemPrompt({
-              fa: isPersian,
-              profile,
-              genderModel,
-              mode,
-              selection: selectedOrgansList,
-              organCount: visibleStructures.length,
-            }),
-            history: chatStoreState.history(),
-            query: rawQuery,
+            isPersian,
+            profile,
+            genderModel,
             mode,
+            selectedOrgansList,
+            organCount: visibleStructures.length,
+            history: chatStoreState.history(),
+            turns,
             signal: streamAbortController.signal,
-            onDelta: (chunk) => {
-              if (turns.accepts(newTurnId)) appendDelta(newTurnId, chunk);
-            },
-            onToolStarted: (tool) => {
-              if (turns.accepts(newTurnId)) noteTool(newTurnId, tool);
-            },
-            onSceneCommand: (cmd) => {
-              if (turns.accepts(newTurnId)) {
-                noteCommand(newTurnId, cmd);
-                executeSceneCommand(cmd);
-              }
-            },
-            onCaseVerdict: (scr, vrd) => {
-              if (turns.accepts(newTurnId)) {
-                noteScore(newTurnId, scr);
-                verdictRef.current.set(newTurnId, { score: scr, verdict: vrd });
-              }
+            onVerdict: (score, verdict) => {
+              noteScore(newTurnId, score);
+              verdictRef.current.set(newTurnId, { score, verdict });
             },
           });
 
@@ -540,10 +520,6 @@ export function useTutorSession() {
       customBaseUrl,
       customApiKey,
       customModel,
-      appendDelta,
-      noteTool,
-      noteCommand,
-      executeSceneCommand,
       noteScore,
       finishTurn,
       persistTurn,

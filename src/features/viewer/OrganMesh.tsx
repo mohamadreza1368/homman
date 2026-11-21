@@ -170,21 +170,32 @@ export const OrganMesh = memo(function OrganMesh({
     return registerCarry(organ.organ_id, { mesh: node, part: respiratoryPart });
   }, [organ.organ_id, respiratoryPart]);
 
+  // Shared cardiac deformation state
+  const beatUserData = useMemo(() => {
+    if (chamber === null) return null;
+    if (!geometry.boundingBox) geometry.computeBoundingBox();
+    const ctr = geometry.boundingBox?.getCenter(new THREE.Vector3()) ?? new THREE.Vector3();
+    return {
+      ...breath,
+      organId: organ.organ_id,
+      beatAtrium: isAtrium(chamber) ? 1 : 0,
+      beatLeft: chamber.startsWith("left") ? 1 : 0,
+      beatCentre: { value: ctr },
+    };
+  }, [chamber, geometry, organ.organ_id, breath]);
+
   // Cardiac heartbeat registration
   useEffect(() => {
     const node = meshRef.current;
-    if (!isHeartBeating || !node || chamber === null) return;
-
-    if (!geometry.boundingBox) geometry.computeBoundingBox();
-    const center = geometry.boundingBox?.getCenter(new THREE.Vector3()) ?? new THREE.Vector3();
+    if (!isHeartBeating || !node || chamber === null || !beatUserData) return;
 
     return registerBeating(organ.organ_id, {
       mesh: node,
       chamber,
       wall: isChamberWall(organ),
-      centre: { value: center },
+      centre: beatUserData.beatCentre,
     });
-  }, [chamber, geometry, isHeartBeating, organ]);
+  }, [chamber, isHeartBeating, organ.organ_id, beatUserData]);
 
   // Blood flow registration
   const flowKind = useMemo(() => vesselFlow(organ), [organ]);
@@ -226,14 +237,8 @@ export const OrganMesh = memo(function OrganMesh({
       mat.polygonOffsetUnits = tissueDepthBias(organ);
     }
 
-    if (chamber !== null) {
-      mat.userData = {
-        ...breath,
-        organId: organ.organ_id,
-        beatAtrium: isAtrium(chamber) ? 1 : 0,
-        beatLeft: chamber.startsWith("left") ? 1 : 0,
-        beatCentre: { value: new THREE.Vector3() },
-      };
+    if (chamber !== null && beatUserData) {
+      mat.userData = beatUserData;
       mat.onBeforeCompile = heartbeatOnBeforeCompile;
     } else if (breath.breathRole !== BREATH_ROLE.none) {
       mat.userData = { ...breath };
@@ -241,7 +246,7 @@ export const OrganMesh = memo(function OrganMesh({
     }
 
     return mat;
-  }, [organ, opacity, clippingPlanes, chamber, breath, flowKind]);
+  }, [organ, opacity, clippingPlanes, chamber, breath, flowKind, beatUserData]);
 
   // Color updates
   useEffect(() => {
@@ -319,6 +324,8 @@ export const OrganMesh = memo(function OrganMesh({
       ref={meshRef}
       geometry={geometry}
       material={material}
+      matrix={matrix}
+      matrixAutoUpdate={false}
       onClick={handleClick}
       onPointerOver={handlePointerOver}
       onPointerOut={handlePointerOut}

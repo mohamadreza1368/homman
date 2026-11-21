@@ -8,6 +8,8 @@ mod control_frame;
 #[cfg(windows)]
 mod control_listener;
 #[cfg(windows)]
+mod pipe_codec;
+#[cfg(windows)]
 mod control_pipe;
 mod display;
 mod keyring_store;
