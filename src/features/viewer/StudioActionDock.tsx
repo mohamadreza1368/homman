@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Activity,
   Compass,
@@ -10,6 +10,7 @@ import {
   RotateCcw,
   Scan,
   Sparkles,
+  Stethoscope,
   Sun,
   Wind,
   ZoomIn,
@@ -23,6 +24,8 @@ import { useBreathStore } from "@/stores/breathStore";
 import { useScanStore } from "@/stores/scanStore";
 import { useStudyViewsStore } from "@/stores/studyViewsStore";
 import { usePhysiologyStore } from "@/stores/physiologyStore";
+import { useNavigationStore } from "@/stores/navigationStore";
+import { diseasesForStructure } from "@/features/diseases/catalog";
 
 import {
   DOLLY_IN,
@@ -51,7 +54,7 @@ const VIEW_HINT_FA: Record<AnatomicalView, string> = {
   superior: "نمای فوقانی (از بالا) — کلید S",
 };
 
-type DockTab = "views" | "dissect" | "physio" | "studio";
+type DockTab = "views" | "dissect" | "physio" | "studio" | "diseases";
 
 export function StudioActionDock() {
   const fa = useInterfaceLanguage((s) => s.language === "fa");
@@ -62,6 +65,7 @@ export function StudioActionDock() {
   const fitView = useSceneStore((s) => s.fitView);
   const orientView = useSceneStore((s) => s.orientView);
   const dollyView = useSceneStore((s) => s.dollyView);
+  const genderModel = useSceneStore((s) => s.genderModel);
   const selectedOrganIds = useSceneStore((s) => s.selectedOrganIds);
   const isolatedOrganIds = useSceneStore((s) => s.isolatedOrganIds);
   const isolateSelection = useSceneStore((s) => s.isolateSelection);
@@ -100,6 +104,17 @@ export function StudioActionDock() {
     (manifest?.systems ?? []).every(
       (entry) => systemOpacity[entry.system] === GLASS_OPACITY,
     );
+
+  const relatedDiseases = useMemo(() => {
+    if (selectedOrganIds.length === 0) return [];
+    return Array.from(
+      new Set(
+        selectedOrganIds.flatMap((id) =>
+          diseasesForStructure(id, genderModel).map((d) => d.id),
+        ),
+      ),
+    );
+  }, [selectedOrganIds, genderModel]);
 
   const handleViewsClick = () => {
     setActiveTab("views");
@@ -159,10 +174,22 @@ export function StudioActionDock() {
     }
   };
 
+  const handleDiseasesClick = () => {
+    setActiveTab("diseases");
+    setMinimized(false);
+    useNavigationStore.getState().openDiseasesForSelection();
+  };
+
   const handleStudioClick = () => {
     setActiveTab("studio");
     setMinimized(false);
   };
+
+  useEffect(() => {
+    if (selectedOrganIds.length === 0 && activeTab === "diseases") {
+      setActiveTab("views");
+    }
+  }, [selectedOrganIds.length, activeTab]);
 
   // Global key bindings for 3D navigation and camera
   useEffect(() => {
@@ -228,6 +255,15 @@ export function StudioActionDock() {
             icon={<Sun className="h-3.5 w-3.5" />}
             label={fa ? "استودیو" : "Studio"}
           />
+          {selectedOrganIds.length > 0 && (
+            <TabButton
+              active={activeTab === "diseases" && !minimized}
+              onClick={handleDiseasesClick}
+              icon={<Stethoscope className="h-3.5 w-3.5 text-rose-400" />}
+              label={fa ? "بیماری‌ها" : "Diseases"}
+              badge={relatedDiseases.length > 0}
+            />
+          )}
         </div>
 
         <span aria-hidden className="h-4 w-px bg-slate-700/60" />
@@ -438,6 +474,36 @@ export function StudioActionDock() {
                   {background === "dark" ? (fa ? "تیره" : "Dark") : (fa ? "روشن" : "Light")}
                 </ActionButton>
               </>
+            )}
+
+            {activeTab === "diseases" && (
+              <div className="flex items-center gap-1.5 px-1">
+                <button
+                  type="button"
+                  onClick={() => useNavigationStore.getState().openDiseasesForSelection()}
+                  className="flex items-center gap-1 rounded-full bg-rose-500/20 px-2.5 py-0.5 text-[10px] font-medium text-rose-200 ring-1 ring-rose-400/40 hover:bg-rose-500/30 transition"
+                >
+                  <Stethoscope className="h-3 w-3" />
+                  <span>{fa ? "مشاهده در پنل بیماری‌ها" : "View in Disease Panel"}</span>
+                  {relatedDiseases.length > 0 && (
+                    <span className="rounded-full bg-rose-500/40 px-1 text-[9px] text-white">
+                      {relatedDiseases.length}
+                    </span>
+                  )}
+                </button>
+
+                {relatedDiseases.length > 0 ? (
+                  <span className="text-[10px] text-slate-400">
+                    {fa
+                      ? `${relatedDiseases.length} مورد مرتبط`
+                      : `${relatedDiseases.length} conditions`}
+                  </span>
+                ) : (
+                  <span className="text-[10px] text-slate-500">
+                    {fa ? "موردی برای این عضو ثبت نشده" : "No mapped conditions"}
+                  </span>
+                )}
+              </div>
             )}
           </div>
         )}

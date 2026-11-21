@@ -9,20 +9,20 @@ import { StorageNotice } from "./StorageNotice";
 import { APP_VERSION_LABEL } from "@/lib/appVersion";
 import { useStudyStore } from "@/stores/studyStore";
 import { useInterfaceLanguage } from "@/stores/interfaceLanguage";
+import { useNavigationStore } from "@/stores/navigationStore";
 import { DiseasePanel } from "@/features/diseases/DiseasePanel";
 import { BrandLogo } from "@/components/BrandLogo";
 import { AnatomyQuiz } from "@/features/anatomy/AnatomyQuiz";
 import { HeartLearningPath } from "@/features/anatomy/HeartLearningPath";
 import { StructureEducation } from "@/features/anatomy/StructureEducation";
 
-type NavigationTab = "atlas" | "diseases" | "education" | "study" | "usage";
-
 /**
  * Primary left sidebar container hosting Anatomy Tree, Disease Knowledgebase, Education,
  * Study Notebook, and Usage Accounting panels.
  */
 export function LeftPanel() {
-  const [currentTab, setCurrentTab] = useState<NavigationTab>("atlas");
+  const currentTab = useNavigationStore((state) => state.leftPanelTab);
+  const setCurrentTab = useNavigationStore((state) => state.setLeftPanelTab);
   const [isQuizActive, setIsQuizActive] = useState(false);
   const [isStatusVisible, setIsStatusVisible] = useState(false);
 

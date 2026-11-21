@@ -7,6 +7,7 @@ import { useHeartStore } from "@/stores/heartStore";
 import { useBreathStore } from "@/stores/breathStore";
 import { useScanStore } from "@/stores/scanStore";
 import { usePhysiologyStore } from "@/stores/physiologyStore";
+import { useNavigationStore } from "@/stores/navigationStore";
 import { StudioActionDock } from "./StudioActionDock";
 
 describe("StudioActionDock", () => {
@@ -16,6 +17,7 @@ describe("StudioActionDock", () => {
     useBreathStore.setState({ enabled: false, toggle: vi.fn() });
     useScanStore.setState({ enabled: false, toggle: vi.fn() });
     usePhysiologyStore.setState({ active: false });
+    useNavigationStore.setState({ leftPanelTab: "atlas", diseaseSelectedOnly: false });
     useSceneStore.setState({
       fitView: vi.fn(),
       orientView: vi.fn(),
@@ -128,5 +130,33 @@ describe("StudioActionDock", () => {
     expect(screen.getByRole("button", { name: /فیزیولوژی/i })).toBeTruthy();
     expect(screen.getByRole("button", { name: /استودیو/i })).toBeTruthy();
     expect(screen.getByRole("button", { name: /کادر/i })).toBeTruthy();
+  });
+
+  it("does not render Diseases tab when no organ is selected", () => {
+    useSceneStore.setState({ selectedOrganIds: [] });
+    render(<StudioActionDock />);
+    expect(screen.queryByRole("button", { name: "Diseases" })).toBeNull();
+  });
+
+  it("renders Diseases tab when an organ is selected and triggers navigation on click", () => {
+    useSceneStore.setState({ selectedOrganIds: ["liver"] });
+    render(<StudioActionDock />);
+
+    const diseasesBtn = screen.getByRole("button", { name: "Diseases" });
+    expect(diseasesBtn).toBeTruthy();
+
+    fireEvent.click(diseasesBtn);
+
+    expect(useNavigationStore.getState().leftPanelTab).toBe("diseases");
+    expect(useNavigationStore.getState().diseaseSelectedOnly).toBe(true);
+    expect(screen.getByText(/View in Disease Panel/i)).toBeTruthy();
+  });
+
+  it("renders Persian label for Diseases tab when language is fa and organ is selected", () => {
+    useInterfaceLanguage.setState({ language: "fa" });
+    useSceneStore.setState({ selectedOrganIds: ["liver"] });
+    render(<StudioActionDock />);
+
+    expect(screen.getByRole("button", { name: /بیماری‌ها/i })).toBeTruthy();
   });
 });

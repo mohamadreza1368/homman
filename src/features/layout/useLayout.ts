@@ -62,6 +62,14 @@ export function useLayout() {
   const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   useEffect(() => {
+    const handleEnsureOpen = () => {
+      setLayoutState((prev) => (prev.treeCollapsed ? { ...prev, treeCollapsed: false } : prev));
+    };
+    window.addEventListener("hoomaan:ensure-tree-open", handleEnsureOpen);
+    return () => window.removeEventListener("hoomaan:ensure-tree-open", handleEnsureOpen);
+  }, []);
+
+  useEffect(() => {
     clearTimeout(debounceTimerRef.current);
     debounceTimerRef.current = setTimeout(() => {
       try {
