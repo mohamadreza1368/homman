@@ -61,7 +61,9 @@ export function StudioActionDock() {
   const fitView = useSceneStore((s) => s.fitView);
   const orientView = useSceneStore((s) => s.orientView);
   const dollyView = useSceneStore((s) => s.dollyView);
+  const selectedOrganIds = useSceneStore((s) => s.selectedOrganIds);
   const isolatedOrganIds = useSceneStore((s) => s.isolatedOrganIds);
+  const isolateSelection = useSceneStore((s) => s.isolateSelection);
   const clearIsolation = useSceneStore((s) => s.clearIsolation);
   const glassBody = useSceneStore((s) => s.glassBody);
   const manifest = useSceneStore((s) => s.manifest);
@@ -95,6 +97,60 @@ export function StudioActionDock() {
     (manifest?.systems ?? []).every(
       (entry) => systemOpacity[entry.system] === GLASS_OPACITY,
     );
+
+  const handleViewsClick = () => {
+    setActiveTab("views");
+    setMinimized(false);
+    if (activeTab === "views") {
+      fitView();
+    }
+  };
+
+  const handleDissectClick = () => {
+    setActiveTab("dissect");
+    setMinimized(false);
+
+    // If specific organs are currently selected, isolate them for focused dissection
+    if ((selectedOrganIds?.length ?? 0) > 0 && !studying) {
+      isolateSelection();
+      return;
+    }
+
+    // Direct visual dissection feedback:
+    if (!isGlass && explode === 0) {
+      glassBody();
+    } else if (isGlass && explode === 0) {
+      cycleExplode();
+    } else if (explode > 0) {
+      cycleExplode();
+    } else {
+      glassBody();
+    }
+  };
+
+  const handlePhysioClick = () => {
+    setActiveTab("physio");
+    setMinimized(false);
+
+    // Direct physiological simulation feedback:
+    if (!heartEnabled && !breathEnabled && !scanEnabled) {
+      if (!isGlass) {
+        glassBody();
+      }
+      toggleHeart();
+    } else if (heartEnabled && !breathEnabled) {
+      toggleBreath();
+    } else if (heartEnabled && breathEnabled) {
+      toggleHeart();
+    } else {
+      toggleHeart();
+    }
+  };
+
+  const handleStudioClick = () => {
+    setActiveTab("studio");
+    setMinimized(false);
+  };
 
   // Global key bindings for 3D navigation and camera
   useEffect(() => {
@@ -136,38 +192,27 @@ export function StudioActionDock() {
         <div className="flex items-center gap-0.5 rounded-full bg-slate-900/80 p-0.5 border border-slate-800">
           <TabButton
             active={activeTab === "views" && !minimized}
-            onClick={() => {
-              setActiveTab("views");
-              setMinimized(false);
-            }}
+            onClick={handleViewsClick}
             icon={<Compass className="h-3.5 w-3.5" />}
             label={fa ? "نماها" : "Views"}
           />
           <TabButton
             active={activeTab === "dissect" && !minimized}
-            onClick={() => {
-              setActiveTab("dissect");
-              setMinimized(false);
-            }}
+            onClick={handleDissectClick}
             icon={<Layers className="h-3.5 w-3.5" />}
             label={fa ? "تشریح" : "Dissect"}
+            badge={isGlass || explode > 0 || studying}
           />
           <TabButton
             active={activeTab === "physio" && !minimized}
-            onClick={() => {
-              setActiveTab("physio");
-              setMinimized(false);
-            }}
-            icon={<Activity className="h-3.5 w-3.5" />}
+            onClick={handlePhysioClick}
+            icon={<Activity className={`h-3.5 w-3.5 ${heartEnabled ? "animate-pulse text-rose-400" : ""}`} />}
             label={fa ? "فیزیولوژی" : "Physio"}
             badge={heartEnabled || breathEnabled || scanEnabled}
           />
           <TabButton
             active={activeTab === "studio" && !minimized}
-            onClick={() => {
-              setActiveTab("studio");
-              setMinimized(false);
-            }}
+            onClick={handleStudioClick}
             icon={<Sun className="h-3.5 w-3.5" />}
             label={fa ? "استودیو" : "Studio"}
           />
@@ -311,7 +356,12 @@ export function StudioActionDock() {
             {activeTab === "physio" && (
               <>
                 <ActionButton
-                  onClick={toggleHeart}
+                  onClick={() => {
+                    if (!heartEnabled && !isGlass) {
+                      glassBody();
+                    }
+                    toggleHeart();
+                  }}
                   active={heartEnabled}
                   title={fa ? "شبیه‌ساز تپش مکانیکی قلب و نوار ECG" : "Cardiovascular cycle & ECG"}
                   icon={<Heart className={`h-3.5 w-3.5 ${heartEnabled ? "animate-pulse text-rose-400" : ""}`} />}

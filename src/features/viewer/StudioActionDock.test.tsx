@@ -3,22 +3,31 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { useSceneStore } from "@/stores/sceneStore";
 import { useInterfaceLanguage } from "@/stores/interfaceLanguage";
+import { useHeartStore } from "@/stores/heartStore";
+import { useBreathStore } from "@/stores/breathStore";
+import { useScanStore } from "@/stores/scanStore";
 import { StudioActionDock } from "./StudioActionDock";
 
 describe("StudioActionDock", () => {
   beforeEach(() => {
     useInterfaceLanguage.setState({ language: "en" });
+    useHeartStore.setState({ enabled: false, sound: false, rhythm: "normal", toggle: vi.fn() });
+    useBreathStore.setState({ enabled: false, toggle: vi.fn() });
+    useScanStore.setState({ enabled: false, toggle: vi.fn() });
     useSceneStore.setState({
       fitView: vi.fn(),
       orientView: vi.fn(),
       dollyView: vi.fn(),
+      isolateSelection: vi.fn(),
       glassBody: vi.fn(),
       cycleExplode: vi.fn(),
       showAllSystems: vi.fn(),
       resetView: vi.fn(),
       setLightingPreset: vi.fn(),
       setBackground: vi.fn(),
+      selectedOrganIds: [],
       isolatedOrganIds: null,
+      systemOpacity: {},
       explode: 0,
       lightingPreset: "studio",
       background: "dark",
@@ -34,20 +43,28 @@ describe("StudioActionDock", () => {
     expect(screen.getByRole("button", { name: "Studio" })).toBeTruthy();
   });
 
-  it("switches to Dissect tab and displays dissection controls", () => {
+  it("switches to Dissect tab and activates glass dissection", () => {
+    const glassBodySpy = vi.fn();
+    useSceneStore.setState({ glassBody: glassBodySpy });
+
     render(<StudioActionDock />);
     const dissectTab = screen.getByRole("button", { name: "Dissect" });
     fireEvent.click(dissectTab);
 
+    expect(glassBodySpy).toHaveBeenCalled();
     expect(screen.getByRole("button", { name: "Glass" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "All" })).toBeTruthy();
   });
 
-  it("switches to Physio tab and displays simulator controls", () => {
+  it("switches to Physio tab and activates cardiac simulation", () => {
+    const toggleHeartSpy = vi.fn();
+    useHeartStore.setState({ enabled: false, toggle: toggleHeartSpy });
+
     render(<StudioActionDock />);
     const physioTab = screen.getByRole("button", { name: "Physio" });
     fireEvent.click(physioTab);
 
+    expect(toggleHeartSpy).toHaveBeenCalled();
     expect(screen.getByRole("button", { name: "Heartbeat" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Breathing" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Scanner" })).toBeTruthy();
