@@ -1,28 +1,27 @@
+/**
+ * HOOMAAN Ambient Idle & Power Conservation Screen
+ * Renders an energy-efficient low-power 3D holographic neural silhouette
+ * with ambient synaptic wave propagation and brand projection.
+ * Implemented from specs/idle-power-conservation.md.
+ */
+
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { useGLTF } from "@react-three/drei";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import * as THREE from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 
 import { BrandLogo } from "@/components/BrandLogo";
 import { meshUrl } from "@/lib/manifest";
 import { useSceneStore } from "@/stores/sceneStore";
-
 import { brainOrganIds, ENOUGH_TO_DRAW } from "./brainSet";
 
-/** Interval between animation frame requests (~30 frames per second). */
-const TICK_INTERVAL_MS = 33;
+const TARGET_IDLE_FPS = 30;
+const PACING_TICK_DELTA = Math.round(1000 / TARGET_IDLE_FPS);
+const BENCHMARK_SAMPLES = 40;
+const SLOW_RENDER_THRESHOLD_MS = 45;
 
-/** Sliding sample window size for benchmarking device performance. */
-const BENCHMARK_SAMPLE_LIMIT = 45;
-
-/** Threshold average frametime causing wireframe secondary pass to be omitted. */
-const DEGRADED_PERFORMANCE_LIMIT_MS = 45;
-
-/**
- * Visual aesthetics and wave propagation parameters for the ambient resting canvas.
- */
-export const LOOK = {
+export const LOOK = Object.freeze({
   opacity: 0.055,
   rimSharpness: 5.2,
   wireOpacity: 0.009,
@@ -36,289 +35,280 @@ export const LOOK = {
   wordEvery: 34,
   wordVisible: 5.5,
   wordStrength: 0.38,
-} as const;
+} as const);
 
-/**
- * Calculates deterministic progression metrics for expanding neural wave pulses.
- */
 export function waveState(
-  waveIndex: number,
-  elapsedSec: number,
-  lifeSpan = LOOK.waveLife,
+  index: number,
+  timeSec: number,
+  lifetime = LOOK.waveLife,
   restInterval = LOOK.waveRest,
-  totalWaves = LOOK.waves,
+  totalPulses = LOOK.waves,
 ): { age: number; emission: number; active: boolean } {
-  const fullCycleTime = lifeSpan + restInterval;
-  const phaseShiftedSec = elapsedSec - (waveIndex * fullCycleTime) / totalWaves;
+  const period = lifetime + restInterval;
+  const timeWithPhase = timeSec - (index * period) / totalPulses;
 
-  if (phaseShiftedSec < 0) {
+  if (timeWithPhase < 0) {
     return { age: 0, emission: 0, active: false };
   }
 
-  const emissionCount = Math.floor(phaseShiftedSec / fullCycleTime);
-  const currentAge = phaseShiftedSec - emissionCount * fullCycleTime;
+  const cycleNum = Math.floor(timeWithPhase / period);
+  const cycleTime = timeWithPhase - cycleNum * period;
 
   return {
-    age: currentAge,
-    emission: emissionCount,
-    active: currentAge <= lifeSpan,
+    age: cycleTime,
+    emission: cycleNum,
+    active: cycleTime <= lifetime,
   };
 }
 
-const BRAIN_NERVOUS_SOURCE_MESH = "nervous_male.glb";
-const DRACO_ASSET_DIRECTORY = "/draco/";
+export function wordmarkAt(currentSec: number): { strength: number; angle: number } {
+  const cycleIndex = Math.floor(currentSec / LOOK.wordEvery);
+  const remainder = currentSec - cycleIndex * LOOK.wordEvery;
 
-const NEURAL_SHELL_VERTEX_GLSL = /* glsl */ `
-  varying vec3 vNormalW;
-  varying vec3 vViewW;
-  varying vec3 vLocal;
+  if (remainder > LOOK.wordVisible) {
+    return { strength: 0, angle: 0 };
+  }
+
+  const progressNorm = remainder / LOOK.wordVisible;
+  const bellEnvelope = (1 - Math.cos(progressNorm * Math.PI * 2)) * 0.5;
+  const activeLuminance = bellEnvelope * LOOK.wordStrength;
+
+  const pseudoRandomSeed = Math.sin(cycleIndex * 12.9898) * 43758.5453;
+  const projectionTheta = (pseudoRandomSeed - Math.floor(pseudoRandomSeed)) * Math.PI * 2;
+
+  return { strength: activeLuminance, angle: projectionTheta };
+}
+
+const SHADER_VERTEX_SOURCE = /* glsl */ `
+  varying vec3 vWorldNormal;
+  varying vec3 vWorldView;
+  varying vec3 vModelPos;
 
   void main() {
-    vLocal = position;
-    vec4 worldCoords = modelMatrix * vec4(position, 1.0);
-    vNormalW = normalize(mat3(modelMatrix) * normal);
-    vViewW = normalize(cameraPosition - worldCoords.xyz);
-    gl_Position = projectionMatrix * viewMatrix * worldCoords;
+    vModelPos = position;
+    vec4 worldPos = modelMatrix * vec4(position, 1.0);
+    vWorldNormal = normalize(mat3(modelMatrix) * normal);
+    vWorldView = normalize(cameraPosition - worldPos.xyz);
+    gl_Position = projectionMatrix * viewMatrix * worldPos;
   }
 `;
 
-const NEURAL_SHELL_FRAGMENT_GLSL = /* glsl */ `
+const SHADER_FRAGMENT_SOURCE = /* glsl */ `
   uniform float uTime;
-  uniform vec3 uBody;
-  uniform vec3 uPulse;
-  uniform float uOpacity;
-  uniform float uRimSharpness;
-  uniform float uRadius;
+  uniform vec3 uColorBase;
+  uniform vec3 uColorAccent;
+  uniform float uBaseAlpha;
+  uniform float uRimPower;
+  uniform float uModelRadius;
 
-  uniform vec3 uWaveSeed[WAVE_COUNT];
-  uniform float uWaveAge[WAVE_COUNT];
-  uniform float uWaveSpeed;
-  uniform float uWaveWidth;
-  uniform float uWaveStrength;
-  uniform float uSparkStrength;
-  uniform float uWaveLife;
+  uniform vec3 uPulseOrigins[NUM_WAVES];
+  uniform float uPulseAges[NUM_WAVES];
+  uniform float uSpeed;
+  uniform float uThickness;
+  uniform float uGain;
+  uniform float uSparkGain;
+  uniform float uDuration;
 
-  uniform sampler2D uWord;
-  uniform float uWordStrength;
-  uniform float uWordAngle;
+  uniform sampler2D uWatermarkTex;
+  uniform float uWatermarkAlpha;
+  uniform float uWatermarkAngle;
 
-  varying vec3 vNormalW;
-  varying vec3 vViewW;
-  varying vec3 vLocal;
+  varying vec3 vWorldNormal;
+  varying vec3 vWorldView;
+  varying vec3 vModelPos;
 
-  float evaluateNeuralWave(vec3 pos, vec3 origin, float age) {
+  float calculateWaveLuminance(vec3 point, vec3 origin, float age) {
     if (age < 0.0) return 0.0;
+    float dist = length(point - origin);
+    float expandRadius = age * uSpeed * uModelRadius;
+    float ringSpread = uThickness * uModelRadius;
 
-    float distFromOrigin = length(pos - origin);
-    float frontRadius = age * uWaveSpeed * uRadius;
-    float bandSpan = uWaveWidth * uRadius;
+    float waveBand = 1.0 - smoothstep(0.0, ringSpread, abs(dist - expandRadius));
+    float centerOriginFlash = (1.0 - smoothstep(0.0, ringSpread * 1.6, dist)) * (1.0 - smoothstep(0.0, uDuration * 0.22, age));
+    float timeDecay = 1.0 - smoothstep(0.0, uDuration, age);
 
-    float expansionRing = 1.0 - smoothstep(0.0, bandSpan, abs(distFromOrigin - frontRadius));
-    float focalSpark = (1.0 - smoothstep(0.0, bandSpan * 1.6, distFromOrigin))
-                     * (1.0 - smoothstep(0.0, uWaveLife * 0.22, age));
-    float dissipation = 1.0 - smoothstep(0.0, uWaveLife, age);
-
-    return (expansionRing * dissipation + focalSpark * uSparkStrength) * uWaveStrength;
+    return (waveBand * timeDecay + centerOriginFlash * uSparkGain) * uGain;
   }
 
   void main() {
-    float angleFacing = abs(dot(normalize(vNormalW), normalize(vViewW)));
-    float fresnelRim = pow(1.0 - angleFacing, uRimSharpness);
+    float glance = abs(dot(normalize(vWorldNormal), normalize(vWorldView)));
+    float edgeFresnel = pow(1.0 - glance, uRimPower);
 
-    float totalNeuralFlash = 0.0;
-    for (int idx = 0; idx < WAVE_COUNT; idx++) {
-      totalNeuralFlash += evaluateNeuralWave(vLocal, uWaveSeed[idx], uWaveAge[idx]);
+    float combinedFlash = 0.0;
+    for (int i = 0; i < NUM_WAVES; i++) {
+      combinedFlash += calculateWaveLuminance(vModelPos, uPulseOrigins[i], uPulseAges[i]);
     }
 
-    float wordmarkIllumination = 0.0;
-    if (uWordStrength > 0.001) {
-      float cosAng = cos(uWordAngle);
-      float sinAng = sin(uWordAngle);
-      vec2 planarCoord = vec2(vLocal.x * cosAng - vLocal.z * sinAng, vLocal.y);
-      vec2 textUv = planarCoord / (uRadius * 2.0) + 0.5;
+    float markIntensity = 0.0;
+    if (uWatermarkAlpha > 0.001) {
+      float c = cos(uWatermarkAngle);
+      float s = sin(uWatermarkAngle);
+      vec2 rotatedPlanar = vec2(vModelPos.x * c - vModelPos.z * s, vModelPos.y);
+      vec2 texCoord = rotatedPlanar / (uModelRadius * 2.0) + 0.5;
 
-      if (textUv.x > 0.0 && textUv.x < 1.0 && textUv.y > 0.0 && textUv.y < 1.0) {
-        wordmarkIllumination = texture2D(uWord, textUv).r * uWordStrength;
+      if (texCoord.x > 0.0 && texCoord.x < 1.0 && texCoord.y > 0.0 && texCoord.y < 1.0) {
+        markIntensity = texture2D(uWatermarkTex, texCoord).r * uWatermarkAlpha;
       }
     }
 
-    float combinedHighlights = totalNeuralFlash + wordmarkIllumination;
-    float finalGlowIntensity = fresnelRim + combinedHighlights;
+    float highlights = combinedFlash + markIntensity;
+    float finalIntensity = edgeFresnel + highlights;
+    vec3 outColor = mix(uColorBase, uColorAccent, clamp(highlights * 2.2, 0.0, 1.0));
 
-    vec3 blendedColor = mix(uBody, uPulse, clamp(combinedHighlights * 2.2, 0.0, 1.0));
-    gl_FragColor = vec4(blendedColor * finalGlowIntensity, uOpacity * finalGlowIntensity);
+    gl_FragColor = vec4(outColor * finalIntensity, uBaseAlpha * finalIntensity);
   }
 `;
 
-function createWordmarkLightTexture(): THREE.CanvasTexture {
-  const offscreenCanvas = document.createElement("canvas");
-  offscreenCanvas.width = 512;
-  offscreenCanvas.height = 512;
-  const ctx = offscreenCanvas.getContext("2d");
+function generateWordmarkTexture(): THREE.CanvasTexture {
+  const surface = document.createElement("canvas");
+  surface.width = 512;
+  surface.height = 512;
+  const ctx = surface.getContext("2d");
 
   if (ctx) {
-    ctx.clearRect(0, 0, offscreenCanvas.width, offscreenCanvas.height);
+    ctx.clearRect(0, 0, 512, 512);
     ctx.fillStyle = "#ffffff";
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
     ctx.letterSpacing = "13px";
     ctx.font = "600 58px ui-sans-serif, system-ui, -apple-system, sans-serif";
-    ctx.fillText("HOOMAAN", offscreenCanvas.width / 2, offscreenCanvas.height / 2);
+    ctx.fillText("HOOMAAN", 256, 256);
   }
 
-  const generatedTexture = new THREE.CanvasTexture(offscreenCanvas);
-  generatedTexture.colorSpace = THREE.NoColorSpace;
-  return generatedTexture;
+  const tex = new THREE.CanvasTexture(surface);
+  tex.colorSpace = THREE.NoColorSpace;
+  return tex;
 }
 
-/**
- * Computes luminance and projection rotation angle for periodic wordmark emergence.
- */
-export function wordmarkAt(elapsedSeconds: number): { strength: number; angle: number } {
-  const cycleIndex = Math.floor(elapsedSeconds / LOOK.wordEvery);
-  const cycleOffset = elapsedSeconds - cycleIndex * LOOK.wordEvery;
-
-  if (cycleOffset > LOOK.wordVisible) {
-    return { strength: 0, angle: 0 };
-  }
-
-  const normalizedProgress = cycleOffset / LOOK.wordVisible;
-  const cosineFactor = 0.5 - Math.cos(normalizedProgress * Math.PI * 2) * 0.5;
-  const outputStrength = cosineFactor * LOOK.wordStrength;
-
-  const pseudoNoise = Math.sin(cycleIndex * 12.9898) * 43758.5453;
-  const derivedAngle = (pseudoNoise - Math.floor(pseudoNoise)) * Math.PI * 2;
-
-  return { strength: outputStrength, angle: derivedAngle };
-}
-
-function useDynamicFramePacing(): boolean {
-  const triggerRedraw = useThree((state) => state.invalidate);
-  const [renderSecondaryPass, setRenderSecondaryPass] = useState(true);
-  const recordedDeltas = useRef<number[]>([]);
-  const hasSettledTier = useRef(false);
+function useAdaptivePerformance(): boolean {
+  const invalidate = useThree((s) => s.invalidate);
+  const [wireframeActive, setWireframeActive] = useState(true);
+  const frameIntervals = useRef<number[]>([]);
+  const benchmarkingComplete = useRef(false);
 
   useEffect(() => {
-    const pacingTimer = setInterval(() => triggerRedraw(), TICK_INTERVAL_MS);
-    return () => clearInterval(pacingTimer);
-  }, [triggerRedraw]);
+    const timer = setInterval(() => invalidate(), PACING_TICK_DELTA);
+    return () => clearInterval(timer);
+  }, [invalidate]);
 
-  useFrame((_, deltaSec) => {
-    if (hasSettledTier.current) return;
-    recordedDeltas.current.push(deltaSec * 1000);
-    if (recordedDeltas.current.length < BENCHMARK_SAMPLE_LIMIT) return;
+  useFrame((_, delta) => {
+    if (benchmarkingComplete.current) return;
+    frameIntervals.current.push(delta * 1000);
 
-    hasSettledTier.current = true;
-    const averageDelta =
-      recordedDeltas.current.reduce((acc, ms) => acc + ms, 0) / recordedDeltas.current.length;
-
-    if (averageDelta > DEGRADED_PERFORMANCE_LIMIT_MS) {
-      setRenderSecondaryPass(false);
+    if (frameIntervals.current.length >= BENCHMARK_SAMPLES) {
+      benchmarkingComplete.current = true;
+      const averageInterval =
+        frameIntervals.current.reduce((a, b) => a + b, 0) / frameIntervals.current.length;
+      if (averageInterval > SLOW_RENDER_THRESHOLD_MS) {
+        setWireframeActive(false);
+      }
     }
   });
 
-  return renderSecondaryPass;
+  return wireframeActive;
 }
 
-function BrainModelCluster({ organIds, freezeMotion }: { organIds: string[]; freezeMotion: boolean }) {
-  const { nodes: gltfNodes } = useGLTF(meshUrl(BRAIN_NERVOUS_SOURCE_MESH), DRACO_ASSET_DIRECTORY);
-  const sceneOrgansMap = useSceneStore((state) => state.organs);
-  const containerGroupRef = useRef<THREE.Group>(null);
-  const enableLattice = useDynamicFramePacing();
+interface NeuralMeshProps {
+  organList: string[];
+  reducedMotion: boolean;
+}
 
-  const unifiedBrainGeometry = useMemo(() => {
-    const collectedGeometries: THREE.BufferGeometry[] = [];
+function HolographicBrainStructure({ organList, reducedMotion }: NeuralMeshProps) {
+  const { nodes: assetNodes } = useGLTF(meshUrl("nervous_male.glb"), "/draco/");
+  const allOrgans = useSceneStore((s) => s.organs);
+  const rootPivot = useRef<THREE.Group>(null);
+  const showWireLattice = useAdaptivePerformance();
 
-    for (const organKey of organIds) {
-      const organMetadata = sceneOrgansMap[organKey];
-      if (!organMetadata) continue;
+  const combinedBrainBuffer = useMemo(() => {
+    const geometryParts: THREE.BufferGeometry[] = [];
 
-      const targetNode =
-        gltfNodes[organMetadata.node] ??
-        gltfNodes[THREE.PropertyBinding.sanitizeNodeName(organMetadata.node)];
+    for (const organKey of organList) {
+      const organMeta = allOrgans[organKey];
+      if (!organMeta) continue;
 
-      if (!(targetNode instanceof THREE.Mesh)) continue;
+      const glNode =
+        assetNodes[organMeta.node] ??
+        assetNodes[THREE.PropertyBinding.sanitizeNodeName(organMeta.node)];
 
-      targetNode.updateWorldMatrix(true, false);
-      const bakedPart = targetNode.geometry.clone().applyMatrix4(targetNode.matrixWorld);
+      if (!(glNode instanceof THREE.Mesh)) continue;
 
-      for (const attrKey of Object.keys(bakedPart.attributes)) {
-        if (attrKey !== "position" && attrKey !== "normal") {
-          bakedPart.deleteAttribute(attrKey);
+      glNode.updateWorldMatrix(true, false);
+      const clonedGeom = glNode.geometry.clone().applyMatrix4(glNode.matrixWorld);
+
+      for (const attr of Object.keys(clonedGeom.attributes)) {
+        if (attr !== "position" && attr !== "normal") {
+          clonedGeom.deleteAttribute(attr);
         }
       }
-      collectedGeometries.push(bakedPart);
+      geometryParts.push(clonedGeom);
     }
 
-    if (collectedGeometries.length === 0) return null;
+    if (geometryParts.length === 0) return null;
 
-    const merged = mergeGeometries(collectedGeometries, false);
-    for (const piece of collectedGeometries) piece.dispose();
-    if (!merged) return null;
+    const mergedMesh = mergeGeometries(geometryParts, false);
+    for (const p of geometryParts) p.dispose();
+    if (!mergedMesh) return null;
 
-    merged.computeBoundingSphere();
-    const meshCenter = merged.boundingSphere?.center ?? new THREE.Vector3();
-    merged.translate(-meshCenter.x, -meshCenter.y, -meshCenter.z);
-    merged.computeBoundingSphere();
-    return merged;
-  }, [gltfNodes, organIds, sceneOrgansMap]);
+    mergedMesh.computeBoundingSphere();
+    const centerPoint = mergedMesh.boundingSphere?.center ?? new THREE.Vector3();
+    mergedMesh.translate(-centerPoint.x, -centerPoint.y, -centerPoint.z);
+    mergedMesh.computeBoundingSphere();
+    return mergedMesh;
+  }, [assetNodes, organList, allOrgans]);
 
-  const uniformTime = useMemo(() => ({ value: 0 }), []);
-  const uniformWordStrength = useMemo(() => ({ value: 0 }), []);
-  const uniformWordAngle = useMemo(() => ({ value: 0 }), []);
-  const wordmarkCanvasTexture = useMemo(() => createWordmarkLightTexture(), []);
+  const clockUniform = useMemo(() => ({ value: 0 }), []);
+  const watermarkLumaUniform = useMemo(() => ({ value: 0 }), []);
+  const watermarkAngleUniform = useMemo(() => ({ value: 0 }), []);
+  const wordmarkTexture = useMemo(() => generateWordmarkTexture(), []);
 
-  const waveSeedPositions = useMemo(
+  const originPositions = useMemo(
     () => ({
       value: Array.from({ length: LOOK.waves }, () => new THREE.Vector3()),
     }),
     [],
   );
-  const waveAgesUniform = useMemo(
-    () => ({ value: Array.from({ length: LOOK.waves }, () => -1) }),
+
+  const waveProgressions = useMemo(
+    () => ({
+      value: Array.from({ length: LOOK.waves }, () => -1),
+    }),
     [],
   );
-  const trackedWaveCycles = useRef<number[]>(Array.from({ length: LOOK.waves }, () => -1));
 
-  const neuralShaderMaterial = useMemo(
+  const completedCycles = useRef<number[]>(Array.from({ length: LOOK.waves }, () => -1));
+
+  const holographicMaterial = useMemo(
     () =>
       new THREE.ShaderMaterial({
-        vertexShader: NEURAL_SHELL_VERTEX_GLSL,
-        fragmentShader: NEURAL_SHELL_FRAGMENT_GLSL.replaceAll("WAVE_COUNT", String(LOOK.waves)),
+        vertexShader: SHADER_VERTEX_SOURCE,
+        fragmentShader: SHADER_FRAGMENT_SOURCE.replaceAll("NUM_WAVES", String(LOOK.waves)),
         uniforms: {
-          uTime: uniformTime,
-          uBody: { value: new THREE.Color("#9aa3b0") },
-          uPulse: { value: new THREE.Color("#38bdf8") },
-          uOpacity: { value: LOOK.opacity },
-          uRimSharpness: { value: LOOK.rimSharpness },
-          uWaveSeed: waveSeedPositions,
-          uWaveAge: waveAgesUniform,
-          uWaveSpeed: { value: LOOK.waveSpeed },
-          uWaveWidth: { value: LOOK.waveWidth },
-          uWaveStrength: { value: LOOK.waveStrength },
-          uSparkStrength: { value: LOOK.sparkStrength },
-          uWaveLife: { value: LOOK.waveLife },
-          uWord: { value: wordmarkCanvasTexture },
-          uWordStrength: uniformWordStrength,
-          uWordAngle: uniformWordAngle,
-          uRadius: { value: 1 },
+          uTime: clockUniform,
+          uColorBase: { value: new THREE.Color("#9aa3b0") },
+          uColorAccent: { value: new THREE.Color("#38bdf8") },
+          uBaseAlpha: { value: LOOK.opacity },
+          uRimPower: { value: LOOK.rimSharpness },
+          uPulseOrigins: originPositions,
+          uPulseAges: waveProgressions,
+          uSpeed: { value: LOOK.waveSpeed },
+          uThickness: { value: LOOK.waveWidth },
+          uGain: { value: LOOK.waveStrength },
+          uSparkGain: { value: LOOK.sparkStrength },
+          uDuration: { value: LOOK.waveLife },
+          uWatermarkTex: { value: wordmarkTexture },
+          uWatermarkAlpha: watermarkLumaUniform,
+          uWatermarkAngle: watermarkAngleUniform,
+          uModelRadius: { value: 1 },
         },
         transparent: true,
         depthWrite: false,
         side: THREE.FrontSide,
         blending: THREE.AdditiveBlending,
       }),
-    [
-      uniformTime,
-      wordmarkCanvasTexture,
-      uniformWordStrength,
-      uniformWordAngle,
-      waveSeedPositions,
-      waveAgesUniform,
-    ],
+    [clockUniform, originPositions, waveProgressions, wordmarkTexture, watermarkLumaUniform, watermarkAngleUniform],
   );
 
-  const wireframeMaterial = useMemo(
+  const latticeMaterial = useMemo(
     () =>
       new THREE.MeshBasicMaterial({
         color: "#7dd3fc",
@@ -332,81 +322,83 @@ function BrainModelCluster({ organIds, freezeMotion }: { organIds: string[]; fre
   );
 
   useEffect(() => {
-    const calculatedRadius = unifiedBrainGeometry?.boundingSphere?.radius;
-    if (calculatedRadius) {
-      neuralShaderMaterial.uniforms.uRadius!.value = calculatedRadius;
+    const rad = combinedBrainBuffer?.boundingSphere?.radius;
+    if (rad && holographicMaterial.uniforms.uModelRadius) {
+      holographicMaterial.uniforms.uModelRadius.value = rad;
     }
-  }, [unifiedBrainGeometry, neuralShaderMaterial]);
+  }, [combinedBrainBuffer, holographicMaterial]);
 
   useEffect(() => {
     return () => {
-      unifiedBrainGeometry?.dispose();
-      neuralShaderMaterial.dispose();
-      wireframeMaterial.dispose();
-      wordmarkCanvasTexture.dispose();
+      combinedBrainBuffer?.dispose();
+      holographicMaterial.dispose();
+      latticeMaterial.dispose();
+      wordmarkTexture.dispose();
     };
-  }, [unifiedBrainGeometry, neuralShaderMaterial, wireframeMaterial, wordmarkCanvasTexture]);
+  }, [combinedBrainBuffer, holographicMaterial, latticeMaterial, wordmarkTexture]);
 
   useFrame((state) => {
-    if (freezeMotion) return;
-    const currentSeconds = state.clock.elapsedTime;
-    uniformTime.value = currentSeconds;
+    if (reducedMotion) return;
 
-    const vertexPositions = unifiedBrainGeometry?.getAttribute("position");
-    for (let waveIdx = 0; waveIdx < LOOK.waves; waveIdx += 1) {
-      const stateSnapshot = waveState(waveIdx, currentSeconds);
-      waveAgesUniform.value[waveIdx] = stateSnapshot.active ? stateSnapshot.age : -1;
+    const t = state.clock.elapsedTime;
+    clockUniform.value = t;
 
-      if (stateSnapshot.emission !== trackedWaveCycles.current[waveIdx] && vertexPositions) {
-        trackedWaveCycles.current[waveIdx] = stateSnapshot.emission;
-        const randomVertexIndex = Math.floor(Math.random() * vertexPositions.count);
-        waveSeedPositions.value[waveIdx]!.fromBufferAttribute(vertexPositions, randomVertexIndex);
+    const positions = combinedBrainBuffer?.getAttribute("position");
+    for (let i = 0; i < LOOK.waves; i++) {
+      const snap = waveState(i, t);
+      waveProgressions.value[i] = snap.active ? snap.age : -1;
+
+      if (snap.emission !== completedCycles.current[i] && positions) {
+        completedCycles.current[i] = snap.emission;
+        const randIndex = Math.floor(Math.random() * positions.count);
+        originPositions.value[i]!.fromBufferAttribute(positions, randIndex);
       }
     }
 
-    const currentMark = wordmarkAt(currentSeconds);
-    uniformWordStrength.value = currentMark.strength;
-    uniformWordAngle.value = currentMark.angle;
+    const mark = wordmarkAt(t);
+    watermarkLumaUniform.value = mark.strength;
+    watermarkAngleUniform.value = mark.angle;
 
-    if (containerGroupRef.current) {
-      containerGroupRef.current.rotation.y = currentSeconds * 0.13;
+    if (rootPivot.current) {
+      rootPivot.current.rotation.y = t * 0.13;
     }
   });
 
-  if (!unifiedBrainGeometry) return null;
-  const normalizationRadius = unifiedBrainGeometry.boundingSphere?.radius ?? 1;
+  if (!combinedBrainBuffer) return null;
+  const invScale = 1 / (combinedBrainBuffer.boundingSphere?.radius ?? 1);
 
   return (
-    <group ref={containerGroupRef} scale={1 / normalizationRadius}>
-      <mesh geometry={unifiedBrainGeometry} material={neuralShaderMaterial} />
-      {enableLattice && <mesh geometry={unifiedBrainGeometry} material={wireframeMaterial} />}
+    <group ref={rootPivot} scale={invScale}>
+      <mesh geometry={combinedBrainBuffer} material={holographicMaterial} />
+      {showWireLattice && <mesh geometry={combinedBrainBuffer} material={latticeMaterial} />}
     </group>
   );
 }
 
-/**
- * Fullscreen ambient resting screen showcasing translucent 3D brain geometry with neural wave animations.
- */
 export function IdleScreen({ onDismiss }: { onDismiss: () => void }) {
-  const loadedOrgans = useSceneStore((state) => state.organs);
-  const hiddenSystemsList = useSceneStore((state) => state.hiddenSystems);
+  const organsMap = useSceneStore((s) => s.organs);
+  const hiddenSystems = useSceneStore((s) => s.hiddenSystems);
 
-  const matchedBrainIds = useMemo(() => brainOrganIds(Object.values(loadedOrgans)), [loadedOrgans]);
-  const isNervousLoaded = !hiddenSystemsList.includes("nervous");
+  const brainIds = useMemo(() => brainOrganIds(Object.values(organsMap)), [organsMap]);
+  const isNervousActive = !hiddenSystems.includes("nervous");
 
-  const prefersReducedMotion = useMemo(
+  const prefersReduced = useMemo(
     () =>
       typeof window !== "undefined" &&
       window.matchMedia?.("(prefers-reduced-motion: reduce)").matches === true,
     [],
   );
 
-  if (!isNervousLoaded || matchedBrainIds.length < ENOUGH_TO_DRAW) return null;
+  const handlePointerDown = useCallback(() => {
+    onDismiss();
+  }, [onDismiss]);
+
+  if (!isNervousActive || brainIds.length < ENOUGH_TO_DRAW) return null;
 
   return (
     <div
       className="fixed inset-0 z-50 cursor-none bg-slate-950"
-      onPointerDown={onDismiss}
+      onPointerDown={handlePointerDown}
       role="presentation"
     >
       <Canvas
@@ -415,7 +407,7 @@ export function IdleScreen({ onDismiss }: { onDismiss: () => void }) {
         gl={{ antialias: true, powerPreference: "low-power" }}
         camera={{ position: [0, 0, 3.1], fov: 42 }}
       >
-        <BrainModelCluster organIds={matchedBrainIds} freezeMotion={prefersReducedMotion} />
+        <HolographicBrainStructure organList={brainIds} reducedMotion={prefersReduced} />
       </Canvas>
       <BrandLogo
         variant="mono-white"
