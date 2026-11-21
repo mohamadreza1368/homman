@@ -27,6 +27,8 @@ import {
   fetchOrganBatch,
   type OrganRef,
 } from "./hologramOrganLoader";
+import { attachDragOrbit } from "./hologramDragOrbit";
+import { evaluateIntroPhases, TOTAL_INTRO_SPAN } from "./hologramIntroPhases";
 
 export type { OrganRef };
 
@@ -48,20 +50,6 @@ export interface BodyHologram {
   zoom(on: boolean, id?: string | null): void;
   skipIntro(): void;
   dispose(): void;
-}
-
-const TIMELINE = {
-  bootDuration: 1.1,
-  deployDuration: 2.4,
-  materializeDuration: 1.4,
-} as const;
-
-const TOTAL_INTRO_SPAN =
-  TIMELINE.bootDuration + TIMELINE.deployDuration + TIMELINE.materializeDuration;
-
-function smoothInterpolate(val: number): number {
-  const norm = Math.min(1, Math.max(0, val));
-  return norm * norm * (3 - 2 * norm);
 }
 
 export function createBodyHologram(
@@ -103,7 +91,6 @@ export function createBodyHologram(
   let presenceTarget = 1;
   let visiblePresence = 1;
   let scanStartTime = -100;
-  let orbitAzimuth = 0;
   let destroyed = false;
   let loadRequestId = 0;
 
@@ -164,33 +151,7 @@ export function createBodyHologram(
     activeZoomTarget = -2;
   }
 
-  // Pointer drag handling
-  let dragAnchor: { x: number; spin: number } | null = null;
-  container.style.cursor = "grab";
-
-  function onPointerDown(e: PointerEvent): void {
-    if ((e.target as Element | null)?.closest?.("button")) return;
-    e.preventDefault();
-    dragAnchor = { x: e.clientX, spin: orbitAzimuth };
-    container.setPointerCapture(e.pointerId);
-    container.style.cursor = "grabbing";
-  }
-
-  function onPointerMove(e: PointerEvent): void {
-    if (dragAnchor) {
-      orbitAzimuth = dragAnchor.spin + (e.clientX - dragAnchor.x) * 0.008;
-    }
-  }
-
-  function onPointerUp(): void {
-    dragAnchor = null;
-    container.style.cursor = "grab";
-  }
-
-  container.addEventListener("pointerdown", onPointerDown);
-  container.addEventListener("pointermove", onPointerMove);
-  container.addEventListener("pointerup", onPointerUp);
-  container.addEventListener("pointercancel", onPointerUp);
+  const dragOrbit = attachDragOrbit(container);
 
   function getPlaybackClock(): number {
     return startClock === null
@@ -208,19 +169,17 @@ export function createBodyHologram(
     camera.updateProjectionMatrix();
 
     const t = getPlaybackClock();
-    const bootPhase = smoothInterpolate(t / TIMELINE.bootDuration);
-    const deployPhase = smoothInterpolate((t - TIMELINE.bootDuration) / TIMELINE.deployDuration);
-    const materializePhase = smoothInterpolate(
-      (t - TIMELINE.bootDuration - TIMELINE.deployDuration) / TIMELINE.materializeDuration,
-    );
+    const { bootPhase, deployPhase, materializePhase } = evaluateIntroPhases(t);
 
     visiblePresence += (presenceTarget - visiblePresence) * 0.08;
 
     const speed = reducedMotion ? 0.35 : 1.0;
-    if (!dragAnchor && activeZoomTarget === -2) {
-      orbitAzimuth += 0.0025 * speed;
+    let currentAzimuth = dragOrbit.getAzimuth();
+    if (!dragOrbit.isDragging() && activeZoomTarget === -2) {
+      currentAzimuth += 0.0025 * speed;
+      dragOrbit.setAzimuth(currentAzimuth);
     }
-    stageRoot.rotation.y = orbitAzimuth;
+    stageRoot.rotation.y = currentAzimuth;
 
     const cameraTarget = computeHologramCameraTarget(
       camera,
@@ -229,7 +188,7 @@ export function createBodyHologram(
       activeZoomTarget,
       organBoundingBoxes,
       unionBoundingBox,
-      orbitAzimuth,
+      currentAzimuth,
     );
 
     if (!cameraTracker.ready) {
@@ -396,11 +355,7 @@ export function createBodyHologram(
     dispose() {
       destroyed = true;
       unregisterLayer();
-
-      container.removeEventListener("pointerdown", onPointerDown);
-      container.removeEventListener("pointermove", onPointerMove);
-      container.removeEventListener("pointerup", onPointerUp);
-      container.removeEventListener("pointercancel", onPointerUp);
+      dragOrbit.dispose();
 
       removeHighlightMesh();
       if (avatarData) {
