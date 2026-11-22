@@ -1,7 +1,7 @@
 /**
- * HOOMAAN Memory Laboratory - 3D Anatomical Avatar Hologram Layer
+ * HOOMAAN Memory Laboratory - 3D Anatomical Avatar Hologram Rig
  *
- * Clean-room implementation providing holographic human projection,
+ * Clean-room OOP implementation providing holographic human projection,
  * particle point clouds, selective organ illumination, and focus zooming.
  */
 
@@ -27,7 +27,7 @@ import {
   fetchOrganBatch,
   type OrganRef,
 } from "./hologramOrganLoader";
-import { attachDragOrbit } from "./hologramDragOrbit";
+import { attachDragOrbit, type DragOrbitController } from "./hologramDragOrbit";
 import { evaluateIntroPhases, TOTAL_INTRO_SPAN } from "./hologramIntroPhases";
 
 export type { OrganRef };
@@ -52,316 +52,344 @@ export interface BodyHologram {
   dispose(): void;
 }
 
-export function createBodyHologram(
-  container: HTMLElement,
-  config: BodyHologramOptions,
-): BodyHologram {
-  const reducedMotion =
-    config.reducedMotion ??
-    (typeof window !== "undefined" &&
-      window.matchMedia?.("(prefers-reduced-motion: reduce)").matches === true);
+/**
+ * Encapsulates the 3D anatomical avatar hologram stage, particle field,
+ * dynamic organ meshes, camera framing, and interaction tracking.
+ */
+export class BodyHologramRig implements BodyHologram {
+  private readonly container: HTMLElement;
+  private readonly config: BodyHologramOptions;
+  private readonly isReducedMotion: boolean;
 
-  const scene = new THREE.Scene();
-  const camera = new THREE.PerspectiveCamera(30, 1, 0.05, 60);
+  private readonly scene: THREE.Scene;
+  private readonly camera: THREE.PerspectiveCamera;
+  private readonly pedestal: THREE.Object3D;
+  private readonly stageRoot: THREE.Group;
 
-  const pedestal = projector();
-  pedestal.scale.setScalar(0.4);
+  private avatarData: Brain | null = null;
+  private figureMesh: THREE.Mesh<THREE.BufferGeometry, THREE.ShaderMaterial> | null = null;
+  private figureDust: THREE.Points<THREE.BufferGeometry, THREE.ShaderMaterial> | null = null;
+  private illumination: RegionLight | null = null;
 
-  const stageRoot = new THREE.Group();
-  scene.add(pedestal, stageRoot);
+  private highlightMesh: THREE.Mesh<THREE.BufferGeometry, THREE.ShaderMaterial> | null = null;
+  private highlightStartTime = 0;
+  private loadedOrganIds: string[] = [];
+  private organBoundingBoxes: THREE.Box3[] = [];
+  private unionBoundingBox: THREE.Box3 | null = null;
 
-  let avatarData: Brain | null = null;
-  let figureMesh: THREE.Mesh<THREE.BufferGeometry, THREE.ShaderMaterial> | null = null;
-  let figureDust: THREE.Points<THREE.BufferGeometry, THREE.ShaderMaterial> | null = null;
-  let illumination: RegionLight | null = null;
+  private activeZoomTarget = -2; // -2: overview, -1: all organs, >=0: individual index
+  private selectedOrganIdx = -1;
+  private lastOrganIdx = -1;
+  private organSelectTransition = 0;
 
-  let highlightMesh: THREE.Mesh<THREE.BufferGeometry, THREE.ShaderMaterial> | null = null;
-  let highlightStartTime = 0;
-  let loadedOrganIds: string[] = [];
-  let organBoundingBoxes: THREE.Box3[] = [];
-  let unionBoundingBox: THREE.Box3 | null = null;
+  private startClock: number | null = null;
+  private skipTimeOffset = 0;
+  private presenceTarget = 1;
+  private visiblePresence = 1;
+  private scanStartTime = -100;
+  private isDestroyed = false;
+  private loadRequestId = 0;
 
-  let activeZoomTarget = -2; // -2: overview, -1: all organs, >=0: individual
-  let selectedOrganIdx = -1;
-  let lastOrganIdx = -1;
-  let organSelectTransition = 0;
+  private readonly modelMetrics: CameraRigMetrics = { height: 2, bottom: -1 };
+  private readonly cameraTracker = { target: new THREE.Vector3(), distance: 1, ready: false };
+  private readonly particleCapacity: number;
 
-  let startClock: number | null = null;
-  let skipTimeOffset = 0;
-  let presenceTarget = 1;
-  let visiblePresence = 1;
-  let scanStartTime = -100;
-  let destroyed = false;
-  let loadRequestId = 0;
+  private readonly gltfLoader: GLTFLoader;
+  private readonly gltfNodeCache = new Map<string, Promise<Map<string, THREE.Object3D>>>();
+  private readonly dragOrbit: DragOrbitController;
+  private readonly unregisterLayer: () => void;
+  private readonly readyPromise: Promise<void>;
 
-  const particleCapacity = reducedMotion ? 4000 : 9000;
-  const cameraTracker = { target: new THREE.Vector3(), distance: 1, ready: false };
+  constructor(container: HTMLElement, config: BodyHologramOptions) {
+    this.container = container;
+    this.config = config;
 
-  const gltfLoader = new GLTFLoader().setDRACOLoader(acquireDraco(config.dracoPath));
-  const gltfNodeCache = new Map<string, Promise<Map<string, THREE.Object3D>>>();
+    this.isReducedMotion =
+      config.reducedMotion ??
+      (typeof window !== "undefined" &&
+        window.matchMedia?.("(prefers-reduced-motion: reduce)").matches === true);
 
-  const modelMetrics: CameraRigMetrics = { height: 2, bottom: -1 };
+    this.particleCapacity = this.isReducedMotion ? 4000 : 9000;
 
-  const readyPromise = (async () => {
+    this.scene = new THREE.Scene();
+    this.camera = new THREE.PerspectiveCamera(30, 1, 0.05, 60);
+
+    this.pedestal = projector();
+    this.pedestal.scale.setScalar(0.4);
+
+    this.stageRoot = new THREE.Group();
+    this.scene.add(this.pedestal, this.stageRoot);
+
+    this.gltfLoader = new GLTFLoader().setDRACOLoader(acquireDraco(config.dracoPath));
+    this.dragOrbit = attachDragOrbit(container);
+
+    this.readyPromise = this.initAvatar();
+
+    this.unregisterLayer = config.host.addLayer({
+      scene: this.scene,
+      camera: this.camera,
+      rect: () => {
+        const b = this.container.getBoundingClientRect();
+        const origin = this.config.frame.getBoundingClientRect();
+        return {
+          left: b.left - origin.left,
+          top: b.top - origin.top,
+          width: b.width,
+          height: b.height,
+        };
+      },
+      update: (sec, asp, pr, partR) => {
+        this.onRenderUpdate(sec, asp, pr, partR);
+      },
+    });
+  }
+
+  private async initAvatar(): Promise<void> {
     try {
       const brain = await loadBrain({
-        meshUrl: config.meshUrl,
-        structures: config.structures,
-        dracoPath: config.dracoPath,
+        meshUrl: this.config.meshUrl,
+        structures: this.config.structures,
+        dracoPath: this.config.dracoPath,
       });
 
-      if (destroyed) {
+      if (this.isDestroyed) {
         brain.geometry.dispose();
         return;
       }
 
-      avatarData = brain;
-      modelMetrics.height = brain.top - brain.bottom;
-      modelMetrics.bottom = brain.bottom;
+      this.avatarData = brain;
+      this.modelMetrics.height = brain.top - brain.bottom;
+      this.modelMetrics.bottom = brain.bottom;
 
-      illumination = new RegionLight(brain.regions.length);
-      figureMesh = new THREE.Mesh(brain.geometry, brainMaterial(illumination));
+      this.illumination = new RegionLight(brain.regions.length);
+      this.figureMesh = new THREE.Mesh(brain.geometry, brainMaterial(this.illumination));
 
-      figureDust = brainPoints(brain.geometry, particleCapacity, 11);
-      figureDust.material.uniforms.uRegions!.value = illumination.texture;
-      figureDust.material.uniforms.uRegionCount!.value = illumination.size;
+      this.figureDust = brainPoints(brain.geometry, this.particleCapacity, 11);
+      this.figureDust.material.uniforms.uRegions!.value = this.illumination.texture;
+      this.figureDust.material.uniforms.uRegionCount!.value = this.illumination.size;
 
-      stageRoot.add(figureMesh, figureDust);
-      stageRoot.position.y = -1.55 * 0.4 - brain.bottom + 0.02;
-      pedestal.position.y = -1.55 * 0.4;
+      this.stageRoot.add(this.figureMesh, this.figureDust);
+      this.stageRoot.position.y = -1.55 * 0.4 - brain.bottom + 0.02;
+      this.pedestal.position.y = -1.55 * 0.4;
 
-      startClock = performance.now() / 1000;
+      this.startClock = performance.now() / 1000;
     } catch (err) {
-      config.onError?.(err);
+      this.config.onError?.(err);
     }
-  })();
-
-  function removeHighlightMesh(): void {
-    if (!highlightMesh) return;
-    stageRoot.remove(highlightMesh);
-    highlightMesh.geometry.dispose();
-    highlightMesh.material.dispose();
-    highlightMesh = null;
-    loadedOrganIds = [];
-    selectedOrganIdx = -1;
-    lastOrganIdx = -1;
-    organSelectTransition = 0;
-    organBoundingBoxes = [];
-    unionBoundingBox = null;
-    activeZoomTarget = -2;
   }
 
-  const dragOrbit = attachDragOrbit(container);
+  private removeHighlightMesh(): void {
+    if (!this.highlightMesh) return;
+    this.stageRoot.remove(this.highlightMesh);
+    this.highlightMesh.geometry.dispose();
+    this.highlightMesh.material.dispose();
+    this.highlightMesh = null;
+    this.loadedOrganIds = [];
+    this.selectedOrganIdx = -1;
+    this.lastOrganIdx = -1;
+    this.organSelectTransition = 0;
+    this.organBoundingBoxes = [];
+    this.unionBoundingBox = null;
+    this.activeZoomTarget = -2;
+  }
 
-  function getPlaybackClock(): number {
-    return startClock === null
+  private getPlaybackClock(): number {
+    return this.startClock === null
       ? 0
-      : performance.now() / 1000 - startClock + skipTimeOffset;
+      : performance.now() / 1000 - this.startClock + this.skipTimeOffset;
   }
 
-  function onUpdate(
+  private onRenderUpdate(
     currentTimeSec: number,
     aspect: number,
     _pixelRatio: number,
     _particlesRatio: number,
   ): void {
-    camera.aspect = aspect;
-    camera.updateProjectionMatrix();
+    this.camera.aspect = aspect;
+    this.camera.updateProjectionMatrix();
 
-    const t = getPlaybackClock();
+    const t = this.getPlaybackClock();
     const { bootPhase, deployPhase, materializePhase } = evaluateIntroPhases(t);
 
-    visiblePresence += (presenceTarget - visiblePresence) * 0.08;
+    this.visiblePresence += (this.presenceTarget - this.visiblePresence) * 0.08;
 
-    const speed = reducedMotion ? 0.35 : 1.0;
-    let currentAzimuth = dragOrbit.getAzimuth();
-    if (!dragOrbit.isDragging() && activeZoomTarget === -2) {
+    const speed = this.isReducedMotion ? 0.35 : 1.0;
+    let currentAzimuth = this.dragOrbit.getAzimuth();
+    if (!this.dragOrbit.isDragging() && this.activeZoomTarget === -2) {
       currentAzimuth += 0.0025 * speed;
-      dragOrbit.setAzimuth(currentAzimuth);
+      this.dragOrbit.setAzimuth(currentAzimuth);
     }
-    stageRoot.rotation.y = currentAzimuth;
+    this.stageRoot.rotation.y = currentAzimuth;
 
     const cameraTarget = computeHologramCameraTarget(
-      camera,
-      modelMetrics,
-      stageRoot.position.y,
-      activeZoomTarget,
-      organBoundingBoxes,
-      unionBoundingBox,
+      this.camera,
+      this.modelMetrics,
+      this.stageRoot.position.y,
+      this.activeZoomTarget,
+      this.organBoundingBoxes,
+      this.unionBoundingBox,
       currentAzimuth,
     );
 
-    if (!cameraTracker.ready) {
-      cameraTracker.target.copy(cameraTarget.target);
-      cameraTracker.distance = cameraTarget.distance;
-      cameraTracker.ready = true;
+    if (!this.cameraTracker.ready) {
+      this.cameraTracker.target.copy(cameraTarget.target);
+      this.cameraTracker.distance = cameraTarget.distance;
+      this.cameraTracker.ready = true;
     } else {
-      const smoothing = reducedMotion ? 0.12 : 0.06;
-      cameraTracker.target.lerp(cameraTarget.target, smoothing);
-      cameraTracker.distance += (cameraTarget.distance - cameraTracker.distance) * smoothing;
+      const smoothing = this.isReducedMotion ? 0.12 : 0.06;
+      this.cameraTracker.target.lerp(cameraTarget.target, smoothing);
+      this.cameraTracker.distance +=
+        (cameraTarget.distance - this.cameraTracker.distance) * smoothing;
     }
 
-    camera.position.set(
-      cameraTracker.target.x,
-      cameraTracker.target.y,
-      cameraTracker.target.z + cameraTracker.distance,
+    this.camera.position.set(
+      this.cameraTracker.target.x,
+      this.cameraTracker.target.y,
+      this.cameraTracker.target.z + this.cameraTracker.distance,
     );
-    camera.lookAt(cameraTracker.target);
+    this.camera.lookAt(this.cameraTracker.target);
 
-    // Uniform updates on pedestal emitter disc and cone
-    pedestal.traverse((child) => {
+    // Pedestal uniform updates
+    this.pedestal.traverse((child) => {
       const mesh = child as THREE.Mesh;
       if (mesh.isMesh && mesh.material && "uniforms" in mesh.material) {
         const uniforms = (mesh.material as THREE.ShaderMaterial).uniforms;
-        if (uniforms.uFade) uniforms.uFade.value = bootPhase * visiblePresence;
+        if (uniforms.uFade) uniforms.uFade.value = bootPhase * this.visiblePresence;
         if (uniforms.uTime) uniforms.uTime.value = currentTimeSec;
       }
     });
 
-    if (figureMesh && figureDust && illumination) {
-      const matMesh = figureMesh.material;
-      const matDust = figureDust.material;
+    if (this.figureMesh && this.figureDust && this.illumination) {
+      const matMesh = this.figureMesh.material;
+      const matDust = this.figureDust.material;
 
       matMesh.uniforms.uTime!.value = currentTimeSec;
       matMesh.uniforms.uMaterialize!.value = materializePhase;
-      matMesh.uniforms.uPresence!.value = visiblePresence;
+      matMesh.uniforms.uPresence!.value = this.visiblePresence;
       matMesh.uniforms.uBoot!.value = bootPhase;
       matMesh.uniforms.uDeploy!.value = deployPhase;
-      matMesh.uniforms.uRegions!.value = illumination.texture;
+      matMesh.uniforms.uRegions!.value = this.illumination.texture;
 
       matDust.uniforms.uTime!.value = currentTimeSec;
       matDust.uniforms.uDeploy!.value = deployPhase;
       matDust.uniforms.uMaterialize!.value = materializePhase;
-      matDust.uniforms.uPresence!.value = visiblePresence;
+      matDust.uniforms.uPresence!.value = this.visiblePresence;
       matDust.uniforms.uBoot!.value = bootPhase;
 
-      const scanSec = currentTimeSec - scanStartTime;
-      const scanPhase = reducedMotion ? 1 : Math.min(1, Math.max(0, scanSec / 2.2));
+      const scanSec = currentTimeSec - this.scanStartTime;
+      const scanPhase = this.isReducedMotion ? 1 : Math.min(1, Math.max(0, scanSec / 2.2));
       matMesh.uniforms.uScanProgress!.value = scanPhase;
       matDust.uniforms.uScanProgress!.value = scanPhase;
     }
 
-    if (highlightMesh) {
-      const organMat = highlightMesh.material;
+    if (this.highlightMesh) {
+      const organMat = this.highlightMesh.material;
       organMat.uniforms.uTime!.value = currentTimeSec;
-      organMat.uniforms.uPresence!.value = visiblePresence;
+      organMat.uniforms.uPresence!.value = this.visiblePresence;
 
-      const elapsed = currentTimeSec - highlightStartTime;
-      organMat.uniforms.uFadeIn!.value = reducedMotion ? 1 : Math.min(1, elapsed / 0.6);
+      const elapsed = currentTimeSec - this.highlightStartTime;
+      organMat.uniforms.uFadeIn!.value = this.isReducedMotion ? 1 : Math.min(1, elapsed / 0.6);
 
-      if (organSelectTransition < 1) {
-        organSelectTransition = Math.min(1, organSelectTransition + 0.05);
+      if (this.organSelectTransition < 1) {
+        this.organSelectTransition = Math.min(1, this.organSelectTransition + 0.05);
       }
-      organMat.uniforms.uActiveIndex!.value = selectedOrganIdx;
-      organMat.uniforms.uLastActiveIndex!.value = lastOrganIdx;
-      organMat.uniforms.uSelectTransition!.value = organSelectTransition;
+      organMat.uniforms.uActiveIndex!.value = this.selectedOrganIdx;
+      organMat.uniforms.uLastActiveIndex!.value = this.lastOrganIdx;
+      organMat.uniforms.uSelectTransition!.value = this.organSelectTransition;
     }
   }
 
-  const unregisterLayer = config.host.addLayer({
-    scene,
-    camera,
-    rect() {
-      const b = container.getBoundingClientRect();
-      const origin = config.frame.getBoundingClientRect();
-      return {
-        left: b.left - origin.left,
-        top: b.top - origin.top,
-        width: b.width,
-        height: b.height,
-      };
-    },
-    update(sec, asp, pr, partR) {
-      onUpdate(sec, asp, pr, partR);
-    },
-  });
+  public setPresence(level: number): void {
+    this.presenceTarget = Math.min(1, Math.max(0, level));
+  }
 
-  return {
-    setPresence(level: number) {
-      presenceTarget = Math.min(1, Math.max(0, level));
-    },
+  public async show(requestedOrgans: readonly OrganRef[]): Promise<string[]> {
+    const currentReq = ++this.loadRequestId;
+    if (requestedOrgans.length === 0) {
+      this.removeHighlightMesh();
+      return [];
+    }
 
-    async show(requestedOrgans: readonly OrganRef[]): Promise<string[]> {
-      const currentReq = ++loadRequestId;
-      if (requestedOrgans.length === 0) {
-        removeHighlightMesh();
-        return [];
-      }
+    await this.readyPromise;
+    if (this.isDestroyed || currentReq !== this.loadRequestId || !this.avatarData) {
+      return [];
+    }
 
-      await readyPromise;
-      if (destroyed || currentReq !== loadRequestId || !avatarData) {
-        return [];
-      }
+    const batch = await fetchOrganBatch(
+      requestedOrgans,
+      this.avatarData,
+      this.config.fileUrl,
+      this.gltfLoader,
+      this.gltfNodeCache,
+      () => this.isDestroyed || currentReq !== this.loadRequestId,
+    );
 
-      const batch = await fetchOrganBatch(
-        requestedOrgans,
-        avatarData,
-        config.fileUrl,
-        gltfLoader,
-        gltfNodeCache,
-        () => destroyed || currentReq !== loadRequestId,
-      );
+    if (!batch) {
+      this.removeHighlightMesh();
+      return [];
+    }
 
-      if (!batch) {
-        removeHighlightMesh();
-        return [];
-      }
+    this.removeHighlightMesh();
 
-      removeHighlightMesh();
+    this.highlightMesh = new THREE.Mesh(batch.unifiedGeometry, organMaterial());
+    this.highlightMesh.renderOrder = 2;
+    this.stageRoot.add(this.highlightMesh);
 
-      highlightMesh = new THREE.Mesh(batch.unifiedGeometry, organMaterial());
-      highlightMesh.renderOrder = 2;
-      stageRoot.add(highlightMesh);
+    this.loadedOrganIds = batch.loadedOrganIds;
+    this.organBoundingBoxes = batch.organBoundingBoxes;
+    this.unionBoundingBox = batch.unionBoundingBox;
 
-      loadedOrganIds = batch.loadedOrganIds;
-      organBoundingBoxes = batch.organBoundingBoxes;
-      unionBoundingBox = batch.unionBoundingBox;
+    this.highlightStartTime = performance.now() / 1000;
+    this.scanStartTime = this.highlightStartTime;
 
-      highlightStartTime = performance.now() / 1000;
-      scanStartTime = highlightStartTime;
+    return this.loadedOrganIds;
+  }
 
-      return loadedOrganIds;
-    },
+  public pick(id: string | null): void {
+    const targetIdx = id === null ? -1 : this.loadedOrganIds.indexOf(id);
+    if (targetIdx === this.selectedOrganIdx) return;
+    this.lastOrganIdx = this.selectedOrganIdx;
+    this.selectedOrganIdx = targetIdx;
+    this.organSelectTransition = 0;
+  }
 
-    pick(id: string | null) {
-      const targetIdx = id === null ? -1 : loadedOrganIds.indexOf(id);
-      if (targetIdx === selectedOrganIdx) return;
-      lastOrganIdx = selectedOrganIdx;
-      selectedOrganIdx = targetIdx;
-      organSelectTransition = 0;
-    },
-
-    zoom(on: boolean, id?: string | null) {
-      if (!on) {
-        activeZoomTarget = -2;
+  public zoom(on: boolean, id?: string | null): void {
+    if (!on) {
+      this.activeZoomTarget = -2;
+      return;
+    }
+    if (id) {
+      const foundIdx = this.loadedOrganIds.indexOf(id);
+      if (foundIdx >= 0) {
+        this.activeZoomTarget = foundIdx;
         return;
       }
-      if (id) {
-        const foundIdx = loadedOrganIds.indexOf(id);
-        if (foundIdx >= 0) {
-          activeZoomTarget = foundIdx;
-          return;
-        }
-      }
-      activeZoomTarget = -1;
-    },
+    }
+    this.activeZoomTarget = -1;
+  }
 
-    skipIntro() {
-      if (startClock !== null) {
-        skipTimeOffset = TOTAL_INTRO_SPAN + 1;
-      }
-    },
+  public skipIntro(): void {
+    if (this.startClock !== null) {
+      this.skipTimeOffset = TOTAL_INTRO_SPAN + 1;
+    }
+  }
 
-    dispose() {
-      destroyed = true;
-      unregisterLayer();
-      dragOrbit.dispose();
+  public dispose(): void {
+    this.isDestroyed = true;
+    this.unregisterLayer();
+    this.dragOrbit.dispose();
 
-      removeHighlightMesh();
-      if (avatarData) {
-        avatarData.geometry.dispose();
-      }
-      releaseDraco(config.dracoPath);
-    },
-  };
+    this.removeHighlightMesh();
+    if (this.avatarData) {
+      this.avatarData.geometry.dispose();
+    }
+    releaseDraco(this.config.dracoPath);
+  }
+}
+
+export function createBodyHologram(
+  container: HTMLElement,
+  config: BodyHologramOptions,
+): BodyHologram {
+  return new BodyHologramRig(container, config);
 }

@@ -54,102 +54,116 @@ export interface OrganMeshProps {
   onRegister?: (organId: string, mesh: THREE.Mesh | null, base: THREE.Matrix4) => void;
 }
 
-// Clean-Room Visual Constants
-const ACCENT_SELECT = new THREE.Color("#00a8e8");
-const WARN_PATHOLOGY = new THREE.Color("#e8a33d");
-const CRIT_PATHOLOGY = new THREE.Color("#c62828");
-const GLOW_LIT = new THREE.Color("#35e07a");
-const DEPTH_PROBE = new THREE.Color("#ffe8c4");
+// ---------------------------------------------------------------------------
+// Organ Material & Appearance Engine
+// ---------------------------------------------------------------------------
 
-/**
- * Calculates blended surface diffuse color considering base tissue, pathology,
- * active selection highlights, and spatial study coverage.
- */
-function resolveSurfaceTint(
-  organ: ManifestOrgan,
-  _tone: BodyTone,
-  selected: boolean,
-  hovered: boolean,
-  overlay: PathologyOverlay | undefined,
-  probeDepth: number | undefined,
-  litGlow: number | undefined,
-  coverageTouches: number | undefined,
-  coverageBusiest: number | undefined,
-): THREE.Color {
-  const base = tissueColour(organ).clone();
+export class OrganMaterialEngine {
+  private static readonly ACCENT_SELECT = new THREE.Color("#00a8e8");
+  private static readonly WARN_PATHOLOGY = new THREE.Color("#e8a33d");
+  private static readonly CRIT_PATHOLOGY = new THREE.Color("#c62828");
+  private static readonly GLOW_LIT = new THREE.Color("#35e07a");
+  private static readonly DEPTH_PROBE = new THREE.Color("#ffe8c4");
 
-  if (overlay) {
-    const sev = Math.min(Math.max(overlay.severity, 0), 1);
-    const pathologyTint =
-      sev <= 0.5
-        ? base.clone().lerp(WARN_PATHOLOGY, sev * 2)
-        : WARN_PATHOLOGY.clone().lerp(CRIT_PATHOLOGY, (sev - 0.5) * 2);
-    base.copy(pathologyTint);
+  public static resolveSurfaceColor(
+    organ: ManifestOrgan,
+    selected: boolean,
+    hovered: boolean,
+    overlay: PathologyOverlay | undefined,
+    probeDepth: number | undefined,
+    litGlow: number | undefined,
+    coverageTouches: number | undefined,
+    coverageBusiest: number | undefined,
+  ): THREE.Color {
+    const tint = tissueColour(organ).clone();
+
+    if (overlay) {
+      const severity = Math.min(Math.max(overlay.severity, 0), 1);
+      const targetWarning =
+        severity <= 0.5
+          ? tint.clone().lerp(this.WARN_PATHOLOGY, severity * 2)
+          : this.WARN_PATHOLOGY.clone().lerp(this.CRIT_PATHOLOGY, (severity - 0.5) * 2);
+      tint.copy(targetWarning);
+    }
+
+    if (coverageTouches !== undefined && coverageBusiest !== undefined && coverageBusiest > 0) {
+      const heat = coverageColour(coverageTouches, coverageBusiest);
+      tint.lerp(heat, 0.65);
+    }
+
+    if (selected) {
+      tint.lerp(this.ACCENT_SELECT, 0.7);
+    } else if (hovered) {
+      tint.offsetHSL(0, 0.05, 0.15);
+    }
+
+    if (litGlow !== undefined && litGlow > 0) {
+      tint.lerp(this.GLOW_LIT, Math.min(litGlow, 1) * 0.8);
+    } else if (probeDepth !== undefined) {
+      tint.lerp(this.DEPTH_PROBE, Math.max(0.2, 1 - probeDepth * 0.15));
+    }
+
+    return tint;
   }
 
-  if (coverageTouches !== undefined && coverageBusiest !== undefined && coverageBusiest > 0) {
-    const heatColor = coverageColour(coverageTouches, coverageBusiest);
-    base.lerp(heatColor, 0.65);
-  }
+  public static createShaderMaterial(
+    organ: ManifestOrgan,
+    opacity: number,
+    clippingPlanes: THREE.Plane[],
+    flowKind: ReturnType<typeof vesselFlow>,
+    chamber: string | null,
+    beatUserData: unknown,
+    breath: ReturnType<typeof breathData>,
+  ): THREE.Material {
+    const isGhost = opacity < GHOST_CLICK_THROUGH;
+    const finalAlpha = Math.max(0, Math.min(1, opacity * tissueOpacity(organ)));
 
-  if (selected) {
-    base.lerp(ACCENT_SELECT, 0.7);
-  } else if (hovered) {
-    base.offsetHSL(0, 0.05, 0.15);
-  }
+    if (flowKind) {
+      return flowMaterial(flowKind);
+    }
 
-  if (litGlow !== undefined && litGlow > 0) {
-    base.lerp(GLOW_LIT, Math.min(litGlow, 1) * 0.8);
-  } else if (probeDepth !== undefined) {
-    base.lerp(DEPTH_PROBE, Math.max(0.2, 1 - probeDepth * 0.15));
-  }
+    const standardMat = new THREE.MeshStandardMaterial({
+      roughness: tissueRoughness(organ.system),
+      metalness: tissueMetalness(organ.system),
+      transparent: finalAlpha < 0.999,
+      opacity: finalAlpha,
+      depthWrite: !isGhost,
+      clippingPlanes: clippingPlanes.length > 0 ? clippingPlanes : null,
+      clipShadows: true,
+    });
 
-  return base;
+    const depthBias = tissueDepthBias(organ);
+    if (depthBias !== 0) {
+      standardMat.polygonOffset = true;
+      standardMat.polygonOffsetFactor = depthBias;
+      standardMat.polygonOffsetUnits = depthBias;
+    }
+
+    if (chamber !== null && beatUserData) {
+      standardMat.userData = beatUserData;
+      standardMat.onBeforeCompile = heartbeatOnBeforeCompile;
+    } else if (breath.breathRole !== BREATH_ROLE.none) {
+      standardMat.userData = { ...breath };
+      standardMat.onBeforeCompile = breathOnBeforeCompile;
+    }
+
+    return standardMat;
+  }
 }
 
-export const OrganMesh = memo(function OrganMesh({
-  organ,
-  geometry,
-  matrix,
-  visible,
-  opacity,
-  hovered,
-  selected,
-  overlay,
-  coverageTouches,
-  coverageBusiest,
-  probeDepth,
-  litGlow,
-  tone,
-  worldBox,
-  clippingPlanes,
-  onHover,
-  onSelect,
-  onStudy,
-  onContextMenu,
-  onRegister,
-}: OrganMeshProps) {
-  const meshRef = useRef<THREE.Mesh>(null);
+// ---------------------------------------------------------------------------
+// Organ Physiological Deformation Hook
+// ---------------------------------------------------------------------------
 
-  // Sync transformation with world matrix
-  useEffect(() => {
-    const mesh = meshRef.current;
-    if (!mesh) return;
-    mesh.matrix.copy(matrix);
-    mesh.matrixAutoUpdate = false;
-    mesh.matrixWorldNeedsUpdate = true;
-    onRegister?.(organ.organ_id, mesh, matrix);
-
-    return () => {
-      onRegister?.(organ.organ_id, null, matrix);
-    };
-  }, [organ.organ_id, matrix, onRegister]);
-
-  // Cardiac chamber bindings
+function useOrganPhysiology(
+  meshRef: React.RefObject<THREE.Mesh | null>,
+  organ: ManifestOrgan,
+  worldBox?: THREE.Box3,
+  geometry?: THREE.BufferGeometry,
+) {
   const chamber = useMemo(() => beatChamber(organ), [organ]);
   const isHeartBeating = useHeartStore((s) => chamber !== null && s.enabled);
 
-  // Respiratory deformations
   const breath = useMemo(
     () => breathData(organ, worldBox, chamber !== null),
     [organ, worldBox, chamber],
@@ -164,15 +178,8 @@ export const OrganMesh = memo(function OrganMesh({
     return name.includes("vena cava") ? ("vena cava" as const) : ("vessel" as const);
   }, [breath.breathRole, organ.name_en]);
 
-  useEffect(() => {
-    const node = meshRef.current;
-    if (!node || respiratoryPart === null) return;
-    return registerCarry(organ.organ_id, { mesh: node, part: respiratoryPart });
-  }, [organ.organ_id, respiratoryPart]);
-
-  // Shared cardiac deformation state
   const beatUserData = useMemo(() => {
-    if (chamber === null) return null;
+    if (chamber === null || !geometry) return null;
     if (!geometry.boundingBox) geometry.computeBoundingBox();
     const ctr = geometry.boundingBox?.getCenter(new THREE.Vector3()) ?? new THREE.Vector3();
     return {
@@ -184,20 +191,6 @@ export const OrganMesh = memo(function OrganMesh({
     };
   }, [chamber, geometry, organ.organ_id, breath]);
 
-  // Cardiac heartbeat registration
-  useEffect(() => {
-    const node = meshRef.current;
-    if (!isHeartBeating || !node || chamber === null || !beatUserData) return;
-
-    return registerBeating(organ.organ_id, {
-      mesh: node,
-      chamber,
-      wall: isChamberWall(organ),
-      centre: beatUserData.beatCentre,
-    });
-  }, [chamber, isHeartBeating, organ.organ_id, beatUserData]);
-
-  // Blood flow registration
   const flowKind = useMemo(() => vesselFlow(organ), [organ]);
   const isFlowSeedOrgan = useMemo(
     () => (flowKind ? isFlowSeed(flowKind, organ) : false),
@@ -206,54 +199,117 @@ export const OrganMesh = memo(function OrganMesh({
 
   useEffect(() => {
     const node = meshRef.current;
-    if (!node || !flowKind) return;
-    return registerFlowing(organ.organ_id, {
-      mesh: node,
-      kind: flowKind,
-      seed: isFlowSeedOrgan,
-    });
-  }, [organ.organ_id, flowKind, isFlowSeedOrgan]);
+    if (!node) return;
 
-  // Dynamic mesh standard material
-  const material = useMemo(() => {
-    const isGhost = opacity < GHOST_CLICK_THROUGH;
-    const finalAlpha = Math.max(0, Math.min(1, opacity * tissueOpacity(organ)));
+    const unregisters: Array<() => void> = [];
 
-    const mat = flowKind
-      ? flowMaterial(flowKind)
-      : new THREE.MeshStandardMaterial({
-          roughness: tissueRoughness(organ.system),
-          metalness: tissueMetalness(organ.system),
-          transparent: finalAlpha < 0.999,
-          opacity: finalAlpha,
-          depthWrite: !isGhost,
-          clippingPlanes: clippingPlanes.length > 0 ? clippingPlanes : null,
-          clipShadows: true,
-        });
-
-    if (tissueDepthBias(organ) !== 0) {
-      mat.polygonOffset = true;
-      mat.polygonOffsetFactor = tissueDepthBias(organ);
-      mat.polygonOffsetUnits = tissueDepthBias(organ);
+    if (respiratoryPart !== null) {
+      const unreg = registerCarry(organ.organ_id, { mesh: node, part: respiratoryPart });
+      if (unreg) unregisters.push(unreg);
     }
 
-    if (chamber !== null && beatUserData) {
-      mat.userData = beatUserData;
-      mat.onBeforeCompile = heartbeatOnBeforeCompile;
-    } else if (breath.breathRole !== BREATH_ROLE.none) {
-      mat.userData = { ...breath };
-      mat.onBeforeCompile = breathOnBeforeCompile;
+    if (isHeartBeating && chamber !== null && beatUserData) {
+      const unreg = registerBeating(organ.organ_id, {
+        mesh: node,
+        chamber,
+        wall: isChamberWall(organ),
+        centre: beatUserData.beatCentre,
+      });
+      if (unreg) unregisters.push(unreg);
     }
 
-    return mat;
-  }, [organ, opacity, clippingPlanes, chamber, breath, flowKind, beatUserData]);
+    if (flowKind) {
+      const unreg = registerFlowing(organ.organ_id, {
+        mesh: node,
+        kind: flowKind,
+        seed: isFlowSeedOrgan,
+      });
+      if (unreg) unregisters.push(unreg);
+    }
 
-  // Color updates
+    return () => {
+      unregisters.forEach((fn) => fn());
+    };
+  }, [
+    organ.organ_id,
+    respiratoryPart,
+    isHeartBeating,
+    chamber,
+    beatUserData,
+    flowKind,
+    isFlowSeedOrgan,
+    meshRef,
+  ]);
+
+  return { chamber, breath, beatUserData, flowKind };
+}
+
+// ---------------------------------------------------------------------------
+// 3D Organ Mesh Component
+// ---------------------------------------------------------------------------
+
+export const OrganMesh = memo(function OrganMesh({
+  organ,
+  geometry,
+  matrix,
+  visible,
+  opacity,
+  hovered,
+  selected,
+  overlay,
+  coverageTouches,
+  coverageBusiest,
+  probeDepth,
+  litGlow,
+  tone: _tone,
+  worldBox,
+  clippingPlanes,
+  onHover,
+  onSelect,
+  onStudy,
+  onContextMenu,
+  onRegister,
+}: OrganMeshProps) {
+  const meshRef = useRef<THREE.Mesh>(null);
+
   useEffect(() => {
-    if (!material) return;
-    const color = resolveSurfaceTint(
+    const mesh = meshRef.current;
+    if (!mesh) return;
+    mesh.matrix.copy(matrix);
+    mesh.matrixAutoUpdate = false;
+    mesh.matrixWorldNeedsUpdate = true;
+    onRegister?.(organ.organ_id, mesh, matrix);
+
+    return () => {
+      onRegister?.(organ.organ_id, null, matrix);
+    };
+  }, [organ.organ_id, matrix, onRegister]);
+
+  const { chamber, breath, beatUserData, flowKind } = useOrganPhysiology(
+    meshRef,
+    organ,
+    worldBox,
+    geometry,
+  );
+
+  const material = useMemo(
+    () =>
+      OrganMaterialEngine.createShaderMaterial(
+        organ,
+        opacity,
+        clippingPlanes,
+        flowKind,
+        chamber,
+        beatUserData,
+        breath,
+      ),
+    [organ, opacity, clippingPlanes, flowKind, chamber, beatUserData, breath],
+  );
+
+  useEffect(() => {
+    if (!("color" in material) || !(material.color instanceof THREE.Color)) return;
+    const color = OrganMaterialEngine.resolveSurfaceColor(
       organ,
-      tone,
       selected,
       hovered,
       overlay,
@@ -266,7 +322,6 @@ export const OrganMesh = memo(function OrganMesh({
   }, [
     material,
     organ,
-    tone,
     selected,
     hovered,
     overlay,
@@ -276,7 +331,6 @@ export const OrganMesh = memo(function OrganMesh({
     coverageBusiest,
   ]);
 
-  // Interaction handlers
   const handleClick = useCallback(
     (e: ThreeEvent<MouseEvent>) => {
       e.stopPropagation();

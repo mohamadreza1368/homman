@@ -51,6 +51,69 @@ function currentTurnScope(): TurnScope {
   };
 }
 
+/**
+ * Domain coordinator for tutoring turns, study journal recordings, and spend attribution.
+ */
+export class TutorSessionCoordinator {
+  public static recordSpend(
+    spendContext: Readonly<SpendContext>,
+    usage: TokenUsage | null,
+    modelName: string | null,
+  ): void {
+    if (!usage || !modelName) return;
+    void useUsageStore.getState().record({
+      session_id: spendContext.sessionId,
+      provider: spendContext.provider,
+      model: modelName,
+      input_tokens: usage.input_tokens,
+      output_tokens: usage.output_tokens,
+      cache_read_tokens: usage.cache_read_tokens,
+    });
+  }
+
+  public static persistTurn(
+    requestId: string,
+    turnContext: Readonly<TurnContext>,
+    registeredGrade?: { score: number; verdict: string },
+  ): void {
+    const chatState = useChatStore.getState();
+    const recordedTurn = chatState.turn(requestId);
+    if (!recordedTurn || turnContext.mode === "review") return;
+
+    const studyState = useStudyStore.getState();
+    void studyState
+      .saveTurn({
+        session_id: turnContext.sessionId,
+        kind: turnContext.mode,
+        title: turnContext.title,
+        profile: turnContext.profile,
+        language: turnContext.language,
+        question: recordedTurn.question,
+        answer: recordedTurn.answer,
+        organ_ids: [...turnContext.organIds],
+        model: recordedTurn.model ?? null,
+        input_tokens: recordedTurn.usage?.input_tokens ?? null,
+        output_tokens: recordedTurn.usage?.output_tokens ?? null,
+        cache_read_tokens: recordedTurn.usage?.cache_read_tokens ?? null,
+        commands: recordedTurn.commands ?? null,
+        case_id: turnContext.mode === "case" ? turnContext.caseId : null,
+      })
+      .then((hasSaved) => {
+        if (!hasSaved) return;
+        if (registeredGrade) {
+          void studyState.recordVerdict(
+            turnContext.sessionId,
+            registeredGrade.score,
+            registeredGrade.verdict,
+          );
+        }
+        if (turnContext.mode === "case" && turnContext.caseId) {
+          void useCaseStore.getState().refresh();
+        }
+      });
+  }
+}
+
 export function useTutorSession() {
   const isPersian = useInterfaceLanguage((state) => state.language === "fa");
   const loadedOrgans = useSceneStore((state) => state.organs);
@@ -87,6 +150,7 @@ export function useTutorSession() {
     aimHintLearned,
     isPersian,
   });
+
   const startTurn = useChatStore((state) => state.startTurn);
   const appendDelta = useChatStore((state) => state.appendDelta);
   const noteTool = useChatStore((state) => state.noteTool);
@@ -145,61 +209,6 @@ export function useTutorSession() {
       turns.invalidate();
     };
   }, [turns]);
-
-  const persistTurn = useCallback((requestId: string, turnContext: Readonly<TurnContext>) => {
-    const chatState = useChatStore.getState();
-    const recordedTurn = chatState.turn(requestId);
-    const associatedOrgans = [...turnContext.organIds];
-    const registeredGrade = verdictRef.current.get(requestId);
-    verdictRef.current.delete(requestId);
-
-    if (!recordedTurn || turnContext.mode === "review") return;
-
-    const studyState = useStudyStore.getState();
-    const { profile: targetProfile, language: targetLanguage } = turnContext;
-
-    void studyState
-      .saveTurn({
-        session_id: turnContext.sessionId,
-        kind: turnContext.mode,
-        title: turnContext.title,
-        profile: targetProfile,
-        language: targetLanguage,
-        question: recordedTurn.question,
-        answer: recordedTurn.answer,
-        organ_ids: associatedOrgans,
-        model: recordedTurn.model ?? null,
-        input_tokens: recordedTurn.usage?.input_tokens ?? null,
-        output_tokens: recordedTurn.usage?.output_tokens ?? null,
-        cache_read_tokens: recordedTurn.usage?.cache_read_tokens ?? null,
-        commands: recordedTurn.commands ?? null,
-        case_id: turnContext.mode === "case" ? turnContext.caseId : null,
-      })
-      .then((hasSaved) => {
-        if (!hasSaved) return;
-        if (registeredGrade) {
-          void studyState.recordVerdict(turnContext.sessionId, registeredGrade.score, registeredGrade.verdict);
-        }
-        if (turnContext.mode === "case" && turnContext.caseId) {
-          void useCaseStore.getState().refresh();
-        }
-      });
-  }, []);
-
-  const recordSpend = useCallback(
-    (spendContext: Readonly<SpendContext>, usage: TokenUsage | null, modelName: string | null) => {
-      if (!usage || !modelName) return;
-      void useUsageStore.getState().record({
-        session_id: spendContext.sessionId,
-        provider: spendContext.provider,
-        model: modelName,
-        input_tokens: usage.input_tokens,
-        output_tokens: usage.output_tokens,
-        cache_read_tokens: usage.cache_read_tokens,
-      });
-    },
-    [],
-  );
 
   const acceptEngine = useCallback((protocolVersion: number) => {
     if (protocolVersion === PROTOCOL_VERSION) {
@@ -264,12 +273,14 @@ export function useTutorSession() {
         if (!turnRecord) return;
         if (turnRecord.active) {
           finishTurn(requestId, tokenUsage ?? undefined, modelName ?? undefined);
-          persistTurn(requestId, turnRecord.context);
+          const grade = verdictRef.current.get(requestId);
+          verdictRef.current.delete(requestId);
+          TutorSessionCoordinator.persistTurn(requestId, turnRecord.context, grade);
         }
         verdictRef.current.delete(requestId);
-        recordSpend(turnRecord.context, tokenUsage, modelName);
+        TutorSessionCoordinator.recordSpend(turnRecord.context, tokenUsage, modelName);
       },
-      [finishTurn, persistTurn, recordSpend, turns],
+      [finishTurn, turns],
     ),
     onProtocolViolation: useCallback(
       (_payload: unknown, violations: string) => {
@@ -425,8 +436,10 @@ export function useTutorSession() {
           const finalizedRecord = turns.take(newTurnId);
           if (finalizedRecord && finalizedRecord.active) {
             finishTurn(newTurnId, streamResult.usage ?? undefined, streamResult.model);
-            persistTurn(newTurnId, finalizedRecord.context);
-            recordSpend(finalizedRecord.context, streamResult.usage, streamResult.model);
+            const grade = verdictRef.current.get(newTurnId);
+            verdictRef.current.delete(newTurnId);
+            TutorSessionCoordinator.persistTurn(newTurnId, finalizedRecord.context, grade);
+            TutorSessionCoordinator.recordSpend(finalizedRecord.context, streamResult.usage, streamResult.model);
           }
         } else {
           await askAgent(outboundAgentRequest);
@@ -479,8 +492,6 @@ export function useTutorSession() {
       customModel,
       noteScore,
       finishTurn,
-      persistTurn,
-      recordSpend,
       failTurn,
     ],
   );
