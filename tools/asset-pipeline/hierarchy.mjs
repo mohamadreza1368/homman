@@ -1,20 +1,20 @@
 /**
  * Hoomaan 3D Anatomy Platform - Asset Pipeline
- * Hierarchy repair and anatomical taxonomy curation engine.
+ * Taxonomy Curation Engine for Anatomical Lineages.
  *
- * Clean-room implementation based on specs/asset-pipeline-anatomical-hierarchy.md.
+ * Clean-room implementation designed from specs/asset-pipeline-anatomical-hierarchy.md.
  */
 
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
+const CURRENT_DIR = dirname(fileURLToPath(import.meta.url));
 const TAXONOMY_REGIONS = JSON.parse(
-  readFileSync(join(SCRIPT_DIR, "hierarchy_nervous_paths.json"), "utf8"),
+  readFileSync(join(CURRENT_DIR, "hierarchy_nervous_paths.json"), "utf8"),
 );
 
-export const NERVOUS_PATHS = Object.freeze(
+export const TAXONOMY_PATH_OVERRIDES = Object.freeze(
   Object.values(TAXONOMY_REGIONS).reduce((acc, region) => {
     for (const term of region.terms) {
       acc[term] = region.path;
@@ -28,106 +28,106 @@ export const TAXONOMY_HEADING_REPLACEMENTS = Object.freeze({
 });
 
 /**
- * Pipeline processor for anatomical taxonomy alignment, symmetry consensus, and taxonomic repairs.
+ * Curation engine that resolves anatomical branches, unifies twin organ lineages,
+ * and normalizes taxonomy headings.
  */
-export class AnatomyHierarchyRepairPipeline {
-  constructor(rules = NERVOUS_PATHS, renames = TAXONOMY_HEADING_REPLACEMENTS) {
-    this.canonicalPathRules = rules;
-    this.headingRenames = renames;
+export class TaxonomyCurationEngine {
+  constructor(
+    pathOverrides = TAXONOMY_PATH_OVERRIDES,
+    headingRenames = TAXONOMY_HEADING_REPLACEMENTS,
+  ) {
+    this.pathOverrides = pathOverrides;
+    this.headingRenames = headingRenames;
   }
 
-  process(entities) {
-    const unvisitedRules = new Set(Object.keys(this.canonicalPathRules));
-    const unvisitedRenames = new Set(Object.keys(this.headingRenames));
+  /**
+   * Curates an array of anatomical structure entities.
+   * @param {Array<object>} structures
+   * @returns {{ organs: Array<object>, corrected: number, propagated: number, renamed: number }}
+   */
+  curateOrganTaxonomy(structures) {
+    const remainingOverrides = new Set(Object.keys(this.pathOverrides));
+    const remainingRenames = new Set(Object.keys(this.headingRenames));
 
-    let correctionCount = 0;
-    let propagationCount = 0;
-    let renameCount = 0;
+    let pathOverridesCount = 0;
+    let twinDepthHarmonizedCount = 0;
+    let renamedHeadingsCount = 0;
 
     const deepestLineageByTerm = new Map();
-    const workingEntities = [];
+    const curatedList = [];
 
-    // Stage 1: Curated nervous lineage alignment and depth registration
-    for (const item of entities) {
+    // Stage 1: Lineage overrides for nervous system & depth discovery
+    for (const item of structures) {
       const record = { ...item, path: Array.isArray(item.path) ? [...item.path] : [] };
 
       if (record.system === "nervous") {
-        const canonical = this.canonicalPathRules[record.ta2_latin];
+        const canonical = this.pathOverrides[record.ta2_latin];
         if (canonical) {
           record.path = [...canonical];
-          unvisitedRules.delete(record.ta2_latin);
-          correctionCount++;
+          remainingOverrides.delete(record.ta2_latin);
+          pathOverridesCount++;
         }
 
-        const currentBest = deepestLineageByTerm.get(record.ta2_latin);
-        if (!currentBest || record.path.length > currentBest.length) {
+        const knownDeepest = deepestLineageByTerm.get(record.ta2_latin);
+        if (!knownDeepest || record.path.length > knownDeepest.length) {
           deepestLineageByTerm.set(record.ta2_latin, record.path);
         }
       }
 
-      workingEntities.push(record);
+      curatedList.push(record);
     }
 
-    // Safety audit: Check for dangling unused path rules
-    if (unvisitedRules.size > 0) {
-      const missingList = Array.from(unvisitedRules).sort().join(", ");
+    // Integrity constraint: No stale or unused path override rules
+    if (remainingOverrides.size > 0) {
+      const unusedList = Array.from(remainingOverrides).sort().join(", ");
       throw new Error(
-        `NERVOUS_PATHS has entries matching no structure: ${missingList}. If the vendored hierarchy was fixed upstream, delete them.`,
+        `NERVOUS_PATHS has entries matching no structure: ${unusedList}. If the vendored hierarchy was fixed upstream, delete them.`,
       );
     }
 
-    // Stage 2: Bilateral symmetry depth propagation and heading substitutions
-    const finalized = workingEntities.map((item) => {
-      let currentPath = item.path;
+    // Stage 2: Bilateral symmetry consensus & heading substitutions
+    const finalized = curatedList.map((record) => {
+      let activePath = record.path;
 
-      if (item.system === "nervous") {
-        const deepest = deepestLineageByTerm.get(item.ta2_latin);
-        if (deepest && deepest.length > currentPath.length) {
-          currentPath = [...deepest];
-          propagationCount++;
+      if (record.system === "nervous") {
+        const maximalDepthPath = deepestLineageByTerm.get(record.ta2_latin);
+        if (maximalDepthPath && maximalDepthPath.length > activePath.length) {
+          activePath = [...maximalDepthPath];
+          twinDepthHarmonizedCount++;
         }
       }
 
-      let renamed = false;
-      const transformedPath = currentPath.map((node) => {
+      let hadRename = false;
+      const substitutedPath = activePath.map((node) => {
         const replacement = this.headingRenames[node];
         if (replacement !== undefined) {
-          unvisitedRenames.delete(node);
-          renamed = true;
+          remainingRenames.delete(node);
+          hadRename = true;
           return replacement;
         }
         return node;
       });
 
-      if (renamed) {
-        renameCount++;
+      if (hadRename) {
+        renamedHeadingsCount++;
       }
 
-      return { ...item, path: transformedPath };
+      return { ...record, path: substitutedPath };
     });
 
-    // Safety audit: Check for dangling unused heading rename rules
-    if (unvisitedRenames.size > 0) {
-      const missingRenames = Array.from(unvisitedRenames).sort().join(", ");
+    // Integrity constraint: No stale or unused heading rename rules
+    if (remainingRenames.size > 0) {
+      const unusedRenames = Array.from(remainingRenames).sort().join(", ");
       throw new Error(
-        `HEADING_RENAMES has entries matching no heading: ${missingRenames}. If the upstream naming changed, delete them rather than leave them looking authoritative.`,
+        `HEADING_RENAMES has entries matching no heading: ${unusedRenames}. If the upstream naming changed, delete them rather than leave them looking authoritative.`,
       );
     }
 
     return {
       organs: finalized,
-      corrected: correctionCount,
-      propagated: propagationCount,
-      renamed: renameCount,
+      corrected: pathOverridesCount,
+      propagated: twinDepthHarmonizedCount,
+      renamed: renamedHeadingsCount,
     };
   }
-}
-
-/**
- * Curates organ hierarchy paths, resolving brain subdivisions and paired symmetry.
- * @param {Array<object>} organEntities
- * @returns {{ organs: Array<object>, corrected: number, propagated: number, renamed: number }}
- */
-export function repairHierarchy(organEntities) {
-  return new AnatomyHierarchyRepairPipeline().process(organEntities);
 }

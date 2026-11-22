@@ -1,17 +1,18 @@
 /**
  * Hoomaan 3D Anatomy Platform - Asset Pipeline
- * Male Anatomy Manifest Compiler Type Definitions.
+ * Type definitions for Male Atlas Manifest Generator.
  *
  * Clean-room specification-derived declarations.
  */
 
-export interface NormalizedBlenderNode {
+export interface ParsedNodeIdentifier {
   readonly cleanName: string;
   readonly laterality: "left" | "right" | null;
 }
 
-export declare class MaleAnatomyManifestCompiler {
-  static normalizeBlenderIdentifier(rawLabel: string): NormalizedBlenderNode;
-  static categorizeVisceralOrgan(englishTerm: string): string | null;
-  compileManifest(): void;
+export declare class MaleAtlasManifestGenerator {
+  static parseNodeIdentifier(rawIdentifier: string): ParsedNodeIdentifier;
+  static classifyVisceralOrgan(englishTerm: string): string | null;
+  compile(): void;
+  loadInspectionReports(): unknown[];
 }

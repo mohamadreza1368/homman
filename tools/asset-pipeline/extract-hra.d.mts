@@ -1,18 +1,22 @@
 /**
  * Hoomaan 3D Anatomy Platform - Asset Pipeline
- * Type definitions for Human Reference Atlas 3D Extraction Pipeline.
+ * Type definitions for Female Geometry Extraction Engine.
  *
  * Clean-room specification-derived declarations.
  */
 
-import type { HraStructure } from "./hra-selection.d.mts";
+import type { FemaleOrganEntry } from "./hra-selection.d.mts";
 
-export declare class HraModelExtractor {
-  static formatClinicalName(
-    entry: Pick<HraStructure, "term"> & Partial<Pick<HraStructure, "english" | "qualifier" | "side">>,
-  ): string;
-  static tallyTriangles(mesh: unknown): number;
-  execute(): Promise<void>;
+export interface ClinicalNameDescriptor {
+  term: string;
+  english?: string;
+  qualifier?: string;
+  side?: "left" | "right" | null;
 }
 
-export declare const displayName: typeof HraModelExtractor.formatClinicalName;
+export declare class FemaleGeometryExtractor {
+  static readonly PINNED_HASH: string;
+  static formatClinicalName(entry: ClinicalNameDescriptor): string;
+  static countMeshTriangles(mesh: unknown): number;
+  execute(): Promise<void>;
+}

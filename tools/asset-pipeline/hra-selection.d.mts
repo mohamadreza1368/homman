@@ -1,6 +1,6 @@
 /**
  * Hoomaan 3D Anatomy Platform - Asset Pipeline
- * Type definitions for Human Reference Atlas (HRA) organ selections, provenance, and taxonomy.
+ * Type definitions for Female Atlas Registry.
  *
  * Clean-room specification-derived declarations.
  */
@@ -9,7 +9,7 @@ import type { AnatomicalSystem } from "../../src/lib/schemas";
 
 export type AnatomicalLaterality = "left" | "right" | null;
 
-export interface ProvenanceSource {
+export interface AtlasSourceProvenance {
   readonly version: string;
   readonly url: string;
   readonly metadata: string;
@@ -17,9 +17,7 @@ export interface ProvenanceSource {
   readonly licenseUrl: string;
 }
 
-export type HraSource = ProvenanceSource;
-
-export interface AnatomicalStructureEntry {
+export interface FemaleOrganEntry {
   readonly node: string;
   readonly id: string;
   readonly term: string;
@@ -29,17 +27,15 @@ export interface AnatomicalStructureEntry {
   readonly path: readonly string[];
 }
 
-export type HraStructure = AnatomicalStructureEntry;
-
-export declare const SOURCE: ProvenanceSource;
+export declare const SOURCE: AtlasSourceProvenance;
 export declare const NOT_IN_TA2: Readonly<Record<string, string>>;
 export declare const OUT_OF_SCOPE: Readonly<Record<string, string>>;
 export declare const KNOWN_SOURCE_ERRATA: Readonly<Record<string, string>>;
 export declare const VENDOR_TA2_DEFECTS: Readonly<Record<string, string>>;
-export declare const STRUCTURES: readonly AnatomicalStructureEntry[];
+export declare const STRUCTURES: readonly FemaleOrganEntry[];
 export declare const SYSTEM_OF: ReadonlyMap<string, AnatomicalSystem>;
 
-export declare class HraTaxonomyRegistry {
+export declare class FemaleAtlasRegistry {
   static resolveSystem(rootCategory: string): AnatomicalSystem;
-  static buildSystemMap(structures: readonly AnatomicalStructureEntry[]): Map<string, AnatomicalSystem>;
+  static buildSystemIndex(structureList: readonly FemaleOrganEntry[]): Map<string, AnatomicalSystem>;
 }

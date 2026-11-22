@@ -6,28 +6,13 @@
   "license": "CC-BY-SA-4.0",
   "systems": [
     {
+      "system": "skeletal",
+      "organ_count": 335,
+      "load_on_start": true
+    },
+    {
       "system": "articular",
       "organ_count": 353,
-      "load_on_start": false
-    },
-    {
-      "system": "cardiovascular",
-      "organ_count": 640,
-      "load_on_start": false
-    },
-    {
-      "system": "digestive",
-      "organ_count": 47,
-      "load_on_start": false
-    },
-    {
-      "system": "endocrine",
-      "organ_count": 10,
-      "load_on_start": false
-    },
-    {
-      "system": "lymphatic",
-      "organ_count": 142,
       "load_on_start": false
     },
     {
@@ -41,18 +26,8 @@
       "load_on_start": false
     },
     {
-      "system": "regional",
-      "organ_count": 256,
-      "load_on_start": false
-    },
-    {
-      "system": "renal",
-      "organ_count": 8,
-      "load_on_start": false
-    },
-    {
-      "system": "reproductive",
-      "organ_count": 14,
+      "system": "cardiovascular",
+      "organ_count": 640,
       "load_on_start": false
     },
     {
@@ -61,9 +36,34 @@
       "load_on_start": false
     },
     {
-      "system": "skeletal",
-      "organ_count": 335,
-      "load_on_start": true
+      "system": "digestive",
+      "organ_count": 47,
+      "load_on_start": false
+    },
+    {
+      "system": "renal",
+      "organ_count": 8,
+      "load_on_start": false
+    },
+    {
+      "system": "endocrine",
+      "organ_count": 10,
+      "load_on_start": false
+    },
+    {
+      "system": "reproductive",
+      "organ_count": 14,
+      "load_on_start": false
+    },
+    {
+      "system": "lymphatic",
+      "organ_count": 142,
+      "load_on_start": false
+    },
+    {
+      "system": "regional",
+      "organ_count": 256,
+      "load_on_start": false
     }
   ],
   "organs": [

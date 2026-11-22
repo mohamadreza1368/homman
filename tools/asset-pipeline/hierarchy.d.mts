@@ -1,38 +1,32 @@
 /**
  * Hoomaan 3D Anatomy Platform - Asset Pipeline
- * Type definitions for anatomical taxonomy tree curation and hierarchy repair.
+ * Type definitions for Anatomical Taxonomy Curation Engine.
  *
  * Clean-room specification-derived declarations.
  */
 
-export interface TaxonomyEntity {
+export interface AnatomicalNodeRecord {
   organ_id: string;
   ta2_latin: string;
   system: string;
   path: string[];
-  [extraFields: string]: unknown;
+  [extraProps: string]: unknown;
 }
 
-export type PlacedOrgan = TaxonomyEntity;
-
-export interface HierarchyRepairResult<T extends TaxonomyEntity = TaxonomyEntity> {
+export interface TaxonomyCurationReport<T extends AnatomicalNodeRecord = AnatomicalNodeRecord> {
   organs: T[];
   corrected: number;
   propagated: number;
   renamed: number;
 }
 
-export declare const NERVOUS_PATHS: Readonly<Record<string, readonly string[]>>;
+export declare const TAXONOMY_PATH_OVERRIDES: Readonly<Record<string, readonly string[]>>;
 export declare const TAXONOMY_HEADING_REPLACEMENTS: Readonly<Record<string, string>>;
 
-export declare class AnatomyHierarchyRepairPipeline {
+export declare class TaxonomyCurationEngine {
   constructor(
-    rules?: Readonly<Record<string, readonly string[]>>,
-    renames?: Readonly<Record<string, string>>,
+    pathOverrides?: Readonly<Record<string, readonly string[]>>,
+    headingRenames?: Readonly<Record<string, string>>,
   );
-  process<T extends TaxonomyEntity>(entities: readonly T[]): HierarchyRepairResult<T>;
+  curateOrganTaxonomy<T extends AnatomicalNodeRecord>(structures: readonly T[]): TaxonomyCurationReport<T>;
 }
-
-export declare function repairHierarchy<T extends TaxonomyEntity>(
-  organEntities: readonly T[],
-): HierarchyRepairResult<T>;

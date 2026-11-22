@@ -1,138 +1,118 @@
 /**
  * Hoomaan 3D Anatomy Platform - Asset Pipeline
- * Terminologia Anatomica 2 (TA2) Indexing and Nomenclature Resolution.
+ * Terminologia Anatomica 2 (TA2) Vocabulary Normalization & Slugging.
  *
- * Clean-room implementation based on specs/asset-pipeline-terminologia-anatomica.md.
+ * Clean-room implementation designed from specs/asset-pipeline-terminologia-anatomica.md.
  */
 
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
-const PATCHES_DATA = JSON.parse(
-  readFileSync(join(SCRIPT_DIR, "ta2_patches.json"), "utf8"),
+const CURRENT_DIR = dirname(fileURLToPath(import.meta.url));
+const PATCH_STORE = JSON.parse(
+  readFileSync(join(CURRENT_DIR, "ta2_patches.json"), "utf8"),
 );
 
-export const TA2_CORRECTIONS = Object.freeze(PATCHES_DATA.ta2_corrections);
-export const ADDED_TERM_CORRECTIONS = Object.freeze(PATCHES_DATA.added_term_corrections);
-export const ADDED_TERM_OPEN_QUESTIONS = Object.freeze(PATCHES_DATA.open_questions);
+export const TA2_CORRECTIONS = Object.freeze(PATCH_STORE.ta2_corrections);
+export const ADDED_TERM_CORRECTIONS = Object.freeze(PATCH_STORE.added_term_corrections);
+export const ADDED_TERM_OPEN_QUESTIONS = Object.freeze(PATCH_STORE.open_questions);
 
 /**
- * Clean-room parser and normalizer for international anatomical terminology (TA2).
+ * Service for loading, normalizing, and indexing Terminologia Anatomica 2 vocabularies.
  */
-export class TerminologiaAnatomicaIndexer {
+export class AnatomicalTerminologyService {
   constructor(
-    patchRules = { ...TA2_CORRECTIONS, ...ADDED_TERM_CORRECTIONS },
-    openQuestions = ADDED_TERM_OPEN_QUESTIONS,
+    customOverrides = { ...TA2_CORRECTIONS, ...ADDED_TERM_CORRECTIONS },
+    auditChecklist = ADDED_TERM_OPEN_QUESTIONS,
   ) {
-    this.overrides = patchRules;
-    this.auditQuestions = openQuestions;
+    this.overrides = customOverrides;
+    this.auditChecklist = auditChecklist;
   }
 
   /**
-   * Strips Latin diacritical accents and normalizes text into canonical NFC.
+   * Removes Latin diacritical accents (macrons, breves, accents) and produces NFC normalized text.
    * @param {string} text
    * @returns {string}
    */
-  static stripDiacritics(text) {
+  static cleanAccents(text) {
+    if (!text) return "";
     return text.normalize("NFD").replace(/\p{Diacritic}/gu, "").normalize("NFC");
   }
 
   /**
-   * Generates a deterministic, URL- and filesystem-safe alphanumeric slug.
-   * @param {string} text
+   * Converts any raw anatomical label into a clean, deterministic, URL/filesystem-safe slug.
+   * @param {string} label
    * @returns {string}
    */
-  static toSlug(text) {
-    return this.stripDiacritics(text)
+  static createSlug(label) {
+    return this.cleanAccents(label)
       .toLowerCase()
       .replace(/[^a-z0-9]+/g, "_")
       .replace(/^_+|_+$/g, "");
   }
 
   /**
-   * Parses semicolon-delimited TA2 CSV content and creates an in-memory lookup index.
-   * @param {string} rawCsv
+   * Ingests semicolon-delimited TA2 CSV content into a fast-lookup dictionary.
+   * @param {string} csvContent
    * @returns {Map<string, { en: string, la: string }>}
    */
-  parse(rawCsv) {
-    if (!rawCsv || rawCsv.trim().length === 0) {
+  parseCsvRecords(csvContent) {
+    if (!csvContent || csvContent.trim().length === 0) {
       throw new Error("Empty TA2 CSV dataset provided.");
     }
 
-    // Strip optional UTF-8 BOM
-    const content = rawCsv.charCodeAt(0) === 0xfeff ? rawCsv.slice(1) : rawCsv;
-    const lines = content.split(/\r?\n/).filter((l) => l.trim().length > 0);
+    // Strip optional UTF-8 Byte Order Mark
+    const sanitized = csvContent.charCodeAt(0) === 0xfeff ? csvContent.slice(1) : csvContent;
+    const records = sanitized.split(/\r?\n/).filter((line) => line.trim().length > 0);
 
-    if (lines.length < 2) {
+    if (records.length < 2) {
       throw new Error("TA2 dataset does not contain enough records.");
     }
 
-    const headerColumns = lines[0].split(";").map((col) => col.trim().replace(/^"|"$/g, ""));
-    const englishColIdx = headerColumns.indexOf("English");
-    const latinColIdx = headerColumns.indexOf("Latin");
+    const header = records[0].split(";").map((col) => col.trim().replace(/^"|"$/g, ""));
+    const englishIdx = header.indexOf("English");
+    const latinIdx = header.indexOf("Latin");
 
-    if (englishColIdx === -1 || latinColIdx === -1) {
-      throw new Error(
-        `TA2.csv missing required headers (English, Latin). Found: ${headerColumns.join(";")}`,
-      );
+    if (englishIdx === -1 || latinIdx === -1) {
+      throw new Error(`TA2.csv missing required headers (English, Latin). Found: ${header.join(";")}`);
     }
 
-    const vocabularyMap = new Map();
+    const vocabularyIndex = new Map();
 
-    for (let i = 1; i < lines.length; i++) {
-      const line = lines[i];
-      const cells = line.split(";").map((c) => c.trim().replace(/^"|"$/g, ""));
-      if (cells.length !== headerColumns.length) continue;
+    for (let r = 1; r < records.length; r++) {
+      const columns = records[r].split(";").map((val) => val.trim().replace(/^"|"$/g, ""));
+      if (columns.length !== header.length) continue;
 
-      const englishTerm = cells[englishColIdx];
-      if (!englishTerm) continue;
+      const rawEnglish = columns[englishIdx];
+      if (!rawEnglish) continue;
 
-      const lookupKey = englishTerm.toLowerCase();
-      if (!vocabularyMap.has(lookupKey)) {
-        const override = this.overrides[lookupKey];
-        const rawLatin = cells[latinColIdx] || "";
-        const normalizedLatin = override?.la || TerminologiaAnatomicaIndexer.stripDiacritics(rawLatin);
-        const normalizedEnglish = override?.en || englishTerm;
+      const normalizedKey = rawEnglish.toLowerCase();
+      if (!vocabularyIndex.has(normalizedKey)) {
+        const override = this.overrides[normalizedKey];
+        const rawLatin = columns[latinIdx] || "";
+        const cleanLatin = override?.la || AnatomicalTerminologyService.cleanAccents(rawLatin);
+        const cleanEnglish = override?.en || rawEnglish;
 
-        vocabularyMap.set(lookupKey, {
-          en: normalizedEnglish,
-          la: normalizedLatin,
+        vocabularyIndex.set(normalizedKey, {
+          en: cleanEnglish,
+          la: cleanLatin,
         });
       }
     }
 
-    // Integrity audit: Verify that all expected overrides and open questions exist
-    const requiredAuditKeys = new Set([
+    // Enforce completeness: all specified patch rules must resolve to actual vocabulary records
+    const requiredKeys = new Set([
       ...Object.keys(this.overrides),
-      ...Object.keys(this.auditQuestions),
+      ...Object.keys(this.auditChecklist),
     ]);
 
-    for (const key of requiredAuditKeys) {
-      if (!vocabularyMap.has(key)) {
+    for (const key of requiredKeys) {
+      if (!vocabularyIndex.has(key)) {
         throw new Error(`Correction specified for non-existent vocabulary key: "${key}".`);
       }
     }
 
-    return vocabularyMap;
+    return vocabularyIndex;
   }
-}
-
-/**
- * Ingests semicolon-delimited TA2 CSV content and returns a dictionary indexed by lowercase English terms.
- * @param {string} rawCsv
- * @returns {Map<string, { en: string, la: string }>}
- */
-export function parseTa2(rawCsv) {
-  return new TerminologiaAnatomicaIndexer().parse(rawCsv);
-}
-
-/**
- * Deterministically transforms an anatomical name into a safe, normalized alphanumeric slug identifier.
- * @param {string} term
- * @returns {string}
- */
-export function slugify(term) {
-  return TerminologiaAnatomicaIndexer.toSlug(term);
 }

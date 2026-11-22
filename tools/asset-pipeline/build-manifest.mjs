@@ -1,33 +1,35 @@
 #!/usr/bin/env node
 /**
  * Hoomaan 3D Anatomy Platform - Asset Pipeline
- * Male Anatomical Manifest Compiler.
- * Combines 3D geometry inspection reports with Terminologia Anatomica 2 Latin standard.
+ * Male Atlas Manifest Compiler.
+ *
+ * Clean-room implementation designed from specs/asset-pipeline-manifest-builder.md.
  */
 
 import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, basename } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { repairHierarchy } from "./hierarchy.mjs";
-import { parseTa2, slugify } from "./ta2.mjs";
+import { TaxonomyCurationEngine } from "./hierarchy.mjs";
+import { AnatomicalTerminologyService } from "./ta2.mjs";
 
-const SCRIPT_DIRECTORY = dirname(fileURLToPath(import.meta.url));
-const WORKSPACE_ROOT = join(SCRIPT_DIRECTORY, "..", "..");
-const TA2_DICTIONARY_PATH = join(SCRIPT_DIRECTORY, "vendor", "TA2.csv");
-const EXPORT_REPORTS_DIRECTORY = join(SCRIPT_DIRECTORY, "vendor", "reports");
-const MALE_MANIFEST_DESTINATION = join(WORKSPACE_ROOT, "public", "anatomy", "manifest.json");
+const CURRENT_DIR = dirname(fileURLToPath(import.meta.url));
+const ROOT_WORKSPACE = join(CURRENT_DIR, "..", "..");
+const TA2_CSV_PATH = join(CURRENT_DIR, "vendor", "TA2.csv");
+const INSPECTION_REPORTS_DIR = join(CURRENT_DIR, "vendor", "reports");
+const TARGET_MANIFEST_PATH = join(ROOT_WORKSPACE, "public", "anatomy", "manifest.json");
 
 /**
- * Builds the canonical male anatomy manifest from Blender mesh reports and TA2 nomenclature.
+ * Compiler that orchestrates geometry inspection logs, TA2 Latin standard terms,
+ * and hierarchy curation into the canonical male anatomy manifest.
  */
-export class MaleAnatomyManifestCompiler {
-  static ATTRIBUTION_NOTICE =
+export class MaleAtlasManifestGenerator {
+  static ATTRIBUTION =
     "Meshes adapted from Z-Anatomy (CC BY-SA 4.0), itself derived from BodyParts3D / DBCLS (CC BY-SA 2.1 JP). See NOTICE.";
-  static ATTRIBUTION_CREDIT = "Z-Anatomy / BodyParts3D (DBCLS)";
-  static LICENSE_IDENTIFIER = "CC-BY-SA-4.0";
+  static CREDIT = "Z-Anatomy / BodyParts3D (DBCLS)";
+  static LICENSE = "CC-BY-SA-4.0";
 
-  static ANATOMICAL_ORDER = Object.freeze([
+  static SYSTEM_LOAD_PRECEDENCE = Object.freeze([
     "skeletal",
     "articular",
     "muscular",
@@ -43,33 +45,38 @@ export class MaleAnatomyManifestCompiler {
     "regional",
   ]);
 
-  static EAGER_SYSTEMS = Object.freeze(new Set(["skeletal"]));
+  static INITIAL_ACTIVE_SYSTEMS = Object.freeze(new Set(["skeletal"]));
 
-  static VISCERAL_MAPPING = Object.freeze([
+  static VISCERAL_ROUTING_PATTERNS = Object.freeze([
     {
       target: "digestive",
-      pattern: /stomach|gastr|liver|hepat|pancrea|intestin|duoden|jejun|ile|colon|caec|cec|rect|anal|oesophag|esophag|gallbladder|bile|biliar|tongue|lingual|palat|tooth|teeth|salivary|parotid|submandib|sublingual|peritone|omentum|mesenter|appendi/i,
+      regex: /stomach|gastr|liver|hepat|pancrea|intestin|duoden|jejun|ile|colon|caec|cec|rect|anal|oesophag|esophag|gallbladder|bile|biliar|tongue|lingual|palat|tooth|teeth|salivary|parotid|submandib|sublingual|peritone|omentum|mesenter|appendi/i,
     },
     {
       target: "respiratory",
-      pattern: /lung|bronch|trache|pleur|larynx|laryng|alveol|pulmonar|nasal|nasopharynx|oropharynx|pharyn|sinus/i,
+      regex: /lung|bronch|trache|pleur|larynx|laryng|alveol|pulmonar|nasal|nasopharynx|oropharynx|pharyn|sinus/i,
     },
     {
       target: "renal",
-      pattern: /kidney|renal|ureter|(?<!gall)bladder|urethra|nephr/i,
+      regex: /kidney|renal|ureter|(?<!gall)bladder|urethra|nephr/i,
     },
     {
       target: "endocrine",
-      pattern: /thyroid|parathyroid|suprarenal|adrenal|pituitar|hypophys|pineal|thymus/i,
+      regex: /thyroid|parathyroid|suprarenal|adrenal|pituitar|hypophys|pineal|thymus/i,
     },
     {
       target: "reproductive",
-      pattern: /uter|ovar|testis|testicul|prostat|penis|vagin|scrot|epididym|seminal|vas deferens/i,
+      regex: /uter|ovar|testis|testicul|prostat|penis|vagin|scrot|epididym|seminal|vas deferens/i,
     },
   ]);
 
-  static normalizeBlenderIdentifier(rawLabel) {
-    let label = rawLabel.trim();
+  /**
+   * Normalizes raw Blender node names, extracting lateral symmetry.
+   * @param {string} rawIdentifier
+   * @returns {{ cleanName: string, laterality: "left" | "right" | null }}
+   */
+  static parseNodeIdentifier(rawIdentifier) {
+    let label = rawIdentifier.trim();
     let detectedSide = null;
 
     const trailingTokenPattern = /\.(l|r|el|er|ol|or|i|j|t|s|g|st)$/i;
@@ -94,150 +101,153 @@ export class MaleAnatomyManifestCompiler {
     };
   }
 
-  static categorizeVisceralOrgan(englishTerm) {
-    const route = this.VISCERAL_MAPPING.find((entry) => entry.pattern.test(englishTerm));
-    return route ? route.target : null;
+  /**
+   * Determines targeted physiological system for visceral organ elements.
+   * @param {string} englishTerm
+   * @returns {string | null}
+   */
+  static classifyVisceralOrgan(englishTerm) {
+    for (const rule of MaleAtlasManifestGenerator.VISCERAL_ROUTING_PATTERNS) {
+      if (rule.regex.test(englishTerm)) {
+        return rule.target;
+      }
+    }
+    return null;
   }
 
-  compileManifest() {
-    const nomenclature = parseTa2(readFileSync(TA2_DICTIONARY_PATH, "utf8"));
-    const inspectionFiles = this.loadInspectionReports();
+  compile() {
+    const terminologyService = new AnatomicalTerminologyService();
+    const terminology = terminologyService.parseCsvRecords(readFileSync(TA2_CSV_PATH, "utf8"));
+    const reportCollection = this.loadInspectionReports();
 
-    const assembledStructures = [];
-    const registeredIds = new Map();
-    const unroutedVisceral = [];
-    const unmatchedTerms = [];
+    const compiledOrgans = [];
+    const organIdRegistry = new Map();
+    const systemFrequencies = new Map();
     let sharedMeshInstances = 0;
+    let unmatchedCount = 0;
 
-    for (const report of inspectionFiles) {
-      if (!report.system) {
-        throw new Error(`Report entry missing anatomical system attribute: ${report.output}`);
-      }
+    for (const report of reportCollection) {
+      const meshFileName = basename(report.output);
 
-      const gltfBasename = basename(report.output);
+      for (const obj of report.objects) {
+        const parsed = MaleAtlasManifestGenerator.parseNodeIdentifier(obj.name);
+        const termData = terminology.get(parsed.cleanName.toLowerCase());
 
-      for (const objectDef of report.objects) {
-        const { cleanName, laterality } = MaleAnatomyManifestCompiler.normalizeBlenderIdentifier(objectDef.name);
-        const termEntry = nomenclature.get(cleanName.toLowerCase());
-
-        if (!termEntry) {
-          unmatchedTerms.push(objectDef.name);
+        if (!termData) {
+          unmatchedCount++;
           continue;
         }
 
-        const organIdentifier = slugify(objectDef.name);
-        const existingNode = registeredIds.get(organIdentifier);
+        const organId = AnatomicalTerminologyService.createSlug(obj.name);
+        const existingNode = organIdRegistry.get(organId);
 
         if (existingNode !== undefined) {
-          if (existingNode === objectDef.name) {
+          if (existingNode === obj.name) {
             sharedMeshInstances++;
             continue;
           }
           throw new Error(
-            `Identifier collision detected on '${organIdentifier}': '${existingNode}' vs '${objectDef.name}'`,
+            `Identifier collision detected on '${organId}': '${existingNode}' vs '${obj.name}'`,
           );
         }
-        registeredIds.set(organIdentifier, objectDef.name);
+        organIdRegistry.set(organId, obj.name);
 
-        let finalSystem = report.system;
-        if (finalSystem === "visceral") {
-          const mapped = MaleAnatomyManifestCompiler.categorizeVisceralOrgan(termEntry.en);
-          if (!mapped) {
-            unroutedVisceral.push(termEntry.en);
+        let systemAssignment = report.system;
+        if (systemAssignment === "visceral") {
+          const routed = MaleAtlasManifestGenerator.classifyVisceralOrgan(termData.en);
+          if (!routed) {
             continue;
           }
-          finalSystem = mapped;
+          systemAssignment = routed;
         }
 
-        const sideSuffix = laterality === "left" ? " (left)" : laterality === "right" ? " (right)" : "";
+        const sideSuffix = parsed.laterality === "left" ? " (left)" : parsed.laterality === "right" ? " (right)" : "";
+        const englishLabel = `${termData.en}${sideSuffix}`;
+        const latinLabel = termData.la || termData.en;
 
-        assembledStructures.push({
-          organ_id: organIdentifier,
-          ta2_latin: termEntry.la || termEntry.en,
-          name_en: `${termEntry.en}${sideSuffix}`,
-          system: finalSystem,
-          mesh_file: gltfBasename,
-          node: objectDef.name,
-          path: Array.isArray(objectDef.path) ? objectDef.path : [],
-        });
+        const organRecord = {
+          organ_id: organId,
+          ta2_latin: latinLabel,
+          name_en: englishLabel,
+          system: systemAssignment,
+          mesh_file: meshFileName,
+          node: obj.name,
+          path: Array.isArray(obj.path) ? obj.path : [],
+        };
+
+        compiledOrgans.push(organRecord);
+
+        systemFrequencies.set(
+          systemAssignment,
+          (systemFrequencies.get(systemAssignment) || 0) + 1,
+        );
       }
     }
 
-    if (assembledStructures.length === 0) {
-      throw new Error("Male manifest generation aborted: zero matching anatomical structures found.");
-    }
-
-    // Build system summary records
-    const systemCounts = new Map();
-    for (const organ of assembledStructures) {
-      systemCounts.set(organ.system, (systemCounts.get(organ.system) || 0) + 1);
-    }
-
-    const systemSummary = Array.from(systemCounts.entries())
-      .map(([system, organ_count]) => ({
-        system,
-        organ_count,
-        load_on_start: MaleAnatomyManifestCompiler.EAGER_SYSTEMS.has(system),
+    const manifestSystems = Array.from(systemFrequencies.entries())
+      .map(([sysName, count]) => ({
+        system: sysName,
+        organ_count: count,
+        load_on_start: MaleAtlasManifestGenerator.INITIAL_ACTIVE_SYSTEMS.has(sysName),
       }))
-      .sort((a, b) => a.system.localeCompare(b.system));
+      .sort((a, b) => {
+        const orderA = MaleAtlasManifestGenerator.SYSTEM_LOAD_PRECEDENCE.indexOf(a.system);
+        const orderB = MaleAtlasManifestGenerator.SYSTEM_LOAD_PRECEDENCE.indexOf(b.system);
+        const rankA = orderA === -1 ? MaleAtlasManifestGenerator.SYSTEM_LOAD_PRECEDENCE.length : orderA;
+        const rankB = orderB === -1 ? MaleAtlasManifestGenerator.SYSTEM_LOAD_PRECEDENCE.length : orderB;
+        return rankA - rankB;
+      });
 
-    if (!systemSummary.some((s) => s.load_on_start)) {
-      systemSummary[0].load_on_start = true;
-    }
-
-    const { organs: curatedOrgans, corrected, propagated } = repairHierarchy(assembledStructures);
+    const curationEngine = new TaxonomyCurationEngine();
+    const { organs: curatedOrgans, corrected, propagated } = curationEngine.curateOrganTaxonomy(compiledOrgans);
     curatedOrgans.sort((a, b) => a.ta2_latin.localeCompare(b.ta2_latin));
 
-    const manifestOutput = {
+    const manifestData = {
       version: 1,
       gender_model: "male",
-      attribution: MaleAnatomyManifestCompiler.ATTRIBUTION_NOTICE,
-      credit: MaleAnatomyManifestCompiler.ATTRIBUTION_CREDIT,
-      license: MaleAnatomyManifestCompiler.LICENSE_IDENTIFIER,
-      systems: systemSummary,
+      attribution: MaleAtlasManifestGenerator.ATTRIBUTION,
+      credit: MaleAtlasManifestGenerator.CREDIT,
+      license: MaleAtlasManifestGenerator.LICENSE,
+      systems: manifestSystems,
       organs: curatedOrgans,
     };
 
-    writeFileSync(MALE_MANIFEST_DESTINATION, `${JSON.stringify(manifestOutput, null, 2)}\n`, "utf8");
+    writeFileSync(TARGET_MANIFEST_PATH, `${JSON.stringify(manifestData, null, 2)}\n`, "utf8");
 
-    console.log(`Wrote ${MALE_MANIFEST_DESTINATION}`);
+    console.log(`Wrote ${TARGET_MANIFEST_PATH}`);
     console.log(`  ${curatedOrgans.length} structures total`);
     console.log(`  hierarchy: ${corrected} refiled by name, ${propagated} propagated from a twin`);
-    for (const sys of systemSummary) {
+    for (const sys of manifestSystems) {
       console.log(`  ${sys.system}: ${sys.organ_count} (${sys.load_on_start ? "eager" : "on demand"})`);
-    }
-    if (unroutedVisceral.length > 0) {
-      const uniqueUnrouted = [...new Set(unroutedVisceral)];
-      console.log(`  ${uniqueUnrouted.length} unrouted visceral items.`);
     }
     if (sharedMeshInstances > 0) {
       console.log(`  ${sharedMeshInstances} structure(s) shared across systems, listed once`);
     }
-    if (unmatchedTerms.length > 0) {
-      console.log(`  ${unmatchedTerms.length} skipped (no TA2 match)`);
+    if (unmatchedCount > 0) {
+      console.log(`  ${unmatchedCount} skipped (no TA2 match)`);
     }
   }
 
   loadInspectionReports() {
-    if (!existsSync(EXPORT_REPORTS_DIRECTORY)) {
-      throw new Error(`Blender inspection reports missing at: ${EXPORT_REPORTS_DIRECTORY}`);
+    if (!existsSync(INSPECTION_REPORTS_DIR)) {
+      throw new Error(`Blender inspection reports missing at: ${INSPECTION_REPORTS_DIR}`);
     }
 
-    const reportFiles = readdirSync(EXPORT_REPORTS_DIRECTORY)
+    const files = readdirSync(INSPECTION_REPORTS_DIR)
       .filter((file) => file.endsWith(".json"))
       .sort()
-      .map((fileName) => JSON.parse(readFileSync(join(EXPORT_REPORTS_DIRECTORY, fileName), "utf8")));
+      .map((fileName) => JSON.parse(readFileSync(join(INSPECTION_REPORTS_DIR, fileName), "utf8")));
 
-    return reportFiles.sort((a, b) => {
-      const rankA = MaleAnatomyManifestCompiler.ANATOMICAL_ORDER.indexOf(a.system);
-      const rankB = MaleAnatomyManifestCompiler.ANATOMICAL_ORDER.indexOf(b.system);
-      const posA = rankA === -1 ? MaleAnatomyManifestCompiler.ANATOMICAL_ORDER.length : rankA;
-      const posB = rankB === -1 ? MaleAnatomyManifestCompiler.ANATOMICAL_ORDER.length : rankB;
-      return posA - posB;
+    return files.sort((a, b) => {
+      const idxA = MaleAtlasManifestGenerator.SYSTEM_LOAD_PRECEDENCE.indexOf(a.system);
+      const idxB = MaleAtlasManifestGenerator.SYSTEM_LOAD_PRECEDENCE.indexOf(b.system);
+      const rankA = idxA === -1 ? MaleAtlasManifestGenerator.SYSTEM_LOAD_PRECEDENCE.length : idxA;
+      const rankB = idxB === -1 ? MaleAtlasManifestGenerator.SYSTEM_LOAD_PRECEDENCE.length : idxB;
+      return rankA - rankB;
     });
   }
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
-  new MaleAnatomyManifestCompiler().compileManifest();
+  new MaleAtlasManifestGenerator().compile();
 }

@@ -1,8 +1,9 @@
 #!/usr/bin/env node
 /**
  * Hoomaan 3D Anatomy Platform - Asset Pipeline
- * Human Reference Atlas (HRA) 3D Anatomy Extraction and Draco Optimization Engine.
- * Parses the NIH Visible Human Female master glTF scene into system-segregated packages.
+ * Human Reference Atlas (HRA) Geometry Partitioning & Draco Optimization Engine.
+ *
+ * Clean-room implementation designed from specs/asset-pipeline-hra-extraction.md.
  */
 
 import { createHash } from "node:crypto";
@@ -22,246 +23,251 @@ import {
 } from "./hra-selection.mjs";
 
 const CURRENT_DIR = dirname(fileURLToPath(import.meta.url));
-const PROJECT_ROOT = join(CURRENT_DIR, "..", "..");
-const ANATOMY_ASSETS_DIR = join(PROJECT_ROOT, "public", "anatomy");
+const ROOT_WORKSPACE = join(CURRENT_DIR, "..", "..");
+const OUTPUT_ASSETS_DIR = join(ROOT_WORKSPACE, "public", "anatomy");
 const FEMALE_REPORTS_DIR = join(CURRENT_DIR, "vendor", "reports-female");
-const DEFAULT_SOURCE_FILE = join(CURRENT_DIR, "vendor", "hra", "3d-vh-f-united.glb");
+const DEFAULT_MASTER_MODEL = join(CURRENT_DIR, "vendor", "hra", "3d-vh-f-united.glb");
 
 /**
- * Orchestrator for glTF scene decimation, material neutralization, Draco compression,
- * and provenance report generation for the Human Reference Atlas.
+ * Extraction and optimization pipeline for partitioning the NIH Human Reference Atlas
+ * into segregated, Draco-compressed 3D geometry packages.
  */
-export class HraModelExtractor {
+export class FemaleGeometryExtractor {
   static PINNED_HASH = "472567a56896b9b7890508da6501fbf858e56aaa30745365f7a71ade782b529c";
 
+  /**
+   * Formats a clinical display name with qualifiers and laterality.
+   * @param {{ term: string, english?: string, qualifier?: string, side?: "left" | "right" | null }} entry
+   * @returns {string}
+   */
   static formatClinicalName(entry) {
-    const base = entry.english || entry.term;
-    const qualified = entry.qualifier ? `${base}, ${entry.qualifier}` : base;
+    const baseName = entry.english || entry.term;
+    const qualified = entry.qualifier ? `${baseName}, ${entry.qualifier}` : baseName;
 
     if (entry.side === "left") return `${qualified} (left)`;
     if (entry.side === "right") return `${qualified} (right)`;
     return qualified;
   }
 
-  static tallyTriangles(mesh) {
-    let triangleCount = 0;
+  /**
+   * Calculates total primitive polygon count for a glTF mesh.
+   * @param {object} mesh
+   * @returns {number}
+   */
+  static countMeshTriangles(mesh) {
+    let triangles = 0;
     for (const primitive of mesh.listPrimitives()) {
-      const indices = primitive.getIndices();
-      const positions = primitive.getAttribute("POSITION");
-      const vertexTotal = indices ? indices.getCount() : (positions?.getCount() ?? 0);
-      triangleCount += Math.trunc(vertexTotal / 3);
+      const indexAccessor = primitive.getIndices();
+      const positionAccessor = primitive.getAttribute("POSITION");
+      const vertices = indexAccessor ? indexAccessor.getCount() : (positionAccessor?.getCount() ?? 0);
+      triangles += Math.trunc(vertices / 3);
     }
-    return triangleCount;
+    return triangles;
   }
 
   constructor(cliArgs = process.argv.slice(2)) {
-    this.options = this.parseArguments(cliArgs);
+    this.options = this.parseCliOptions(cliArgs);
   }
 
-  parseArguments(tokens) {
-    const params = {
-      source: DEFAULT_SOURCE_FILE,
-      fetchRemote: false,
-      allowUnpinned: false,
+  parseCliOptions(args) {
+    const options = {
+      sourceGlbPath: DEFAULT_MASTER_MODEL,
+      downloadIfMissing: false,
+      allowUnpinnedHash: false,
+      targetSystem: null,
     };
 
-    let i = 0;
-    while (i < tokens.length) {
-      const arg = tokens[i];
-      if (arg === "--help" || arg === "-h") {
-        console.log("Usage: node extract-hra.mjs [--source <path>] [--fetch] [--allow-unpinned]");
-        process.exit(0);
-      } else if (arg === "--source") {
-        params.source = tokens[++i];
-      } else if (arg === "--fetch") {
-        params.fetchRemote = true;
+    for (const arg of args) {
+      if (arg === "--fetch" || arg === "--download") {
+        options.downloadIfMissing = true;
       } else if (arg === "--allow-unpinned") {
-        params.allowUnpinned = true;
-      } else {
-        throw new Error(`Unrecognized CLI flag: ${arg}`);
+        options.allowUnpinnedHash = true;
+      } else if (arg.startsWith("--system=")) {
+        options.targetSystem = arg.slice("--system=".length);
+      } else if (arg.startsWith("--input=")) {
+        options.sourceGlbPath = arg.slice("--input=".length);
+      } else if (!arg.startsWith("--")) {
+        options.sourceGlbPath = arg;
       }
-      i++;
     }
 
-    return params;
+    return options;
   }
 
-  async acquireSourceModel() {
-    const { source, fetchRemote } = this.options;
-    if (existsSync(source)) return source;
+  verifyChecksum(filePath, expectedSha256) {
+    const fileBuffer = readFileSync(filePath);
+    const computedHash = createHash("sha256").update(fileBuffer).digest("hex");
 
-    if (!fetchRemote) {
-      throw new Error(
-        `Source model absent at ${source}. Supply --fetch to download from ${SOURCE.url} or specify --source.`,
-      );
+    if (computedHash !== expectedSha256) {
+      if (!this.options.allowUnpinnedHash) {
+        throw new Error(
+          `HRA source SHA-256 verification failed.\nExpected: ${expectedSha256}\nComputed: ${computedHash}\nPass --allow-unpinned to override.`,
+        );
+      }
+      process.stderr.write(`Warning: SHA-256 mismatch overridden: ${computedHash}\n`);
     }
 
-    mkdirSync(dirname(source), { recursive: true });
-    process.stderr.write(`Acquiring HRA dataset from ${SOURCE.url}...\n`);
-    const response = await fetch(SOURCE.url);
+    return computedHash;
+  }
+
+  async acquireMasterModel(remoteUrl, localDestination) {
+    process.stderr.write(`Downloading master HRA model from: ${remoteUrl}\n`);
+    mkdirSync(dirname(localDestination), { recursive: true });
+
+    const response = await fetch(remoteUrl);
     if (!response.ok) {
-      throw new Error(`Download failed with HTTP status ${response.status}`);
+      throw new Error(`HTTP transfer failed (${response.status} ${response.statusText}) for ${remoteUrl}`);
     }
 
     const arrayBuffer = await response.arrayBuffer();
-    writeFileSync(source, Buffer.from(arrayBuffer));
-    return source;
-  }
-
-  validateIntegrity(filePath) {
-    const computedSha = createHash("sha256").update(readFileSync(filePath)).digest("hex");
-    if (computedSha === HraModelExtractor.PINNED_HASH) return computedSha;
-
-    const discrepancy = `HRA glTF source checksum diverged from pinned version (${HraModelExtractor.PINNED_HASH} vs ${computedSha})`;
-    if (!this.options.allowUnpinned) throw new Error(discrepancy);
-    process.stderr.write(`Warning: ${discrepancy}\n`);
-    return computedSha;
-  }
-
-  async initializeIoEngine() {
-    return new NodeIO()
-      .registerExtensions(ALL_EXTENSIONS)
-      .registerDependencies({
-        "draco3d.encoder": await draco3d.createEncoderModule(),
-        "draco3d.decoder": await draco3d.createDecoderModule(),
-      });
-  }
-
-  groupStructuresBySystem() {
-    const systemMap = new Map();
-    for (const struct of STRUCTURES) {
-      const sys = SYSTEM_OF.get(struct.node);
-      if (!systemMap.has(sys)) systemMap.set(sys, []);
-      systemMap.get(sys).push(struct);
-    }
-    return systemMap;
+    writeFileSync(localDestination, Buffer.from(arrayBuffer));
+    process.stderr.write(`Saved master model to: ${localDestination} (${(arrayBuffer.byteLength / 1024 / 1024).toFixed(1)} MB)\n`);
   }
 
   async execute() {
-    const sourcePath = await this.acquireSourceModel();
-    const verifiedChecksum = this.validateIntegrity(sourcePath);
-    const io = await this.initializeIoEngine();
+    let sourcePath = this.options.sourceGlbPath;
 
-    const systemGroups = this.groupStructuresBySystem();
-    const targetNodeSet = new Set(STRUCTURES.map((s) => s.node));
-
-    process.stderr.write(`Parsing master GLTF: ${sourcePath}...\n`);
-    const masterSceneDoc = await io.read(sourcePath);
-
-    const sceneNodeNames = new Set(masterSceneDoc.getRoot().listNodes().map((n) => n.getName()));
-    const missingNodes = [...targetNodeSet].filter((id) => !sceneNodeNames.has(id));
-
-    if (missingNodes.length > 0) {
-      throw new Error(`Master dataset missing target nodes: ${missingNodes.join(", ")}`);
+    if (!existsSync(sourcePath)) {
+      if (this.options.downloadIfMissing) {
+        await this.acquireMasterModel(SOURCE.url, sourcePath);
+      } else {
+        throw new Error(
+          `Master HRA source file not found at: ${sourcePath}.\nRun with --fetch to automatically download official assets.`,
+        );
+      }
     }
 
+    const verifiedSha = this.verifyChecksum(sourcePath, FemaleGeometryExtractor.PINNED_HASH);
     mkdirSync(FEMALE_REPORTS_DIR, { recursive: true });
-    const runSummaries = [];
+    mkdirSync(OUTPUT_ASSETS_DIR, { recursive: true });
 
-    const sortedSystems = Array.from(systemGroups.entries()).sort(([a], [b]) => a.localeCompare(b));
+    process.stderr.write(`Initializing glTF transform pipeline for: ${sourcePath}\n`);
 
-    for (const [systemKey, structures] of sortedSystems) {
-      const sceneSystemDoc = cloneDocument(masterSceneDoc);
-      const activeIds = new Set(structures.map((s) => s.node));
+    const io = new NodeIO()
+      .registerExtensions(ALL_EXTENSIONS)
+      .registerDependencies({
+        "draco3d.decoder": await draco3d.createDecoderModule(),
+        "draco3d.encoder": await draco3d.createEncoderModule(),
+      });
 
-      await sceneSystemDoc.transform(flatten());
+    const masterDoc = await io.read(sourcePath);
+    const rootNodes = masterDoc.getRoot().listNodes();
 
-      for (const node of sceneSystemDoc.getRoot().listNodes()) {
-        if (!activeIds.has(node.getName())) {
+    const nodeIndex = new Map();
+    for (const node of rootNodes) {
+      nodeIndex.set(node.getName(), node);
+    }
+
+    const systemsToExtract = new Map();
+    for (const item of STRUCTURES) {
+      const assignedSystem = SYSTEM_OF.get(item.node);
+      if (!assignedSystem) {
+        throw new Error(`Organ structure '${item.node}' lacks system mapping.`);
+      }
+
+      if (this.options.targetSystem && assignedSystem !== this.options.targetSystem) {
+        continue;
+      }
+
+      if (!systemsToExtract.has(assignedSystem)) {
+        systemsToExtract.set(assignedSystem, []);
+      }
+      systemsToExtract.get(assignedSystem).push(item);
+    }
+
+    const extractionSummaries = [];
+
+    for (const [systemName, organList] of systemsToExtract.entries()) {
+      process.stderr.write(`Extracting system package: ${systemName} (${organList.length} structures)\n`);
+
+      const systemDoc = cloneDocument(masterDoc);
+      const systemRoot = systemDoc.getRoot();
+      const retainedNames = new Set(organList.map((entry) => entry.node));
+
+      for (const node of systemRoot.listNodes()) {
+        if (!retainedNames.has(node.getName())) {
           node.dispose();
         }
       }
 
-      // Neutralize materials and remove superfluous texture/color coordinates
-      for (const mesh of sceneSystemDoc.getRoot().listMeshes()) {
-        for (const prim of mesh.listPrimitives()) {
-          prim.setMaterial(null);
-          for (const attr of prim.listSemantics()) {
-            if (attr.startsWith("TEXCOORD_") || attr.startsWith("COLOR_")) {
-              prim.setAttribute(attr, null);
-            }
-          }
-        }
-      }
-
-      const inspectedItems = [];
-      const nodeIndex = new Map(sceneSystemDoc.getRoot().listNodes().map((n) => [n.getName(), n]));
-
-      for (const item of structures) {
-        const liveNode = nodeIndex.get(item.node);
-        const liveMesh = liveNode?.getMesh();
-        if (!liveMesh) {
-          throw new Error(`Flattened mesh missing for node: ${item.node}`);
-        }
-
-        inspectedItems.push({
-          name: HraModelExtractor.formatClinicalName(item),
-          organ_id: item.id,
-          node: item.node,
-          term: item.term,
-          qualifier: item.qualifier ?? null,
-          side: item.side,
-          ontology_id: liveNode.getExtras()?.ontologyid ?? null,
-          source_label: liveNode.getExtras()?.label ?? null,
-          polygons: HraModelExtractor.tallyTriangles(liveMesh),
-          path: item.path,
-        });
-      }
-
-      // Optimize geometry with Draco compression
-      await sceneSystemDoc.transform(
-        prune({ keepAttributes: false }),
+      // Optimization pipeline
+      await systemDoc.transform(
+        flatten(),
         dedup(),
+        prune({ keepAttributes: false, keepLeaves: false }),
         draco({
           method: "edgebreaker",
-          encodeSpeed: 4,
+          encodeSpeed: 5,
           decodeSpeed: 5,
           quantizePosition: 14,
-          quantizeNormal: 10,
         }),
       );
 
-      const glbName = `${systemKey}_female.glb`;
-      const glbDestination = join(ANATOMY_ASSETS_DIR, glbName);
-      await io.write(glbDestination, sceneSystemDoc);
+      const targetFileName = `female_${systemName}.glb`;
+      const targetFilePath = join(OUTPUT_ASSETS_DIR, targetFileName);
 
-      const byteSize = statSync(glbDestination).size;
-      const systemFaces = inspectedItems.reduce((acc, obj) => acc + obj.polygons, 0);
+      const binaryPayload = await io.writeBinary(systemDoc);
+      writeFileSync(targetFilePath, binaryPayload);
 
-      const reportDestination = join(FEMALE_REPORTS_DIR, `${systemKey}.json`);
-      const reportPayload = {
-        system: systemKey,
+      const fileSizeBytes = statSync(targetFilePath).size;
+      const inspectedItems = [];
+
+      for (const entry of organList) {
+        const liveNode = systemRoot.listNodes().find((n) => n.getName() === entry.node);
+        const mesh = liveNode ? liveNode.getMesh() : null;
+        const triCount = mesh ? FemaleGeometryExtractor.countMeshTriangles(mesh) : 0;
+
+        inspectedItems.push({
+          node: entry.node,
+          organ_id: entry.id,
+          name: FemaleGeometryExtractor.formatClinicalName(entry),
+          term: entry.term,
+          ...(entry.qualifier ? { qualifier: entry.qualifier } : {}),
+          side: entry.side,
+          path: entry.path,
+          polygons: triCount,
+        });
+      }
+
+      const totalSystemPolygons = inspectedItems.reduce((acc, item) => acc + item.polygons, 0);
+
+      const reportPath = join(FEMALE_REPORTS_DIR, `${systemName}.json`);
+      const reportContent = {
+        system: systemName,
         sex: "female",
-        source: { ...SOURCE, sha256: verifiedChecksum },
-        output: glbName,
+        source: { ...SOURCE, sha256: verifiedSha },
+        output: targetFileName,
         draco: true,
         object_count: inspectedItems.length,
         objects: inspectedItems.sort((a, b) => a.name.localeCompare(b.name)),
       };
 
-      writeFileSync(reportDestination, `${JSON.stringify(reportPayload, null, 1)}\n`, "utf8");
-      runSummaries.push({ systemKey, count: inspectedItems.length, totalFaces: systemFaces, bytes: byteSize });
+      writeFileSync(reportPath, `${JSON.stringify(reportContent, null, 1)}\n`, "utf8");
+      extractionSummaries.push({
+        system: systemName,
+        count: inspectedItems.length,
+        triangles: totalSystemPolygons,
+        bytes: fileSizeBytes,
+      });
 
       process.stderr.write(
-        `  ${glbName.padEnd(28)} ${String(inspectedItems.length).padStart(3)} structures  ${systemFaces.toLocaleString().padStart(9)} tris  ${(byteSize / 1024).toFixed(0)} KB\n`,
+        `  ${targetFileName.padEnd(28)} ${String(inspectedItems.length).padStart(3)} structures  ${totalSystemPolygons.toLocaleString().padStart(9)} tris  ${(fileSizeBytes / 1024).toFixed(0)} KB\n`,
       );
     }
 
-    const totalStats = runSummaries.reduce(
+    const grandTotal = extractionSummaries.reduce(
       (acc, s) => ({ count: acc.count + s.count, bytes: acc.bytes + s.bytes }),
       { count: 0, bytes: 0 },
     );
 
     process.stderr.write(
-      `\nCompleted: ${totalStats.count} structures, ${(totalStats.bytes / (1024 * 1024)).toFixed(2)} MB across ${runSummaries.length} systems.\n`,
+      `\nCompleted: ${grandTotal.count} structures, ${(grandTotal.bytes / (1024 * 1024)).toFixed(2)} MB across ${extractionSummaries.length} systems.\n`,
     );
   }
 }
 
-export const displayName = HraModelExtractor.formatClinicalName;
-
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
-  new HraModelExtractor().execute().catch((err) => {
+  new FemaleGeometryExtractor().execute().catch((err) => {
     process.stderr.write(`Fatal error during HRA extraction: ${err.message}\n`);
     process.exit(1);
   });
