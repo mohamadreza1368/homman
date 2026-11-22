@@ -1,19 +1,21 @@
 /**
  * Hoomaan 3D Anatomy Platform - Asset Pipeline
  * Type definitions for anatomical taxonomy tree curation and hierarchy repair.
+ *
+ * Clean-room specification-derived declarations.
  */
 
-export interface AnatomicalTaxonomyEntity {
+export interface TaxonomyEntity {
   organ_id: string;
   ta2_latin: string;
   system: string;
   path: string[];
-  [extraProps: string]: unknown;
+  [extraFields: string]: unknown;
 }
 
-export type PlacedOrgan = AnatomicalTaxonomyEntity;
+export type PlacedOrgan = TaxonomyEntity;
 
-export interface HierarchyRepairSummary<T extends AnatomicalTaxonomyEntity = AnatomicalTaxonomyEntity> {
+export interface HierarchyRepairResult<T extends TaxonomyEntity = TaxonomyEntity> {
   organs: T[];
   corrected: number;
   propagated: number;
@@ -21,18 +23,16 @@ export interface HierarchyRepairSummary<T extends AnatomicalTaxonomyEntity = Ana
 }
 
 export declare const NERVOUS_PATHS: Readonly<Record<string, readonly string[]>>;
+export declare const TAXONOMY_HEADING_REPLACEMENTS: Readonly<Record<string, string>>;
 
 export declare class AnatomyHierarchyRepairPipeline {
   constructor(
     rules?: Readonly<Record<string, readonly string[]>>,
     renames?: Readonly<Record<string, string>>,
   );
-  process<T extends AnatomicalTaxonomyEntity>(entities: readonly T[]): HierarchyRepairSummary<T>;
+  process<T extends TaxonomyEntity>(entities: readonly T[]): HierarchyRepairResult<T>;
 }
 
-/**
- * Validates, re-roots, and aligns anatomical pathways for nervous and visceral structures.
- */
-export declare function repairHierarchy<T extends AnatomicalTaxonomyEntity>(
+export declare function repairHierarchy<T extends TaxonomyEntity>(
   organEntities: readonly T[],
-): HierarchyRepairSummary<T>;
+): HierarchyRepairResult<T>;

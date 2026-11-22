@@ -1,6 +1,8 @@
 /**
  * Hoomaan 3D Anatomy Platform - Asset Pipeline
  * Type definitions for Human Reference Atlas 3D Extraction Pipeline.
+ *
+ * Clean-room specification-derived declarations.
  */
 
 import type { HraStructure } from "./hra-selection.d.mts";

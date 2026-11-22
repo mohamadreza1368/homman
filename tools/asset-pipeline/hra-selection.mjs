@@ -1,6 +1,8 @@
 /**
  * HOOMAAN Asset Pipeline: Female Atlas Structure Selection and Nomenclature Resolution.
  * Loads verified anatomical mappings between Human Reference Atlas (HRA) nodes and TA2 terms.
+ *
+ * Clean-room implementation based on specs/asset-pipeline-hra-extraction.md.
  */
 
 import { readFileSync } from "node:fs";
@@ -12,14 +14,14 @@ const rawCatalog = JSON.parse(
   readFileSync(join(CURRENT_DIR, "hra_female_data.json"), "utf8"),
 );
 
-export const SOURCE = rawCatalog.source;
-export const NOT_IN_TA2 = rawCatalog.notInTa2;
-export const OUT_OF_SCOPE = rawCatalog.outOfScope;
-export const KNOWN_SOURCE_ERRATA = rawCatalog.knownErrata;
-export const VENDOR_TA2_DEFECTS = rawCatalog.vendorDefects;
-export const STRUCTURES = rawCatalog.structures;
+export const SOURCE = Object.freeze(rawCatalog.source);
+export const NOT_IN_TA2 = Object.freeze(rawCatalog.notInTa2);
+export const OUT_OF_SCOPE = Object.freeze(rawCatalog.outOfScope);
+export const KNOWN_SOURCE_ERRATA = Object.freeze(rawCatalog.knownErrata);
+export const VENDOR_TA2_DEFECTS = Object.freeze(rawCatalog.vendorDefects);
+export const STRUCTURES = Object.freeze(rawCatalog.structures);
 
-const SYSTEM_ROUTING_TABLE = {
+const ROOT_TAXONOMY_TO_SYSTEM = Object.freeze({
   "Uterus": "reproductive",
   "Uterine tube": "reproductive",
   "Ovary": "reproductive",
@@ -39,15 +41,30 @@ const SYSTEM_ROUTING_TABLE = {
   "Spleen": "lymphatic",
   "Pelvic vessels": "cardiovascular",
   "Abdominal vessels": "cardiovascular",
-};
+});
 
-export const SYSTEM_OF = new Map(
-  STRUCTURES.map((item) => {
-    const rootPath = item.path[0];
-    const system = SYSTEM_ROUTING_TABLE[rootPath];
+/**
+ * Human Reference Atlas Female Organ Taxonomy Resolver.
+ */
+export class HraTaxonomyRegistry {
+  static resolveSystem(rootCategory) {
+    const system = ROOT_TAXONOMY_TO_SYSTEM[rootCategory];
     if (!system) {
-      throw new Error(`Unmapped anatomical system category for path: "${rootPath}"`);
+      throw new Error(`Unmapped anatomical system category for path: "${rootCategory}"`);
     }
-    return [item.node, system];
-  }),
+    return system;
+  }
+
+  static buildSystemMap(structures) {
+    return new Map(
+      structures.map((entry) => [
+        entry.node,
+        this.resolveSystem(entry.path[0]),
+      ]),
+    );
+  }
+}
+
+export const SYSTEM_OF = Object.freeze(
+  HraTaxonomyRegistry.buildSystemMap(STRUCTURES),
 );

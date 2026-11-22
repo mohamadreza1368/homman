@@ -1,6 +1,8 @@
 /**
  * Hoomaan 3D Anatomy Platform - Asset Pipeline
- * Type definitions for Male Anatomy Manifest Compiler.
+ * Male Anatomy Manifest Compiler Type Definitions.
+ *
+ * Clean-room specification-derived declarations.
  */
 
 export interface NormalizedBlenderNode {
