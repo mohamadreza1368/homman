@@ -1,28 +1,33 @@
-// Typings for Human Reference Atlas structure selection and metadata tables.
+/**
+ * Hoomaan 3D Anatomy Platform - Asset Pipeline
+ * Type definitions for Human Reference Atlas (HRA) organ selections, provenance, and taxonomy.
+ */
 
 import type { AnatomicalSystem } from "../../src/lib/schemas";
 
+export type AnatomicalLaterality = "left" | "right" | null;
+
 export interface HraSource {
-  version: string;
-  url: string;
-  metadata: string;
-  license: string;
-  licenseUrl: string;
+  readonly version: string;
+  readonly url: string;
+  readonly metadata: string;
+  readonly license: string;
+  readonly licenseUrl: string;
 }
 
 export interface HraStructure {
-  node: string;
-  id: string;
-  term: string;
-  english?: string;
-  qualifier?: string;
-  side: "left" | "right" | null;
-  path: string[];
+  readonly node: string;
+  readonly id: string;
+  readonly term: string;
+  readonly english?: string;
+  readonly qualifier?: string;
+  readonly side: AnatomicalLaterality;
+  readonly path: readonly string[];
 }
 
-export const SOURCE: HraSource;
-export const NOT_IN_TA2: Record<string, string>;
-export const OUT_OF_SCOPE: Record<string, string>;
-export const KNOWN_SOURCE_ERRATA: Record<string, string>;
-export const STRUCTURES: HraStructure[];
-export const SYSTEM_OF: Map<string, AnatomicalSystem>;
+export declare const SOURCE: HraSource;
+export declare const NOT_IN_TA2: Readonly<Record<string, string>>;
+export declare const OUT_OF_SCOPE: Readonly<Record<string, string>>;
+export declare const KNOWN_SOURCE_ERRATA: Readonly<Record<string, string>>;
+export declare const STRUCTURES: readonly HraStructure[];
+export declare const SYSTEM_OF: ReadonlyMap<string, AnatomicalSystem>;
