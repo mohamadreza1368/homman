@@ -4,6 +4,7 @@ import type { ManifestOrgan } from "@/lib/schemas";
 import { activeCase, useCaseStore } from "@/stores/caseStore";
 import { useInterfaceLanguage } from "@/stores/interfaceLanguage";
 import { organLabel, regionMembersByNode, useSceneStore } from "@/stores/sceneStore";
+import { getPedicleDefinition } from "./pedicleCatalog";
 
 export interface MenuTarget {
   organId: string;
@@ -27,6 +28,7 @@ export function StructureMenu({ target, onClose }: StructureMenuProps) {
   const isPersian = useInterfaceLanguage((state) => state.language === "fa");
   const organCatalog = useSceneStore((state) => state.organs);
   const isolateOrgan = useSceneStore((state) => state.studyOrgan);
+  const isolatePedicle = useSceneStore((state) => state.isolatePedicle);
   const activeSelection = useSceneStore((state) => state.selectedOrganIds);
   const isolateCurrentSelection = useSceneStore((state) => state.isolateSelection);
   const hideCurrentSelection = useSceneStore((state) => state.hideSelection);
@@ -104,6 +106,14 @@ export function StructureMenu({ target, onClose }: StructureMenuProps) {
       <ContextMenuItem onClick={triggerAction(() => isolateOrgan(targetedOrgan.organ_id))}>
         {isPersian ? "جداسازی این ساختار" : "Isolate this structure"}
       </ContextMenuItem>
+
+      {getPedicleDefinition(targetedOrgan.organ_id) && (
+        <ContextMenuItem onClick={triggerAction(() => isolatePedicle(targetedOrgan.organ_id))}>
+          <span className="text-amber-300 font-medium">
+            {isPersian ? "نمایش پدیکل عروقی-عصبی (تغذیه و تخلیه)" : "Show Neurovascular Pedicle"}
+          </span>
+        </ContextMenuItem>
+      )}
 
       {activeSelection.length > 1 && (
         <>

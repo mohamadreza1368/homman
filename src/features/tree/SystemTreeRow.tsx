@@ -1,10 +1,12 @@
-import { memo } from "react";
+import { memo, useMemo } from "react";
 import type { AnatomicalSystem, ManifestOrgan } from "@/lib/schemas";
 import { SYSTEM_COLOURS, SYSTEM_LABELS } from "@/features/viewer/palette";
 import { useSceneStore } from "@/stores/sceneStore";
 import { useInterfaceLanguage } from "@/stores/interfaceLanguage";
 import { PERSIAN_SYSTEM_NAMES } from "./treeConstants";
 import { OrganTreeItem } from "./OrganTreeItem";
+import { NestedTreeFolder } from "./NestedTreeFolder";
+import { buildHierarchyTree } from "./treeHierarchyBuilder";
 
 interface SystemTreeRowProps {
   systemKey: AnatomicalSystem;
@@ -29,6 +31,8 @@ export const SystemTreeRow = memo(function SystemTreeRow({
 
   const isHidden = hiddenSystems.includes(systemKey);
   const opacity = systemOpacityMap[systemKey];
+
+  const hierarchy = useMemo(() => buildHierarchyTree(organList), [organList]);
 
   return (
     <div className="mb-3">
@@ -94,11 +98,18 @@ export const SystemTreeRow = memo(function SystemTreeRow({
       </div>
 
       {isOpen && (
-        <ul className="ml-5 space-y-0.5">
-          {organList.map((organItem) => (
-            <OrganTreeItem key={organItem.organ_id} organ={organItem} />
+        <div className="ml-3 space-y-0.5">
+          {hierarchy.subfolders.map((subfolder) => (
+            <NestedTreeFolder key={subfolder.key} folder={subfolder} />
           ))}
-        </ul>
+          {hierarchy.leafOrgans.length > 0 && (
+            <ul className="ml-2 space-y-0.5">
+              {hierarchy.leafOrgans.map((organItem) => (
+                <OrganTreeItem key={organItem.organ_id} organ={organItem} />
+              ))}
+            </ul>
+          )}
+        </div>
       )}
     </div>
   );

@@ -11,6 +11,9 @@ import { sameStack } from "@/features/viewer/depthStack";
 import { tissueFamily } from "@/features/viewer/palette";
 import { MAX_EXPLODE, nextExplodeStop } from "@/features/viewer/explode";
 import { nextBodyTone } from "@/features/viewer/scan";
+import { resolvePedicleMembers } from "@/features/viewer/pedicleCatalog";
+import { getSurgicalSpace, resolveSurgicalSpaceOrgans } from "@/features/anatomy/surgicalSpacesCatalog";
+import { enrichManifestWithSupplementaryOrgans } from "@/features/anatomy/supplementaryOrgans";
 import { startHeartRhythm } from "./heartStore";
 import {
   GLASS_OPACITY,
@@ -49,10 +52,15 @@ export const useSceneStore = create<SceneStore>()((set, get) => ({
   hideConnective: false,
   connectiveIds: new Set<string>(),
   focusBadge: null,
+  selectionHitPoints: {},
   background: "dark",
   lightingPreset: "studio",
 
-  setManifest: (manifest) => {
+  setManifest: (rawManifest) => {
+    const manifest =
+      get().genderModel === "male"
+        ? enrichManifestWithSupplementaryOrgans(rawManifest)
+        : rawManifest;
     const organMap: Record<string, ManifestOrgan> = {};
     const connSet = new Set<string>();
     for (const item of manifest.organs) {
@@ -109,8 +117,8 @@ export const useSceneStore = create<SceneStore>()((set, get) => ({
 
   dismissDepthStack: () => set({ depthStack: [], pinnedStack: null }),
 
-  selectFromViewport: (organId, additive = false) => {
-    get().selectOrgan(organId, additive);
+  selectFromViewport: (organId, additive = false, hitPoint) => {
+    get().selectOrgan(organId, additive, hitPoint);
     if (organId !== null) {
       get().pinDepthStack();
     }
@@ -135,13 +143,22 @@ export const useSceneStore = create<SceneStore>()((set, get) => ({
       background: pref.background ?? state.background,
     })),
 
-  selectOrgan: (organId, additive = false) =>
+  selectOrgan: (organId, additive = false, hitPoint) =>
     set((state) => {
       const currentSelection = new Set(state.selectedOrganIds);
       const nextSelection = additive
         ? (organId ? applyAdditiveSelection(currentSelection, organId) : currentSelection)
         : applySingleSelection(organId);
-      return { selectedOrganIds: Array.from(nextSelection) };
+
+      const nextHitPoints = additive ? { ...(state.selectionHitPoints ?? {}) } : {};
+      if (organId && hitPoint) {
+        nextHitPoints[organId] = hitPoint;
+      }
+
+      return {
+        selectedOrganIds: Array.from(nextSelection),
+        selectionHitPoints: nextHitPoints,
+      };
     }),
 
   selectMany: (organIds) =>
@@ -284,6 +301,72 @@ export const useSceneStore = create<SceneStore>()((set, get) => ({
     }),
 
   cycleExplode: () => set((state) => ({ explode: nextExplodeStop(state.explode) })),
+
+  setHalfDissection: (mode) => set({ halfDissection: mode }),
+
+  cycleHalfDissection: () =>
+    set((state) => {
+      const next =
+        state.halfDissection === "off"
+          ? "right"
+          : state.halfDissection === "right"
+            ? "left"
+            : "off";
+      return { halfDissection: next };
+    }),
+
+  setDissectionDepth: (depth) =>
+    set({
+      dissectionDepth: Math.max(0, Math.min(3, Math.round(depth))),
+    }),
+
+  cycleDissectionDepth: () =>
+    set((state) => ({
+      dissectionDepth: (state.dissectionDepth + 1) % 4,
+    })),
+
+  isolatePedicle: (organId) =>
+    set((state) => {
+      const members = resolvePedicleMembers(organId, state.organs);
+      return {
+        ...applySceneCommand(state, { action: "focus_organ", organ_id: organId }),
+        isolatedOrganIds: members,
+        selectedOrganIds: [organId],
+      };
+    }),
+
+  isolateSurgicalSpace: (spaceId) =>
+    set((state) => {
+      const space = getSurgicalSpace(spaceId);
+      if (!space) return {};
+      const organIds = Object.keys(state.organs);
+      const members = resolveSurgicalSpaceOrgans(space, organIds);
+      const neededSystems = new Set(
+        members.map((id) => state.organs[id]?.system).filter(Boolean),
+      );
+      const target =
+        (space.targetOrganId && state.organs[space.targetOrganId] ? space.targetOrganId : undefined) ??
+        members[0];
+      const base = target ? applySceneCommand(state, { action: "focus_organ", organ_id: target }) : {};
+      return {
+        ...base,
+        hiddenSystems: state.hiddenSystems.filter((s) => !neededSystems.has(s)),
+        isolatedOrganIds: members.length > 0 ? members : null,
+        selectedOrganIds: target ? [target] : state.selectedOrganIds,
+      };
+    }),
+
+  toggleConductionSystem: () =>
+    set((state) => ({ conductionSystemVisible: !state.conductionSystemVisible })),
+
+  toggleEcgLeads: () =>
+    set((state) => ({ ecgLeadsVisible: !state.ecgLeadsVisible })),
+
+  toggleClinicalProcedures: () =>
+    set((state) => ({ clinicalProceduresVisible: !state.clinicalProceduresVisible })),
+
+  toggleLiverSegmentsMode: () =>
+    set((state) => ({ liverSegmentsMode: !state.liverSegmentsMode })),
 
   fitView: () =>
     set((state) => ({ viewpoint: { kind: "fit", seq: (state.viewpoint?.seq ?? 0) + 1 } })),

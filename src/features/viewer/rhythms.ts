@@ -39,14 +39,19 @@ function gaussianPeak(timeInstant: number, centerVal: number, spread: number, am
 
 function evaluateContractionCurve(currTime: number, c: Contraction): number {
   if (currTime <= c.at || currTime >= c.end) return 0;
-  const ascending = c.peak - c.at;
-  const descending = c.end - c.peak;
-  const rawRatio =
-    currTime < c.peak
-      ? (currTime - c.at) / ascending
-      : 1 - (currTime - c.peak) / descending;
-  const clampedRatio = Math.min(1, Math.max(0, rawRatio));
-  return c.strength * (clampedRatio * clampedRatio * (3 - 2 * clampedRatio));
+  if (currTime < c.peak) {
+    const u = (currTime - c.at) / (c.peak - c.at);
+    const clampedU = Math.min(1, Math.max(0, u));
+    // Physiological rapid ejection acceleration (Guyton & Hall 2026, Ch. 9)
+    const factor = Math.pow(Math.sin(clampedU * Math.PI * 0.5), 1.3);
+    return c.strength * factor;
+  } else {
+    const v = (currTime - c.peak) / (c.end - c.peak);
+    const clampedV = Math.min(1, Math.max(0, v));
+    // Early rapid diastolic relaxation with elastic recoil settling
+    const factor = Math.pow(1 - clampedV, 2) * (1 + clampedV * 1.5);
+    return c.strength * factor;
+  }
 }
 
 const RUNTIME_LOOKAHEAD = 2;

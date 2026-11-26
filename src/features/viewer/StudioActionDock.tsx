@@ -3,16 +3,21 @@ import {
   Activity,
   Compass,
   Eye,
+  GitBranch,
   Heart,
   Layers,
   Maximize2,
   Minimize2,
   RotateCcw,
   Scan,
+  Scissors,
   Sparkles,
   Stethoscope,
   Sun,
   Wind,
+  Zap,
+  Radio,
+  Crosshair,
   ZoomIn,
   ZoomOut,
 } from "lucide-react";
@@ -26,6 +31,7 @@ import { useStudyViewsStore } from "@/stores/studyViewsStore";
 import { usePhysiologyStore } from "@/stores/physiologyStore";
 import { useNavigationStore } from "@/stores/navigationStore";
 import { diseasesForStructure } from "@/features/diseases/catalog";
+import { getPedicleDefinition } from "./pedicleCatalog";
 
 import {
   DOLLY_IN,
@@ -54,7 +60,7 @@ const VIEW_HINT_FA: Record<AnatomicalView, string> = {
   superior: "نمای فوقانی (از بالا) — کلید S",
 };
 
-type DockTab = "views" | "dissect" | "physio" | "studio" | "diseases";
+type DockTab = "views" | "dissect" | "physio" | "clinical" | "studio" | "diseases";
 
 export function StudioActionDock() {
   const fa = useInterfaceLanguage((s) => s.language === "fa");
@@ -79,6 +85,19 @@ export function StudioActionDock() {
   const cycleBodyTone = useSceneStore((s) => s.cycleBodyTone);
   const explode = useSceneStore((s) => s.explode);
   const cycleExplode = useSceneStore((s) => s.cycleExplode);
+  const halfDissection = useSceneStore((s) => s.halfDissection);
+  const cycleHalfDissection = useSceneStore((s) => s.cycleHalfDissection);
+  const dissectionDepth = useSceneStore((s) => s.dissectionDepth);
+  const cycleDissectionDepth = useSceneStore((s) => s.cycleDissectionDepth);
+  const isolatePedicle = useSceneStore((s) => s.isolatePedicle);
+  const conductionVisible = useSceneStore((s) => s.conductionSystemVisible);
+  const toggleConduction = useSceneStore((s) => s.toggleConductionSystem);
+  const ecgLeadsVisible = useSceneStore((s) => s.ecgLeadsVisible);
+  const toggleEcgLeads = useSceneStore((s) => s.toggleEcgLeads);
+  const clinicalProceduresVisible = useSceneStore((s) => s.clinicalProceduresVisible);
+  const toggleClinicalProcedures = useSceneStore((s) => s.toggleClinicalProcedures);
+  const liverSegmentsMode = useSceneStore((s) => s.liverSegmentsMode);
+  const toggleLiverSegmentsMode = useSceneStore((s) => s.toggleLiverSegmentsMode);
   const lightingPreset = useSceneStore((s) => s.lightingPreset ?? "studio");
   const setLightingPreset = useSceneStore((s) => s.setLightingPreset);
   const background = useSceneStore((s) => s.background);
@@ -185,6 +204,11 @@ export function StudioActionDock() {
     setMinimized(false);
   };
 
+  const handleClinicalClick = () => {
+    setActiveTab("clinical");
+    setMinimized(false);
+  };
+
   useEffect(() => {
     if (selectedOrganIds.length === 0 && activeTab === "diseases") {
       setActiveTab("views");
@@ -240,14 +264,21 @@ export function StudioActionDock() {
             onClick={handleDissectClick}
             icon={<Layers className="h-3.5 w-3.5" />}
             label={fa ? "تشریح" : "Dissect"}
-            badge={isGlass || explode > 0 || studying}
+            badge={isGlass || explode > 0 || studying || halfDissection !== "off" || dissectionDepth > 0 || clinicalProceduresVisible}
           />
           <TabButton
             active={activeTab === "physio" && !minimized}
             onClick={handlePhysioClick}
             icon={<Activity className={`h-3.5 w-3.5 ${heartEnabled ? "animate-pulse text-rose-400" : ""}`} />}
             label={fa ? "فیزیولوژی" : "Physio"}
-            badge={physioActive || heartEnabled || breathEnabled || scanEnabled}
+            badge={physioActive || heartEnabled || breathEnabled || scanEnabled || conductionVisible || ecgLeadsVisible}
+          />
+          <TabButton
+            active={activeTab === "clinical" && !minimized}
+            onClick={handleClinicalClick}
+            icon={<Crosshair className="h-3.5 w-3.5 text-emerald-400" />}
+            label={fa ? "بالینی" : "Clinical"}
+            badge={conductionVisible || ecgLeadsVisible || clinicalProceduresVisible}
           />
           <TabButton
             active={activeTab === "studio" && !minimized}
@@ -350,6 +381,74 @@ export function StudioActionDock() {
                 </ActionButton>
 
                 <ActionButton
+                  onClick={cycleHalfDissection}
+                  active={halfDissection !== "off"}
+                  title={
+                    fa
+                      ? halfDissection === "off"
+                        ? "نیمه‌تشریح سبک اطلس نتر (برداشتن عضلات یک سمت برای مشاهده همزمان عروق/اعصاب عمقی در برابر عضلات سطحی)"
+                        : halfDissection === "right"
+                          ? "نیمه‌تشریح: سمت راست عمقی (چپ سطحی)"
+                          : "نیمه‌تشریح: سمت چپ عمقی (راست سطحی)"
+                      : `Split dissection (currently: ${halfDissection})`
+                  }
+                  icon={<Scissors className="h-3.5 w-3.5" />}
+                >
+                  {halfDissection === "off"
+                    ? fa
+                      ? "نیمه‌تشریح"
+                      : "Split"
+                    : halfDissection === "right"
+                      ? fa
+                        ? "راست عمقی"
+                        : "R. Deep"
+                      : fa
+                        ? "چپ عمقی"
+                        : "L. Deep"}
+                </ActionButton>
+
+                <ActionButton
+                  onClick={cycleDissectionDepth}
+                  active={dissectionDepth > 0}
+                  title={
+                    fa
+                      ? `لایه‌برداری عمقی (سطح ${dissectionDepth}): ${
+                          dissectionDepth === 0
+                            ? "کامل (سطحی)"
+                            : dissectionDepth === 1
+                              ? "فاشیا و لایه سطحی برداشته شده"
+                              : dissectionDepth === 2
+                                ? "لایه عضلانی برداشته شده، عروق/اعصاب و احشا نمایان"
+                                : "چارچوب اسکلتی و احشای مرکزی"
+                        }`
+                      : `Dissection depth: level ${dissectionDepth}`
+                  }
+                  icon={<Layers className="h-3.5 w-3.5" />}
+                >
+                  {dissectionDepth === 0
+                    ? fa
+                      ? "عمق لایه‌ها"
+                      : "Depth"
+                    : fa
+                      ? `عمق ${dissectionDepth}`
+                      : `Depth ${dissectionDepth}`}
+                </ActionButton>
+
+                {selectedOrganIds.length === 1 && selectedOrganIds[0] && getPedicleDefinition(selectedOrganIds[0]) && (
+                  <ActionButton
+                    onClick={() => isolatePedicle(selectedOrganIds[0]!)}
+                    title={
+                      fa
+                        ? "ایزوله‌سازی پدیکل عروقی-عصبی (شریان، ورید، مجاری و اعصاب تغذیه‌کننده)"
+                        : "Isolate surgical neurovascular pedicle"
+                    }
+                    icon={<GitBranch className="h-3.5 w-3.5 text-amber-300" />}
+                  >
+                    {fa ? "پدیکل" : "Pedicle"}
+                  </ActionButton>
+                )}
+
+                <ActionButton
                   onClick={cycleBodyTone}
                   title={fa ? "چرخش تنالیته رنگ بافت (طبیعی / کربنی / اسکن)" : "Cycle tissue tone"}
                 >
@@ -372,6 +471,19 @@ export function StudioActionDock() {
                   title={fa ? `انفجار لایه‌ها (${Math.round(explode * 100)}%) — کلید X` : `Explode layers (${Math.round(explode * 100)}%) — key X`}
                 >
                   {fa ? `انفجار ${explode > 0 ? `${Math.round(explode * 100)}%` : ""}` : `Explode ${explode > 0 ? `${Math.round(explode * 100)}%` : ""}`}
+                </ActionButton>
+
+                <ActionButton
+                  onClick={toggleClinicalProcedures}
+                  active={clinicalProceduresVisible}
+                  title={
+                    fa
+                      ? "راهنمای سه‌بعدی اقدامات بالینی اورژانس (LP، چست تیوب، خط مرکزی IJV، کریکوتیروئیدوتومی)"
+                      : "Emergency Clinical Procedures 3D HUD (LP, Chest tube, CVC, Cricothyroidotomy)"
+                  }
+                  icon={<Crosshair className={`h-3.5 w-3.5 ${clinicalProceduresVisible ? "text-rose-400" : ""}`} />}
+                >
+                  {fa ? "اورژانس" : "Procedures"}
                 </ActionButton>
 
                 <ActionButton
@@ -433,6 +545,110 @@ export function StudioActionDock() {
                   icon={<Scan className={`h-3.5 w-3.5 ${scanEnabled ? "text-amber-400" : ""}`} />}
                 >
                   {fa ? "اسکنر" : "Scanner"}
+                </ActionButton>
+
+                <ActionButton
+                  onClick={toggleConduction}
+                  active={conductionVisible}
+                  title={
+                    fa
+                      ? "سیستم هدایت الکتریکی قلب (گره SA، گره AV، دسته هیس، پورکینژ)"
+                      : "Cardiac Conduction System (SA, AV, His, Purkinje network)"
+                  }
+                  icon={<Zap className={`h-3.5 w-3.5 ${conductionVisible ? "text-amber-400" : ""}`} />}
+                >
+                  {fa ? "هدایت قلب" : "Conduction"}
+                </ActionButton>
+
+                <ActionButton
+                  onClick={toggleEcgLeads}
+                  active={ecgLeadsVisible}
+                  title={
+                    fa
+                      ? "محل الکترودهای سینه‌ای لیدهای ۱۲گانه V1 تا V6 بر اساس نشانه‌های دنده‌ای"
+                      : "12-Lead Precordial Electrodes V1-V6 anatomical landmarks"
+                  }
+                  icon={<Radio className={`h-3.5 w-3.5 ${ecgLeadsVisible ? "text-emerald-400" : ""}`} />}
+                >
+                  {fa ? "لید V1-V6" : "12-Lead"}
+                </ActionButton>
+              </>
+            )}
+
+            {activeTab === "clinical" && (
+              <>
+                <ActionButton
+                  onClick={() => useNavigationStore.getState().openSurgicalAtlas()}
+                  title={
+                    fa
+                      ? "باز کردن اطلس فضاها و مثلث‌های جراحی (کالوت، اسکارپا، هسلباخ، کاروتید...)"
+                      : "Open Surgical Triangles & Spaces Atlas (Gray's Surgical Anatomy)"
+                  }
+                  icon={<Scissors className="h-3.5 w-3.5 text-emerald-400" />}
+                >
+                  {fa ? "مثلث‌های جراحی" : "Surgical Atlas"}
+                </ActionButton>
+
+                <ActionButton
+                  onClick={toggleClinicalProcedures}
+                  active={clinicalProceduresVisible}
+                  title={
+                    fa
+                      ? "راهنمای سه‌بعدی اقدامات بالینی اورژانس (LP، چست تیوب، خط مرکزی، کریکو، سمع قلب)"
+                      : "Emergency Clinical Procedures 3D HUD (LP, Chest tube, CVC, Cricothyroidotomy)"
+                  }
+                  icon={<Crosshair className={`h-3.5 w-3.5 ${clinicalProceduresVisible ? "text-rose-400" : ""}`} />}
+                >
+                  {fa ? "اقدامات اورژانس" : "Procedures"}
+                </ActionButton>
+
+                <ActionButton
+                  onClick={toggleConduction}
+                  active={conductionVisible}
+                  title={
+                    fa
+                      ? "سیستم هدایت الکتریکی قلب (گره SA، گره AV، دسته هیس، پورکینژ)"
+                      : "Cardiac Conduction System (SA, AV, His, Purkinje)"
+                  }
+                  icon={<Zap className={`h-3.5 w-3.5 ${conductionVisible ? "text-amber-400" : ""}`} />}
+                >
+                  {fa ? "هدایت قلب" : "Conduction"}
+                </ActionButton>
+
+                <ActionButton
+                  onClick={toggleEcgLeads}
+                  active={ecgLeadsVisible}
+                  title={
+                    fa
+                      ? "محل الکترودهای سینه‌ای لیدهای ۱۲گانه V1 تا V6"
+                      : "12-Lead Precordial Electrodes V1-V6"
+                  }
+                  icon={<Radio className={`h-3.5 w-3.5 ${ecgLeadsVisible ? "text-emerald-400" : ""}`} />}
+                >
+                  {fa ? "لید V1-V6" : "12-Lead"}
+                </ActionButton>
+
+                <ActionButton
+                  onClick={toggleLiverSegmentsMode}
+                  active={liverSegmentsMode}
+                  title={
+                    fa
+                      ? "تغییر بین نمای یکپارچه کبد (بدون تداخل) و ۸ سگمان جراحی کوئینا"
+                      : "Switch between unified Liver mesh and 8 Couinaud segments"
+                  }
+                >
+                  {fa ? "سگمان کبد" : "Liver Segs"}
+                </ActionButton>
+
+                <ActionButton
+                  onClick={() => useNavigationStore.getState().setMicroAnatomyScene("nephron")}
+                  title={
+                    fa
+                      ? "باز کردن نمایشگر سه‌بعدی میکروآناتومی (نفرون کلیه، لوبول کبد، آلوئول ریه، دندان)"
+                      : "Open 3D Micro-Anatomy Sub-Viewer (Nephron, Hepatic Lobule, Alveolus, Dental)"
+                  }
+                >
+                  {fa ? "میکروآناتومی 3D" : "3D Micro"}
                 </ActionButton>
               </>
             )}

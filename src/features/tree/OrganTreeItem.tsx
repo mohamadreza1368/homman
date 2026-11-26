@@ -13,6 +13,8 @@ export const OrganTreeItem = memo(function OrganTreeItem({ organ }: OrganTreeIte
   const hiddenOrganIds = useSceneStore((state) => state.hiddenOrganIds);
   const hideConnective = useSceneStore((state) => state.hideConnective);
   const connectiveIds = useSceneStore((state) => state.connectiveIds);
+  const halfDissection = useSceneStore((state) => state.halfDissection);
+  const dissectionDepth = useSceneStore((state) => state.dissectionDepth);
   const pathologyOverlays = useSceneStore((state) => state.pathologyOverlays);
 
   const selectOrgan = useSceneStore((state) => state.selectOrgan);
@@ -25,6 +27,8 @@ export const OrganTreeItem = memo(function OrganTreeItem({ organ }: OrganTreeIte
       hiddenOrganIds,
       hideConnective,
       connectiveIds,
+      halfDissection,
+      dissectionDepth,
     },
     organ,
   );

@@ -71,6 +71,12 @@ export interface SceneViewState {
   supplyResult: { kind: SupplyKind; added: number } | null;
   explode: number;
   bodyTone: BodyTone;
+  halfDissection: "off" | "left" | "right";
+  dissectionDepth: number;
+  conductionSystemVisible: boolean;
+  ecgLeadsVisible: boolean;
+  clinicalProceduresVisible: boolean;
+  liverSegmentsMode: boolean;
 }
 
 export const initialViewState: SceneViewState = {
@@ -88,6 +94,12 @@ export const initialViewState: SceneViewState = {
   pathway: null,
   explode: 0,
   bodyTone: "solid",
+  halfDissection: "off",
+  dissectionDepth: 0,
+  conductionSystemVisible: false,
+  ecgLeadsVisible: false,
+  clinicalProceduresVisible: false,
+  liverSegmentsMode: false,
   supplyRequest: null,
   supplyResult: null,
   illuminated: [],
@@ -99,6 +111,9 @@ export type VisibilityState = Pick<
 > & {
   hideConnective: boolean;
   connectiveIds: Set<string>;
+  halfDissection?: "off" | "left" | "right";
+  dissectionDepth?: number;
+  liverSegmentsMode?: boolean;
 };
 
 export interface SceneStore extends SceneViewState {
@@ -116,6 +131,7 @@ export interface SceneStore extends SceneViewState {
   depthStack: string[];
   pinnedStack: string[] | null;
   focusBadge: { organId: string; index: number } | null;
+  selectionHitPoints?: Record<string, { x: number; y: number; z: number }>;
 
   setManifest: (manifest: AnatomyManifest) => void;
   setGenderModel: (gender: GenderModel) => void;
@@ -124,7 +140,11 @@ export interface SceneStore extends SceneViewState {
   clearDepthStack: () => void;
   pinDepthStack: () => void;
   unpinDepthStack: () => void;
-  selectFromViewport: (organId: string | null, additive?: boolean) => void;
+  selectFromViewport: (
+    organId: string | null,
+    additive?: boolean,
+    hitPoint?: { x: number; y: number; z: number },
+  ) => void;
   dismissDepthStack: () => void;
   setEyeTracking: (enabled: boolean) => void;
   setDepthProbeVisible: (visible: boolean) => void;
@@ -134,7 +154,11 @@ export interface SceneStore extends SceneViewState {
   setBackground: (mode: BackgroundMode) => void;
   setLightingPreset: (preset: LightingPresetId) => void;
   restoreView: (preferences: Partial<ViewPreferences>) => void;
-  selectOrgan: (organId: string | null, additive?: boolean) => void;
+  selectOrgan: (
+    organId: string | null,
+    additive?: boolean,
+    hitPoint?: { x: number; y: number; z: number },
+  ) => void;
   selectMany: (organIds: string[]) => void;
   addToSelection: (organIds: string[]) => void;
   clearSelection: () => void;
@@ -156,6 +180,16 @@ export interface SceneStore extends SceneViewState {
   dollyView: (factor: number) => void;
   setExplode: (factor: number) => void;
   cycleExplode: () => void;
+  setHalfDissection: (mode: "off" | "left" | "right") => void;
+  cycleHalfDissection: () => void;
+  setDissectionDepth: (depth: number) => void;
+  cycleDissectionDepth: () => void;
+  isolatePedicle: (organId: string) => void;
+  isolateSurgicalSpace: (spaceId: string) => void;
+  toggleConductionSystem: () => void;
+  toggleEcgLeads: () => void;
+  toggleClinicalProcedures: () => void;
+  toggleLiverSegmentsMode: () => void;
   showAllSystems: () => void;
   clearPathway: () => void;
   clearIsolation: () => void;

@@ -1,6 +1,7 @@
 import { create } from "zustand";
 
-export type LeftPanelTab = "atlas" | "diseases" | "education" | "study" | "usage";
+export type LeftPanelTab = "atlas" | "surgical" | "diseases" | "education" | "study" | "usage";
+export type MicroAnatomyScene = "nephron" | "hepatic_lobule" | "alveolus" | "dental";
 
 interface NavigationStoreState {
   leftPanelTab: LeftPanelTab;
@@ -8,6 +9,9 @@ interface NavigationStoreState {
   diseaseSelectedOnly: boolean;
   setDiseaseSelectedOnly: (only: boolean) => void;
   openDiseasesForSelection: () => void;
+  openSurgicalAtlas: () => void;
+  microAnatomyScene: MicroAnatomyScene | null;
+  setMicroAnatomyScene: (scene: MicroAnatomyScene | null) => void;
 }
 
 /**
@@ -25,4 +29,12 @@ export const useNavigationStore = create<NavigationStoreState>((set) => ({
       window.dispatchEvent(new CustomEvent("hoomaan:ensure-tree-open"));
     }
   },
+  openSurgicalAtlas: () => {
+    set({ leftPanelTab: "surgical" });
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new CustomEvent("hoomaan:ensure-tree-open"));
+    }
+  },
+  microAnatomyScene: null,
+  setMicroAnatomyScene: (microAnatomyScene) => set({ microAnatomyScene }),
 }));

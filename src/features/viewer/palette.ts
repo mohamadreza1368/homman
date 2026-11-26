@@ -43,7 +43,8 @@ const VENOUS_BLUE_TONE = "#4a6ea8";
 const ARTERIAL_RED_TONE = "#c0392f";
 
 const VENOUS_PATTERN = /\b(vena|venae|venous|vein|veins|sinus)\b/i;
-const ARTERIAL_PATTERN = /\b(arteria|arteriae|arterial|artery|arteries|aorta|truncus)\b/i;
+const ARTERIAL_PATTERN =
+  /\b(arteria|arteriae|arterial|artery|arteries|aorta|aortae|aortic|truncus|arcus|ramus|rami|anastomosis|bifurcatio)\b/i;
 
 interface ClassificationRule {
   readonly id: string;
@@ -255,19 +256,19 @@ export function tissueColour(organ: Tissue): THREE.Color {
 }
 
 const TISSUE_ROUGHNESS_MAP: Partial<Record<AnatomicalSystem, number>> = {
-  skeletal: 0.78,
-  articular: 0.44,
-  muscular: 0.38,
-  cardiovascular: 0.32,
-  nervous: 0.56,
-  lymphatic: 0.44,
-  respiratory: 0.46,
-  digestive: 0.32,
-  renal: 0.35,
-  endocrine: 0.38,
-  reproductive: 0.36,
-  integumentary: 0.62,
-  regional: 0.7,
+  skeletal: 0.72,
+  articular: 0.26,
+  muscular: 0.4,
+  cardiovascular: 0.28,
+  nervous: 0.54,
+  lymphatic: 0.42,
+  respiratory: 0.45,
+  digestive: 0.26,
+  renal: 0.3,
+  endocrine: 0.36,
+  reproductive: 0.34,
+  integumentary: 0.6,
+  regional: 0.68,
 };
 
 export function tissueRoughness(system: AnatomicalSystem): number {
@@ -276,16 +277,16 @@ export function tissueRoughness(system: AnatomicalSystem): number {
 
 const TISSUE_METALNESS_MAP: Partial<Record<AnatomicalSystem, number>> = {
   skeletal: 0.02,
-  articular: 0.08,
-  muscular: 0.05,
-  cardiovascular: 0.1,
-  digestive: 0.08,
-  respiratory: 0.04,
+  articular: 0.06,
+  muscular: 0.04,
+  cardiovascular: 0.08,
+  digestive: 0.06,
+  respiratory: 0.03,
   nervous: 0.02,
-  lymphatic: 0.04,
-  endocrine: 0.06,
-  renal: 0.06,
-  reproductive: 0.05,
+  lymphatic: 0.03,
+  endocrine: 0.05,
+  renal: 0.05,
+  reproductive: 0.04,
   integumentary: 0.02,
   regional: 0.02,
 };
@@ -306,8 +307,8 @@ export function tissueOpacity(organ: Tissue): number {
 }
 
 const SYSTEM_DEPTH_BIAS: Readonly<Record<string, number>> = {
-  regional: -2,
-  integumentary: -2,
+  regional: -4,
+  integumentary: -4,
   connective: -1,
   ligament: -1,
 };

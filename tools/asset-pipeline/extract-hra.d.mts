@@ -1,11 +1,9 @@
 /**
  * Hoomaan 3D Anatomy Platform - Asset Pipeline
- * Type definitions for Female Geometry Extraction Engine.
+ * Module: HRA Female Geometry Extraction & Draco Optimization Engine
  *
- * Clean-room specification-derived declarations.
+ * Designed from specs/asset-pipeline-hra-extraction.md.
  */
-
-import type { FemaleOrganEntry } from "./hra-selection.d.mts";
 
 export interface ClinicalNameDescriptor {
   term: string;
@@ -20,3 +18,5 @@ export declare class FemaleGeometryExtractor {
   static countMeshTriangles(mesh: unknown): number;
   execute(): Promise<void>;
 }
+
+export { FemaleGeometryExtractor as HraGeometryExtractor };

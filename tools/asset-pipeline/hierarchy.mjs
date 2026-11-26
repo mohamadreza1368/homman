@@ -1,37 +1,41 @@
 /**
  * Hoomaan 3D Anatomy Platform - Asset Pipeline
- * Taxonomy Curation Engine for Anatomical Lineages.
+ * Module: Anatomical Taxonomy Tree Harmonization
  *
- * Clean-room implementation designed from specs/asset-pipeline-anatomical-hierarchy.md.
+ * Designed from specs/asset-pipeline-anatomical-hierarchy.md.
  */
 
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const CURRENT_DIR = dirname(fileURLToPath(import.meta.url));
-const TAXONOMY_REGIONS = JSON.parse(
-  readFileSync(join(CURRENT_DIR, "hierarchy_nervous_paths.json"), "utf8"),
-);
+const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
+const HIERARCHY_FILE = join(SCRIPT_DIR, "hierarchy_nervous_paths.json");
 
-export const TAXONOMY_PATH_OVERRIDES = Object.freeze(
-  Object.values(TAXONOMY_REGIONS).reduce((acc, region) => {
-    for (const term of region.terms) {
-      acc[term] = region.path;
+function loadNervousPathRules() {
+  const fileData = JSON.parse(readFileSync(HIERARCHY_FILE, "utf8"));
+  const mapping = {};
+  for (const group of Object.values(fileData)) {
+    if (group && Array.isArray(group.terms) && Array.isArray(group.path)) {
+      for (const term of group.terms) {
+        mapping[term] = group.path;
+      }
     }
-    return acc;
-  }, {}),
-);
+  }
+  return mapping;
+}
+
+export const TAXONOMY_PATH_OVERRIDES = Object.freeze(loadNervousPathRules());
 
 export const TAXONOMY_HEADING_REPLACEMENTS = Object.freeze({
   Muscles: "Other muscles",
 });
 
 /**
- * Curation engine that resolves anatomical branches, unifies twin organ lineages,
- * and normalizes taxonomy headings.
+ * Harmonizer that restructures anatomical branches, propagates maximal twin depth,
+ * and normalizes ambiguous taxonomy headers.
  */
-export class TaxonomyCurationEngine {
+export class TaxonomyTreeHarmonizer {
   constructor(
     pathOverrides = TAXONOMY_PATH_OVERRIDES,
     headingRenames = TAXONOMY_HEADING_REPLACEMENTS,
@@ -41,93 +45,106 @@ export class TaxonomyCurationEngine {
   }
 
   /**
-   * Curates an array of anatomical structure entities.
-   * @param {Array<object>} structures
-   * @returns {{ organs: Array<object>, corrected: number, propagated: number, renamed: number }}
+   * Processes an array of anatomical nodes according to specification rules.
+   * @template T
+   * @param {readonly T[]} items
+   * @returns {{ organs: T[], corrected: number, propagated: number, renamed: number }}
    */
-  curateOrganTaxonomy(structures) {
-    const remainingOverrides = new Set(Object.keys(this.pathOverrides));
-    const remainingRenames = new Set(Object.keys(this.headingRenames));
+  harmonize(items) {
+    const pendingOverrides = new Set(Object.keys(this.pathOverrides));
+    const pendingRenames = new Set(Object.keys(this.headingRenames));
 
-    let pathOverridesCount = 0;
-    let twinDepthHarmonizedCount = 0;
-    let renamedHeadingsCount = 0;
+    let countPathOverrides = 0;
+    let countPropagatedTwins = 0;
+    let countRenamedHeadings = 0;
 
-    const deepestLineageByTerm = new Map();
-    const curatedList = [];
+    // Track the deepest path observed for each Latin structure in nervous system
+    const maximalPaths = new Map();
+    const intermediateList = [];
 
-    // Stage 1: Lineage overrides for nervous system & depth discovery
-    for (const item of structures) {
-      const record = { ...item, path: Array.isArray(item.path) ? [...item.path] : [] };
+    // Pass 1: Apply path overrides & observe deepest path per structure
+    for (const item of items) {
+      const cloned = { ...item, path: Array.isArray(item.path) ? [...item.path] : [] };
 
-      if (record.system === "nervous") {
-        const canonical = this.pathOverrides[record.ta2_latin];
-        if (canonical) {
-          record.path = [...canonical];
-          remainingOverrides.delete(record.ta2_latin);
-          pathOverridesCount++;
+      if (cloned.system === "nervous") {
+        const customPath = this.pathOverrides[cloned.ta2_latin];
+        if (customPath) {
+          cloned.path = [...customPath];
+          pendingOverrides.delete(cloned.ta2_latin);
+          countPathOverrides++;
         }
 
-        const knownDeepest = deepestLineageByTerm.get(record.ta2_latin);
-        if (!knownDeepest || record.path.length > knownDeepest.length) {
-          deepestLineageByTerm.set(record.ta2_latin, record.path);
+        const currentDeepest = maximalPaths.get(cloned.ta2_latin);
+        if (!currentDeepest || cloned.path.length > currentDeepest.length) {
+          maximalPaths.set(cloned.ta2_latin, cloned.path);
         }
       }
 
-      curatedList.push(record);
+      intermediateList.push(cloned);
     }
 
-    // Integrity constraint: No stale or unused path override rules
-    if (remainingOverrides.size > 0) {
-      const unusedList = Array.from(remainingOverrides).sort().join(", ");
+    // Fail early if any configured path override was never matched
+    if (pendingOverrides.size > 0) {
+      const unmatched = Array.from(pendingOverrides).sort().join(", ");
       throw new Error(
-        `NERVOUS_PATHS has entries matching no structure: ${unusedList}. If the vendored hierarchy was fixed upstream, delete them.`,
+        `NERVOUS_PATHS has entries matching no structure: ${unmatched}. If the vendored hierarchy was fixed upstream, delete them.`,
       );
     }
 
-    // Stage 2: Bilateral symmetry consensus & heading substitutions
-    const finalized = curatedList.map((record) => {
-      let activePath = record.path;
+    // Pass 2: Bilateral consensus propagation & heading substitutions
+    const finalized = intermediateList.map((item) => {
+      let activeLineage = item.path;
 
-      if (record.system === "nervous") {
-        const maximalDepthPath = deepestLineageByTerm.get(record.ta2_latin);
-        if (maximalDepthPath && maximalDepthPath.length > activePath.length) {
-          activePath = [...maximalDepthPath];
-          twinDepthHarmonizedCount++;
+      if (item.system === "nervous") {
+        const consensusLineage = maximalPaths.get(item.ta2_latin);
+        if (consensusLineage && consensusLineage.length > activeLineage.length) {
+          activeLineage = [...consensusLineage];
+          countPropagatedTwins++;
         }
       }
 
-      let hadRename = false;
-      const substitutedPath = activePath.map((node) => {
-        const replacement = this.headingRenames[node];
-        if (replacement !== undefined) {
-          remainingRenames.delete(node);
-          hadRename = true;
+      let hadSubstitution = false;
+      const updatedLineage = activeLineage.map((segment) => {
+        const replacement = this.headingRenames[segment];
+        if (replacement) {
+          pendingRenames.delete(segment);
+          hadSubstitution = true;
           return replacement;
         }
-        return node;
+        return segment;
       });
 
-      if (hadRename) {
-        renamedHeadingsCount++;
+      if (hadSubstitution) {
+        countRenamedHeadings++;
       }
 
-      return { ...record, path: substitutedPath };
+      return {
+        ...item,
+        path: updatedLineage,
+      };
     });
 
-    // Integrity constraint: No stale or unused heading rename rules
-    if (remainingRenames.size > 0) {
-      const unusedRenames = Array.from(remainingRenames).sort().join(", ");
+    // Fail early if any heading rename rule was never matched
+    if (pendingRenames.size > 0) {
+      const unmatchedHeadings = Array.from(pendingRenames).sort().join(", ");
       throw new Error(
-        `HEADING_RENAMES has entries matching no heading: ${unusedRenames}. If the upstream naming changed, delete them rather than leave them looking authoritative.`,
+        `HEADING_RENAMES has entries matching no heading: ${unmatchedHeadings}. If the vendored hierarchy was fixed upstream, delete them.`,
       );
     }
 
     return {
       organs: finalized,
-      corrected: pathOverridesCount,
-      propagated: twinDepthHarmonizedCount,
-      renamed: renamedHeadingsCount,
+      corrected: countPathOverrides,
+      propagated: countPropagatedTwins,
+      renamed: countRenamedHeadings,
     };
   }
+
+  // Alias for backward compatibility
+  curateOrganTaxonomy(items) {
+    return this.harmonize(items);
+  }
 }
+
+// Ergonomic alias
+export const TaxonomyCurationEngine = TaxonomyTreeHarmonizer;

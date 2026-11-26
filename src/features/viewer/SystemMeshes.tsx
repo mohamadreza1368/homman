@@ -10,6 +10,10 @@ import {
   useSceneStore,
 } from "@/stores/sceneStore";
 import { useStudyStore } from "@/stores/studyStore";
+import {
+  buildSupplementaryOrganGeometry,
+  isSupplementaryOrganId,
+} from "@/features/anatomy/supplementaryOrgans";
 import { buildEyeGroups } from "./eyes";
 import { EyeGlobe } from "./EyeGlobe";
 import { busiestTouches } from "./coverage";
@@ -64,6 +68,9 @@ export function SystemMeshes({
   const hiddenSystems = useSceneStore((s) => s.hiddenSystems);
   const systemOpacity = useSceneStore((s) => s.systemOpacity);
   const isolatedOrganIds = useSceneStore((s) => s.isolatedOrganIds);
+  const halfDissection = useSceneStore((s) => s.halfDissection);
+  const dissectionDepth = useSceneStore((s) => s.dissectionDepth);
+  const liverSegmentsMode = useSceneStore((s) => s.liverSegmentsMode);
   const setHovered = useSceneStore((s) => s.setHovered);
   const selectOrgan = useSceneStore((s) => s.selectFromViewport);
   const studyOrgan = useSceneStore((s) => s.studyOrgan);
@@ -110,8 +117,13 @@ export function SystemMeshes({
   const parsedGeometries = useMemo(() => {
     const result = new Map<string, OrganGeometry>();
     const missingNodes: string[] = [];
+    const supplementaryQueue: ManifestOrgan[] = [];
 
     for (const organ of fileOrgans) {
+      if (isSupplementaryOrganId(organ.organ_id)) {
+        supplementaryQueue.push(organ);
+        continue;
+      }
       const gltfNode =
         nodes[organ.node] ?? nodes[THREE.PropertyBinding.sanitizeNodeName(organ.node)];
       if (gltfNode instanceof THREE.Mesh) {
@@ -122,6 +134,26 @@ export function SystemMeshes({
         });
       } else {
         missingNodes.push(organ.node);
+      }
+    }
+
+    if (supplementaryQueue.length > 0) {
+      const tempBoxes = new Map<string, THREE.Box3>();
+      const tempCentres = new Map<string, THREE.Vector3>();
+      for (const [id, item] of result) {
+        if (!item.geometry.boundingBox) item.geometry.computeBoundingBox();
+        const localBox = item.geometry.boundingBox;
+        if (!localBox) continue;
+        const worldBox = localBox.clone().applyMatrix4(item.matrix);
+        tempBoxes.set(id, worldBox);
+        tempCentres.set(id, worldBox.getCenter(new THREE.Vector3()));
+      }
+      const identity = new THREE.Matrix4();
+      for (const organ of supplementaryQueue) {
+        const geom = buildSupplementaryOrganGeometry(organ.organ_id, tempBoxes, tempCentres);
+        if (geom) {
+          result.set(organ.organ_id, { geometry: geom, matrix: identity.clone() });
+        }
       }
     }
 
@@ -212,7 +244,16 @@ export function SystemMeshes({
         geometry={entry.geometry}
         matrix={explicitMatrix ?? entry.matrix}
         visible={isOrganVisible(
-          { hiddenSystems, isolatedOrganIds, hiddenOrganIds, hideConnective, connectiveIds },
+          {
+            hiddenSystems,
+            isolatedOrganIds,
+            hiddenOrganIds,
+            hideConnective,
+            connectiveIds,
+            halfDissection,
+            dissectionDepth,
+            liverSegmentsMode,
+          },
           organ,
         )}
         opacity={organOpacity({ systemOpacity }, organ)}

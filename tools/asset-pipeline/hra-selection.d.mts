@@ -1,15 +1,15 @@
 /**
  * Hoomaan 3D Anatomy Platform - Asset Pipeline
- * Type definitions for Female Atlas Registry.
+ * Module: Female Atlas Registry & HRA Organ Selection
  *
- * Clean-room specification-derived declarations.
+ * Designed from specs/asset-pipeline-hra-extraction.md.
  */
 
 import type { AnatomicalSystem } from "../../src/lib/schemas";
 
 export type AnatomicalLaterality = "left" | "right" | null;
 
-export interface AtlasSourceProvenance {
+export interface ProvenanceDetails {
   readonly version: string;
   readonly url: string;
   readonly metadata: string;
@@ -17,7 +17,7 @@ export interface AtlasSourceProvenance {
   readonly licenseUrl: string;
 }
 
-export interface FemaleOrganEntry {
+export interface FemaleStructureMetadata {
   readonly node: string;
   readonly id: string;
   readonly term: string;
@@ -27,15 +27,20 @@ export interface FemaleOrganEntry {
   readonly path: readonly string[];
 }
 
-export declare const SOURCE: AtlasSourceProvenance;
+export declare class FemaleAtlasRegistry {
+  static resolveSystem(rootCategory: string): AnatomicalSystem;
+  static buildSystemIndex(items: readonly FemaleStructureMetadata[]): Map<string, AnatomicalSystem>;
+}
+
+// Ergonomic exports & data constants
+export declare const SOURCE: ProvenanceDetails;
 export declare const NOT_IN_TA2: Readonly<Record<string, string>>;
 export declare const OUT_OF_SCOPE: Readonly<Record<string, string>>;
 export declare const KNOWN_SOURCE_ERRATA: Readonly<Record<string, string>>;
 export declare const VENDOR_TA2_DEFECTS: Readonly<Record<string, string>>;
-export declare const STRUCTURES: readonly FemaleOrganEntry[];
+export declare const STRUCTURES: readonly FemaleStructureMetadata[];
 export declare const SYSTEM_OF: ReadonlyMap<string, AnatomicalSystem>;
 
-export declare class FemaleAtlasRegistry {
-  static resolveSystem(rootCategory: string): AnatomicalSystem;
-  static buildSystemIndex(structureList: readonly FemaleOrganEntry[]): Map<string, AnatomicalSystem>;
-}
+// Aliases
+export type FemaleOrganEntry = FemaleStructureMetadata;
+export type AtlasSourceProvenance = ProvenanceDetails;

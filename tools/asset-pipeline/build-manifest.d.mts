@@ -1,8 +1,8 @@
 /**
  * Hoomaan 3D Anatomy Platform - Asset Pipeline
- * Type definitions for Male Atlas Manifest Generator.
+ * Module: Male Atlas Manifest Compiler
  *
- * Clean-room specification-derived declarations.
+ * Designed from specs/asset-pipeline-manifest-builder.md.
  */
 
 export interface ParsedNodeIdentifier {
@@ -13,6 +13,8 @@ export interface ParsedNodeIdentifier {
 export declare class MaleAtlasManifestGenerator {
   static parseNodeIdentifier(rawIdentifier: string): ParsedNodeIdentifier;
   static classifyVisceralOrgan(englishTerm: string): string | null;
-  compile(): void;
   loadInspectionReports(): unknown[];
+  compile(): void;
 }
+
+export { MaleAtlasManifestGenerator as MaleManifestCompiler };

@@ -142,6 +142,58 @@ const SECTIONS: Section[] = [
     ),
   },
   {
+    id: "clinical-tools",
+    nav: "Clinical & surgical",
+    title: "Surgical atlas, muscle O/I/I/A, cardiac conduction & procedures",
+    body: (
+      <>
+        <p>
+          Beyond the core 3D atlas, HOOMAAN provides specialized surgical and clinical
+          modules accessible via the <Ui>Surgical</Ui> tab in the left sidebar and the{" "}
+          <Ui>Clinical</Ui> tab in the bottom action dock:
+        </p>
+        <Sub>1. Regional tree, Netter split dissection &amp; pedicles</Sub>
+        <Rows
+          rows={[
+            ["Systemic / Regional tree", "Switch between systemic and anatomical region grouping in the left Atlas tab"],
+            ["Split dissection & depth stepper", "In the bottom Dissect tab, peel tissue layers step by step or split left/right body halves"],
+            ["Neurovascular pedicle", "Select a target organ and click Pedicle to isolate its feeding artery, vein, duct, and nerve"],
+          ]}
+        />
+        <Sub>2. Muscle functional engine (O / I / I / A)</Sub>
+        <p>
+          Selecting any skeletal muscle reveals its full clinical profile inside the left{" "}
+          <Ui>Learn</Ui> tab: <strong>Origin, Insertion, Innervation with spinal root badges,
+          Action, Arterial supply, and Deep Tendon Reflex (DTR) exam</strong>.
+        </p>
+        <Sub>3. Surgical triangles &amp; spaces atlas (Gray&apos;s Surgical Anatomy)</Sub>
+        <p>
+          Open the <Ui>Surgical</Ui> tab in the left panel (or click{" "}
+          <Ui>Surgical Atlas</Ui> in the bottom <Ui>Clinical</Ui> dock) to browse 10
+          essential spaces — including <em>Calot&apos;s triangle, Femoral triangle (NAVEL),
+          Hesselbach&apos;s triangle, Carotid &amp; Muscular neck triangles, Popliteal fossa,
+          Anatomical snuffbox, Carpal tunnel, Cubital fossa, and Foramen of Winslow</em> —
+          and isolate their 3D anatomical boundaries in one click.
+        </p>
+        <Sub>4. Cardiac conduction &amp; 12-lead precordial electrodes (Guyton &amp; Hall)</Sub>
+        <Rows
+          rows={[
+            ["Conduction", "Toggle in Clinical or Physio tab to animate the SA node, AV node, Bundle of His, bundle branches, and Purkinje fibers synced with the heartbeat"],
+            ["12-Lead (V1-V6)", "Display color-coded precordial chest electrodes V1–V6 on exact intercostal landmarks with clinical significance tooltips"],
+          ]}
+        />
+        <Sub>5. Emergency clinical procedures HUD (Harrison &amp; Cecil)</Sub>
+        <p>
+          Toggle <Ui>Procedures</Ui> in the <Ui>Clinical</Ui> or <Ui>Dissect</Ui> dock to
+          render 3D entry reticles, needle trajectories, tissue depth layers, and danger zones
+          for <strong>Lumbar Puncture (Tuffier&apos;s line), Chest Tube (Safe Triangle),
+          Internal Jugular CVC (Sedillot&apos;s triangle), Cricothyroidotomy, and the 4 Cardiac
+          Auscultation Areas</strong>.
+        </p>
+      </>
+    ),
+  },
+  {
     id: "section",
     nav: "Cross-sections",
     title: "Reading a section",

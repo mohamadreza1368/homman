@@ -15,6 +15,8 @@ import { CHAT_LIMITS, TREE_LIMITS, useLayout } from "@/features/layout/useLayout
 import { ConfirmDialog } from "@/features/common/ConfirmDialog";
 import { PrintSheet } from "@/features/study/PrintSheet";
 import { AnatomyViewer } from "@/features/viewer/AnatomyViewer";
+import { MicroAnatomy3DModal } from "@/features/anatomy/MicroAnatomy3DModal";
+import { useNavigationStore } from "@/stores/navigationStore";
 import { useChatStore } from "@/stores/chatStore";
 import { checkStorage, confirmStoragePersists } from "@/lib/localStore";
 import { useStudyStore } from "@/stores/studyStore";
@@ -34,6 +36,8 @@ export default function App() {
   const { firstRun, markSeen } = useFirstRun();
   const [isGuideOpen, setIsGuideOpen] = useState(firstRun);
   const [isMemoryLabOpen, setIsMemoryLabOpen] = useState(false);
+  const microAnatomyScene = useNavigationStore((s) => s.microAnatomyScene);
+  const setMicroAnatomyScene = useNavigationStore((s) => s.setMicroAnatomyScene);
 
   const isManifestLoaded = useSceneStore((s) => s.manifest !== null);
   const splashState = useSplash(isManifestLoaded);
@@ -67,7 +71,7 @@ export default function App() {
   };
 
   return (
-    <div className="flex h-full w-full overflow-hidden bg-slate-950 text-slate-200">
+    <div dir="ltr" className="flex h-full w-full overflow-hidden bg-slate-950 text-slate-200">
       {splashState.visible && <SplashScreen leaving={splashState.leaving} />}
       {!splashState.visible && !isAuthenticated && <LoginScreen />}
       {screensaver.showing && <IdleScreen onDismiss={screensaver.dismiss} />}
@@ -80,6 +84,12 @@ export default function App() {
 
       <PrintSheet />
       <ConfirmDialog />
+      {microAnatomyScene && (
+        <MicroAnatomy3DModal
+          initialScene={microAnatomyScene}
+          onClose={() => setMicroAnatomyScene(null)}
+        />
+      )}
 
       {/* Primary Anatomy Tree & Taxonomy Surface */}
       <aside

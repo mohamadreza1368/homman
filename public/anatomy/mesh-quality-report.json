@@ -1,0 +1,154 @@
+{
+  "generatedAt": "2026-11-26T15:05:50.768Z",
+  "filesScanned": 13,
+  "totalMeshes": 4349,
+  "totalTriangles": 13140919,
+  "watertightMeshes": 2571,
+  "meshesWithBoundaryHoles": 1778,
+  "meshesWithNonManifoldEdges": 0,
+  "files": {
+    "articular_male.glb": {
+      "meshCount": 413,
+      "totalTriangles": 358055,
+      "watertightMeshes": 322,
+      "meshesWithBoundaryHoles": 91,
+      "meshesWithNonManifoldEdges": 0,
+      "densestMesh": {
+        "name": "Interosseous membrane of leg.001",
+        "triangles": 12642
+      }
+    },
+    "cardiovascular_male.glb": {
+      "meshCount": 676,
+      "totalTriangles": 3843768,
+      "watertightMeshes": 13,
+      "meshesWithBoundaryHoles": 663,
+      "meshesWithNonManifoldEdges": 0,
+      "densestMesh": {
+        "name": "Central retinal artery.001",
+        "triangles": 207360
+      }
+    },
+    "digestive_male.glb": {
+      "meshCount": 75,
+      "totalTriangles": 353618,
+      "watertightMeshes": 62,
+      "meshesWithBoundaryHoles": 13,
+      "meshesWithNonManifoldEdges": 0,
+      "densestMesh": {
+        "name": "Pancreatic duct",
+        "triangles": 55824
+      }
+    },
+    "endocrine_male.glb": {
+      "meshCount": 6,
+      "totalTriangles": 10796,
+      "watertightMeshes": 4,
+      "meshesWithBoundaryHoles": 2,
+      "meshesWithNonManifoldEdges": 0,
+      "densestMesh": {
+        "name": "Suprarenal gland.l.001",
+        "triangles": 3996
+      }
+    },
+    "lymphatic_male.glb": {
+      "meshCount": 163,
+      "totalTriangles": 127682,
+      "watertightMeshes": 163,
+      "meshesWithBoundaryHoles": 0,
+      "meshesWithNonManifoldEdges": 0,
+      "densestMesh": {
+        "name": "Left lobe of thymus.001",
+        "triangles": 9188
+      }
+    },
+    "muscular_male.glb": {
+      "meshCount": 1388,
+      "totalTriangles": 3255059,
+      "watertightMeshes": 1202,
+      "meshesWithBoundaryHoles": 186,
+      "meshesWithNonManifoldEdges": 0,
+      "densestMesh": {
+        "name": "Iliotibial tract.002",
+        "triangles": 48612
+      }
+    },
+    "nervous_male.glb": {
+      "meshCount": 860,
+      "totalTriangles": 3240138,
+      "watertightMeshes": 422,
+      "meshesWithBoundaryHoles": 438,
+      "meshesWithNonManifoldEdges": 0,
+      "densestMesh": {
+        "name": "White matter of telencephalon.001",
+        "triangles": 135288
+      }
+    },
+    "regional_male.glb": {
+      "meshCount": 256,
+      "totalTriangles": 135204,
+      "watertightMeshes": 10,
+      "meshesWithBoundaryHoles": 246,
+      "meshesWithNonManifoldEdges": 0,
+      "densestMesh": {
+        "name": "Hairs of head.001",
+        "triangles": 16563
+      }
+    },
+    "renal_male.glb": {
+      "meshCount": 8,
+      "totalTriangles": 19980,
+      "watertightMeshes": 3,
+      "meshesWithBoundaryHoles": 5,
+      "meshesWithNonManifoldEdges": 0,
+      "densestMesh": {
+        "name": "Ureter.r",
+        "triangles": 3168
+      }
+    },
+    "reproductive_male.glb": {
+      "meshCount": 14,
+      "totalTriangles": 19523,
+      "watertightMeshes": 9,
+      "meshesWithBoundaryHoles": 5,
+      "meshesWithNonManifoldEdges": 0,
+      "densestMesh": {
+        "name": "Ductus deferens.r",
+        "triangles": 4896
+      }
+    },
+    "respiratory_male.glb": {
+      "meshCount": 35,
+      "totalTriangles": 242132,
+      "watertightMeshes": 1,
+      "meshesWithBoundaryHoles": 34,
+      "meshesWithNonManifoldEdges": 0,
+      "densestMesh": {
+        "name": "Pleura.001",
+        "triangles": 112288
+      }
+    },
+    "skeletal_male.glb": {
+      "meshCount": 335,
+      "totalTriangles": 820659,
+      "watertightMeshes": 302,
+      "meshesWithBoundaryHoles": 33,
+      "meshesWithNonManifoldEdges": 0,
+      "densestMesh": {
+        "name": "Scapula.002",
+        "triangles": 25326
+      }
+    },
+    "visceral_male.glb": {
+      "meshCount": 120,
+      "totalTriangles": 714305,
+      "watertightMeshes": 58,
+      "meshesWithBoundaryHoles": 62,
+      "meshesWithNonManifoldEdges": 0,
+      "densestMesh": {
+        "name": "Pleura.001",
+        "triangles": 112288
+      }
+    }
+  }
+}

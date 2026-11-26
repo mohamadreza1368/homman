@@ -3,6 +3,75 @@ import { SUPPLY_SYSTEM, type SupplyKind } from "@/features/viewer/supply";
 import { applySceneCommand } from "./sceneCommandHandlers";
 import type { SceneViewState, VisibilityState } from "./sceneStoreTypes";
 
+export function organLaterality(
+  organ: Pick<ManifestOrgan, "organ_id" | "node" | "name_en">,
+): "left" | "right" | "midline" {
+  const id = organ.organ_id;
+  if (
+    /(?:_l|_el|_ol|_left)$/i.test(id) ||
+    /\.l$/i.test(organ.node) ||
+    organSide(organ) === "left"
+  ) {
+    return "left";
+  }
+  if (
+    /(?:_r|_er|_or|_right)$/i.test(id) ||
+    /\.r$/i.test(organ.node) ||
+    organSide(organ) === "right"
+  ) {
+    return "right";
+  }
+  return "midline";
+}
+
+/**
+ * Categorizes an organ into surgical dissection depth tiers:
+ * Tier 1 (Superficial): Integumentary, superficial fascia, superficial bursae, and superficial muscles.
+ * Tier 2 (Intermediate): Intermediate musculature, intermediate tendons, and peripheral vessels/nerves.
+ * Tier 3 (Deep): Skeletal system, joints, articular cartilage, deep viscera, and deep axial neurovascular core.
+ */
+export function organDepthTier(organ: ManifestOrgan): number {
+  if (organ.system === "integumentary" || organ.system === "regional") return 1;
+
+  // Cardiovascular vessels are neurovascular structures (Tier 2/3)
+  if (organ.system === "cardiovascular") {
+    // Only cutaneous superficial veins (like saphenous/cephalic) are Tier 2, all arteries and deep veins are Tier 3
+    const isCutaneous = /saphenous|cephalic|basilic|superficial_vein/i.test(organ.organ_id);
+    return isCutaneous ? 2 : 3;
+  }
+
+  const id = organ.organ_id.toLowerCase();
+  const pathStr = (organ.path || []).join(" ").toLowerCase();
+
+  // Superficial bursae and fascia
+  if (
+    pathStr.includes("bursae") ||
+    pathStr.includes("fascia") ||
+    pathStr.includes("superficial") ||
+    id.includes("fascia") ||
+    id.includes("bursa")
+  ) {
+    return 1;
+  }
+
+  // Major superficial muscles covering deeper anatomy (Netter & Gray's Surgical Anatomy)
+  if (
+    /platysma|trapezius|latissimus_dorsi|pectoralis_major|rectus_abdominis|gluteus_maximus|deltoid|gastrocnemius|epicranius|sternocleidomastoid|external_oblique/.test(
+      id,
+    )
+  ) {
+    return 1;
+  }
+
+  // Muscular system generally is Tier 2 (intermediate)
+  if (organ.system === "muscular") {
+    return 2;
+  }
+
+  // Deep structures: skeletal, articular, viscera, deep neurovascular
+  return 3;
+}
+
 export function isOrganVisible(
   state: VisibilityState,
   organ: ManifestOrgan,
@@ -13,6 +82,47 @@ export function isOrganVisible(
   if (state.isolatedOrganIds !== null && !state.isolatedOrganIds.includes(organ.organ_id)) {
     return false;
   }
+
+  // Prevent z-fighting between overlapping whole-organ envelopes and their segmental sub-meshes
+  // (Liver vs 8 Couinaud segments, and Pleura vs 5 Lung lobes)
+  const isWholeSystemOrFullView =
+    state.isolatedOrganIds === null || state.isolatedOrganIds.length > 8;
+  if (isWholeSystemOrFullView) {
+    if (organ.organ_id === "liver" && state.liverSegmentsMode) {
+      return false;
+    }
+    if (organ.organ_id.includes("_segment_of_liver_") && !state.liverSegmentsMode) {
+      return false;
+    }
+    if (organ.organ_id === "pleura") {
+      return false;
+    }
+  }
+
+  // Dissection depth & Netter-style half-dissection
+  const depth = state.dissectionDepth ?? 0;
+  const half = state.halfDissection ?? "off";
+
+  if (depth > 0 || half !== "off") {
+    const organSide = organLaterality(organ);
+    const tier = organDepthTier(organ);
+
+    // If half-dissection is active:
+    // "right": only right side is dissected deeply (left and midline stay intact)
+    // "left": only left side is dissected deeply (right and midline stay intact)
+    const isSubjectToDissection =
+      half === "off" ||
+      (half === "right" && organSide === "right") ||
+      (half === "left" && organSide === "left");
+
+    if (isSubjectToDissection) {
+      const effectiveDepth = depth > 0 ? depth : 2;
+      if (effectiveDepth >= 1 && tier === 1) return false;
+      if (effectiveDepth >= 2 && tier === 2) return false;
+      if (effectiveDepth >= 3 && tier < 3) return false;
+    }
+  }
+
   return true;
 }
 

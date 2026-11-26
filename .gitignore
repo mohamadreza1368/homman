@@ -65,5 +65,10 @@ tools/asset-pipeline/vendor/Z-Anatomy.zip
 # Coworker instructions for AI agents — kept local, not published.
 AGENTS.md
 
+# Reference textbooks and medical literature — local only, never vendored in git.
+books/
+
 # Legacy directory
 frontend/
+
+vendor_refs/

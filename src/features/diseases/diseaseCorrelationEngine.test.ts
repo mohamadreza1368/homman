@@ -63,4 +63,34 @@ describe('DiseaseCorrelationEngine (Spec verification from specs/disease-patholo
     const results = searchPathologyCatalog('اتومبیل', sampleCatalog);
     expect(results).toEqual([]);
   });
+
+  describe('Comprehensive Clinical Catalog (Robbins & Harrison)', () => {
+    it('searches diseases by Persian keywords and clinical aliases', async () => {
+      const { searchDiseases } = await import('./catalog');
+      expect(searchDiseases('سکته قلبی').length).toBeGreaterThanOrEqual(1);
+      expect(searchDiseases('آپاندیس').length).toBeGreaterThanOrEqual(1);
+      expect(searchDiseases('آلزایمر').length).toBeGreaterThanOrEqual(1);
+      expect(searchDiseases('prostate').length).toBeGreaterThanOrEqual(1);
+    });
+
+    it('maps 3D anatomical structure IDs to correct clinical pathologies for both genders', async () => {
+      const { diseasesForStructure } = await import('./catalog');
+
+      // Male cardiac structure
+      const maleHeart = diseasesForStructure('left_ventricle', 'male');
+      expect(maleHeart.some((d) => d.id === 'myocardial-infarction')).toBe(true);
+
+      // Male endocrine structure
+      const maleThyroid = diseasesForStructure('thyroid_gland', 'male');
+      expect(maleThyroid.some((d) => d.id === 'hashimotos-thyroiditis')).toBe(true);
+
+      // Female pelvic / reproductive structure
+      const femaleOvary = diseasesForStructure('ovary_l', 'female');
+      expect(femaleOvary.some((d) => d.id === 'ovarian-cysts-and-tumors')).toBe(true);
+
+      // Female digestive structure
+      const femaleAppendix = diseasesForStructure('vermiform_appendix', 'female');
+      expect(femaleAppendix.some((d) => d.id === 'appendicitis')).toBe(true);
+    });
+  });
 });

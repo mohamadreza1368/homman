@@ -15,6 +15,7 @@ import { BrandLogo } from "@/components/BrandLogo";
 import { AnatomyQuiz } from "@/features/anatomy/AnatomyQuiz";
 import { HeartLearningPath } from "@/features/anatomy/HeartLearningPath";
 import { StructureEducation } from "@/features/anatomy/StructureEducation";
+import { ClinicalAtlasHub } from "@/features/anatomy/ClinicalAtlasHub";
 
 /**
  * Primary left sidebar container hosting Anatomy Tree, Disease Knowledgebase, Education,
@@ -51,6 +52,9 @@ export function LeftPanel() {
       <div className="flex shrink-0 border-b border-slate-800 bg-slate-950/40 px-1">
         <PanelTabButton active={currentTab === "atlas"} onClick={() => setCurrentTab("atlas")}>
           {isPersian ? "اطلس" : "Atlas"}
+        </PanelTabButton>
+        <PanelTabButton active={currentTab === "surgical"} onClick={() => setCurrentTab("surgical")}>
+          {isPersian ? "جراحی" : "Surgical"}
         </PanelTabButton>
         <PanelTabButton active={currentTab === "diseases"} onClick={() => setCurrentTab("diseases")}>
           {isPersian ? "بیماری‌ها" : "Diseases"}
@@ -112,6 +116,9 @@ export function LeftPanel() {
 
       <div className={`min-h-0 flex-1 ${currentTab === "atlas" ? "" : "hidden"}`}>
         <AnatomyTree />
+      </div>
+      <div className={`min-h-0 flex-1 overflow-y-auto p-3 ${currentTab === "surgical" ? "" : "hidden"}`}>
+        <ClinicalAtlasHub />
       </div>
       <div className={`min-h-0 flex-1 ${currentTab === "diseases" ? "" : "hidden"}`}>
         <DiseasePanel />

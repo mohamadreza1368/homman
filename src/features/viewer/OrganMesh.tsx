@@ -58,6 +58,22 @@ export interface OrganMeshProps {
 // Organ Material & Appearance Engine
 // ---------------------------------------------------------------------------
 
+export function biologicalContourOnBeforeCompile(
+  shader: THREE.WebGLProgramParametersWithUniforms,
+) {
+  const fragmentHook = "#include <opaque_fragment>";
+  if (shader.fragmentShader.includes(fragmentHook)) {
+    const contourCode = [
+      fragmentHook,
+      "vec3 viewDirNorm = normalize(-vViewPosition);",
+      "vec3 normalNorm = normalize(vNormal);",
+      "float contourFresnel = pow(1.0 - max(0.0, dot(normalNorm, viewDirNorm)), 3.2);",
+      "gl_FragColor.rgb += vec3(0.08, 0.09, 0.12) * (contourFresnel * 0.35);",
+    ].join("\n");
+    shader.fragmentShader = shader.fragmentShader.replace(fragmentHook, contourCode);
+  }
+}
+
 export class OrganMaterialEngine {
   private static readonly ACCENT_SELECT = new THREE.Color("#00a8e8");
   private static readonly WARN_PATHOLOGY = new THREE.Color("#e8a33d");
@@ -110,7 +126,6 @@ export class OrganMaterialEngine {
     organ: ManifestOrgan,
     opacity: number,
     clippingPlanes: THREE.Plane[],
-    flowKind: ReturnType<typeof vesselFlow>,
     chamber: string | null,
     beatUserData: unknown,
     breath: ReturnType<typeof breathData>,
@@ -118,16 +133,12 @@ export class OrganMaterialEngine {
     const isGhost = opacity < GHOST_CLICK_THROUGH;
     const finalAlpha = Math.max(0, Math.min(1, opacity * tissueOpacity(organ)));
 
-    if (flowKind) {
-      return flowMaterial(flowKind);
-    }
-
     const standardMat = new THREE.MeshStandardMaterial({
       roughness: tissueRoughness(organ.system),
       metalness: tissueMetalness(organ.system),
       transparent: finalAlpha < 0.999,
       opacity: finalAlpha,
-      depthWrite: !isGhost,
+      depthWrite: !isGhost && finalAlpha >= 0.999,
       clippingPlanes: clippingPlanes.length > 0 ? clippingPlanes : null,
       clipShadows: true,
     });
@@ -145,6 +156,8 @@ export class OrganMaterialEngine {
     } else if (breath.breathRole !== BREATH_ROLE.none) {
       standardMat.userData = { ...breath };
       standardMat.onBeforeCompile = breathOnBeforeCompile;
+    } else {
+      standardMat.onBeforeCompile = biologicalContourOnBeforeCompile;
     }
 
     return standardMat;
@@ -298,12 +311,17 @@ export const OrganMesh = memo(function OrganMesh({
         organ,
         opacity,
         clippingPlanes,
-        flowKind,
         chamber,
         beatUserData,
         breath,
       ),
-    [organ, opacity, clippingPlanes, flowKind, chamber, beatUserData, breath],
+    [organ, opacity, clippingPlanes, chamber, beatUserData, breath],
+  );
+
+  const isHeartBeating = useHeartStore((s) => s.enabled);
+  const flowMat = useMemo(
+    () => (flowKind ? flowMaterial(flowKind) : null),
+    [flowKind],
   );
 
   useEffect(() => {
@@ -384,6 +402,15 @@ export const OrganMesh = memo(function OrganMesh({
       onPointerOver={handlePointerOver}
       onPointerOut={handlePointerOut}
       onContextMenu={handleContextMenu}
-    />
+    >
+      {flowMat && isHeartBeating && (
+        <mesh
+          geometry={geometry}
+          material={flowMat}
+          raycast={() => null}
+          renderOrder={3}
+        />
+      )}
+    </mesh>
   );
 });

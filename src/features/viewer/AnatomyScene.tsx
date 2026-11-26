@@ -13,6 +13,9 @@ import { ScanRing } from "./ScanRing";
 import { AxialProbe } from "./AxialProbe";
 import { HeartbeatDriver } from "./HeartbeatDriver";
 import { BreathDriver } from "./BreathDriver";
+import { CardiacConductionLayer } from "./CardiacConductionLayer";
+import { ClinicalProceduresOverlay } from "./ClinicalProceduresOverlay";
+import { SurfaceLandmarksLayer } from "./SurfaceLandmarksLayer";
 import { slicePlane } from "./axialSlice";
 
 import type { AnatomyManifest } from "@/lib/schemas";
@@ -170,6 +173,9 @@ export function AnatomyScene({ manifest, onContextMenu }: AnatomySceneProps) {
         bounds={sceneBounds}
         revision={centersRevision}
       />
+      <CardiacConductionLayer centres={centersRef.current} />
+      <ClinicalProceduresOverlay centres={centersRef.current} />
+      <SurfaceLandmarksLayer boxes={boxesRef.current} revision={centersRevision} />
 
       {pathway && (
         <PathwayFlow

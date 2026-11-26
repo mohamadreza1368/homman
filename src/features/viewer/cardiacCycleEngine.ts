@@ -24,11 +24,19 @@ const ATRIAL_CYCLE = { onset: 0.0, peak: 0.05, conclusion: 0.12 };
 const VENTRICULAR_CYCLE = { onset: 0.14, peak: 0.26, conclusion: 0.44 };
 
 /**
- * Standard smoothstep polynomial interpolation (3x^2 - 2x^3).
+ * Physiological rapid ejection acceleration (Guyton & Hall 2026, Ch. 9).
  */
-function interpolateSmooth(val: number): number {
+function interpolateAscending(val: number): number {
   const clamped = Math.min(1, Math.max(0, val));
-  return clamped * clamped * (3 - 2 * clamped);
+  return Math.pow(Math.sin(clamped * Math.PI * 0.5), 1.3);
+}
+
+/**
+ * Early rapid diastolic relaxation with elastic recoil settling into diastasis.
+ */
+function interpolateDescending(val: number): number {
+  const clamped = Math.min(1, Math.max(0, val));
+  return Math.pow(1 - clamped, 2) * (1 + clamped * 1.5);
 }
 
 /**
@@ -56,15 +64,13 @@ export function evaluateChamberKinematics(
   let atrialFactor = 0;
   if (cycleTime > ATRIAL_CYCLE.onset && cycleTime < ATRIAL_CYCLE.conclusion) {
     if (cycleTime <= ATRIAL_CYCLE.peak) {
-      atrialFactor = interpolateSmooth(
+      atrialFactor = interpolateAscending(
         (cycleTime - ATRIAL_CYCLE.onset) / (ATRIAL_CYCLE.peak - ATRIAL_CYCLE.onset),
       );
     } else {
-      atrialFactor =
-        1 -
-        interpolateSmooth(
-          (cycleTime - ATRIAL_CYCLE.peak) / (ATRIAL_CYCLE.conclusion - ATRIAL_CYCLE.peak),
-        );
+      atrialFactor = interpolateDescending(
+        (cycleTime - ATRIAL_CYCLE.peak) / (ATRIAL_CYCLE.conclusion - ATRIAL_CYCLE.peak),
+      );
     }
   }
 
@@ -72,17 +78,15 @@ export function evaluateChamberKinematics(
   let ventricularFactor = 0;
   if (cycleTime > VENTRICULAR_CYCLE.onset && cycleTime < VENTRICULAR_CYCLE.conclusion) {
     if (cycleTime <= VENTRICULAR_CYCLE.peak) {
-      ventricularFactor = interpolateSmooth(
+      ventricularFactor = interpolateAscending(
         (cycleTime - VENTRICULAR_CYCLE.onset) /
           (VENTRICULAR_CYCLE.peak - VENTRICULAR_CYCLE.onset),
       );
     } else {
-      ventricularFactor =
-        1 -
-        interpolateSmooth(
-          (cycleTime - VENTRICULAR_CYCLE.peak) /
-            (VENTRICULAR_CYCLE.conclusion - VENTRICULAR_CYCLE.peak),
-        );
+      ventricularFactor = interpolateDescending(
+        (cycleTime - VENTRICULAR_CYCLE.peak) /
+          (VENTRICULAR_CYCLE.conclusion - VENTRICULAR_CYCLE.peak),
+      );
     }
   }
 

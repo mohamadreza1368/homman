@@ -5,6 +5,7 @@ import { LeftPanel } from "./LeftPanel";
 
 vi.mock("@/features/tree/AnatomyTree", () => ({ AnatomyTree: () => <div>atlas tree</div> }));
 vi.mock("@/features/anatomy/StructureEducation", () => ({ StructureEducation: () => <div>education profile</div> }));
+vi.mock("@/features/anatomy/ClinicalAtlasHub", () => ({ ClinicalAtlasHub: () => <div>clinical atlas hub</div> }));
 vi.mock("@/features/anatomy/AnatomyQuiz", () => ({ AnatomyQuiz: ({ onActiveChange }: { onActiveChange: (active: boolean) => void }) => <button onClick={() => onActiveChange(true)}>begin quiz</button> }));
 vi.mock("@/features/anatomy/HeartLearningPath", () => ({ HeartLearningPath: () => <div>heart lesson</div> }));
 vi.mock("@/features/study/StudyPanel", () => ({ StudyPanel: () => <div>study notes</div> }));
